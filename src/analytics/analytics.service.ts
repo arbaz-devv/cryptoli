@@ -55,18 +55,39 @@ export interface AnalyticsStats {
 export class AnalyticsService implements OnModuleDestroy {
   private redis: Redis | null = null;
   private enabled = false;
+  private redisReady = false;
+  private lastRedisError: string | null = null;
 
   constructor() {
-    const url = process.env.REDIS_URL;
-    if (url && url.trim()) {
+    const url = process.env.REDIS_URL?.trim();
+    if (url) {
       try {
         this.redis = new Redis(url, { maxRetriesPerRequest: 10 });
-        this.redis.on('error', () => {}); // avoid crashing if Redis is down
-        this.enabled = true;
-      } catch {
+        this.redis.on('ready', () => {
+          this.enabled = true;
+          this.redisReady = true;
+          this.lastRedisError = null;
+          console.log('Analytics Redis connection ready');
+        });
+        this.redis.on('error', (error: unknown) => {
+          this.enabled = false;
+          this.redisReady = false;
+          this.lastRedisError = error instanceof Error ? error.message : 'Unknown Redis error';
+          console.error('Analytics Redis error:', this.lastRedisError);
+        });
+        this.redis.on('end', () => {
+          this.enabled = false;
+          this.redisReady = false;
+        });
+      } catch (error) {
         this.enabled = false;
+        this.redisReady = false;
+        this.lastRedisError = error instanceof Error ? error.message : 'Failed to initialize Redis client';
+        console.error('Failed to initialize analytics Redis client:', this.lastRedisError);
       }
+      return;
     }
+    this.lastRedisError = 'REDIS_URL is not set';
   }
 
   async onModuleDestroy() {
@@ -74,6 +95,8 @@ export class AnalyticsService implements OnModuleDestroy {
       await this.redis.quit();
       this.redis = null;
     }
+    this.enabled = false;
+    this.redisReady = false;
   }
 
   private dayKey(date: Date): string {
@@ -268,7 +291,7 @@ export class AnalyticsService implements OnModuleDestroy {
 
   /** Non-blocking: enqueue track and return immediately. */
   async track(ip: string, userAgent: string, body: TrackPayload, countryHint?: string): Promise<void> {
-    if (!this.enabled || !this.redis) return;
+    if (!this.enabled || !this.redis || !this.redisReady) return;
 
     const now = new Date();
     const day = this.dayKey(now);
@@ -299,7 +322,10 @@ export class AnalyticsService implements OnModuleDestroy {
         this.hincrby(`${KEY_PREFIX}:weekday:${day}`, weekday, 1),
         this.hincrby(`${KEY_PREFIX}:path:${day}`, path, 1),
         this.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1),
-      ]).catch(() => {});
+      ]).catch((error: unknown) => {
+        this.lastRedisError = error instanceof Error ? error.message : 'Failed writing analytics page_view';
+        console.error('Analytics write error (page_view):', this.lastRedisError);
+      });
       return;
     }
 
@@ -309,7 +335,10 @@ export class AnalyticsService implements OnModuleDestroy {
       if (!Number.isNaN(entered) && !Number.isNaN(left) && left > entered) {
         const durationSec = Math.round((left - entered) / 1000);
         if (durationSec >= 0 && durationSec <= 86400) { // max 24h
-          void this.lpushLimit(`${KEY_PREFIX}:durations:${day}`, String(durationSec)).catch(() => {});
+          void this.lpushLimit(`${KEY_PREFIX}:durations:${day}`, String(durationSec)).catch((error: unknown) => {
+            this.lastRedisError = error instanceof Error ? error.message : 'Failed writing analytics duration';
+            console.error('Analytics write error (duration):', this.lastRedisError);
+          });
           // Bounce: single pageview + left within 30s
           if (durationSec < 30) {
             this.hget(`${KEY_PREFIX}:session_pages:${day}`, sessionId).then((count) => {
@@ -324,7 +353,7 @@ export class AnalyticsService implements OnModuleDestroy {
   }
 
   async getStats(from: string, to: string): Promise<AnalyticsStats | null> {
-    if (!this.redis) return this.emptyStats(from, to);
+    if (!this.redis || !this.redisReady) return this.emptyStats(from, to);
 
     const fromDate = new Date(from);
     const toDate = new Date(to);
@@ -398,7 +427,9 @@ export class AnalyticsService implements OnModuleDestroy {
         Object.entries(paths || {}).forEach(([k, v]) => { pathCounts[k] = (pathCounts[k] || 0) + parseInt(v, 10); });
         (durList || []).forEach((s) => { const n = parseInt(s, 10); if (!Number.isNaN(n)) durations.push(n); });
       }
-    } catch {
+    } catch (error) {
+      this.lastRedisError = error instanceof Error ? error.message : 'Failed reading analytics stats';
+      console.error('Analytics read error:', this.lastRedisError);
       return this.emptyStats(days[0] || from, days[days.length - 1] || to);
     }
 
@@ -454,6 +485,34 @@ export class AnalyticsService implements OnModuleDestroy {
   }
 
   isEnabled(): boolean {
-    return this.enabled;
+    return this.enabled && this.redisReady;
+  }
+
+  async isHealthy(): Promise<boolean> {
+    if (!this.redis) return false;
+    try {
+      const pong = await this.redis.ping();
+      const healthy = pong === 'PONG';
+      this.redisReady = healthy;
+      this.enabled = healthy;
+      if (healthy) {
+        this.lastRedisError = null;
+      }
+      return healthy;
+    } catch (error) {
+      this.enabled = false;
+      this.redisReady = false;
+      this.lastRedisError = error instanceof Error ? error.message : 'Redis ping failed';
+      console.error('Analytics Redis health check failed:', this.lastRedisError);
+      return false;
+    }
+  }
+
+  getHealthDetails(): { configured: boolean; connected: boolean; lastError: string | null } {
+    return {
+      configured: Boolean(process.env.REDIS_URL?.trim()),
+      connected: this.redisReady,
+      lastError: this.lastRedisError,
+    };
   }
 }

@@ -139,7 +139,16 @@ export class AnalyticsController {
   }
 
   @Get('health')
-  health(): { enabled: boolean } {
-    return { enabled: this.analyticsService.isEnabled() };
+  async health(): Promise<{
+    enabled: boolean;
+    configured: boolean;
+    connected: boolean;
+    lastError: string | null;
+  }> {
+    const enabled = await this.analyticsService.isHealthy();
+    return {
+      enabled,
+      ...this.analyticsService.getHealthDetails(),
+    };
   }
 }
