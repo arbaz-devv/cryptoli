@@ -60,7 +60,7 @@ export class AnalyticsService implements OnModuleDestroy {
     const url = process.env.REDIS_URL;
     if (url && url.trim()) {
       try {
-        this.redis = new Redis(url, { maxRetriesPerRequest: 2 });
+        this.redis = new Redis(url, { maxRetriesPerRequest: 10 });
         this.redis.on('error', () => {}); // avoid crashing if Redis is down
         this.enabled = true;
       } catch {
