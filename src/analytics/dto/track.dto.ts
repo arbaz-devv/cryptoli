@@ -10,4 +10,6 @@ export class TrackDto {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  /** When true, event is from a user who accepted analytics cookies; when false, do not store. */
+  consent?: boolean;
 }

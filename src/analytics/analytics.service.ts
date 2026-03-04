@@ -36,6 +36,8 @@ export interface TrackPayload {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
+  /** When false, do not store (user declined cookies). When true or omitted, store. */
+  consent?: boolean;
 }
 
 export interface TimeSeriesPoint {
@@ -94,6 +96,13 @@ export interface AnalyticsStats {
     signup_completed: number;
     purchase: number;
   }>;
+  /** Retention rate (0–100): % of new visitors who return on Day 1, 7, 30. Only from consented activity. */
+  retention?: {
+    day1Pct: number;
+    day7Pct: number;
+    day30Pct: number;
+    cohortDays: number;
+  };
 }
 
 @Injectable()
@@ -146,6 +155,12 @@ export class AnalyticsService implements OnModuleDestroy {
 
   private dayKey(date: Date): string {
     return date.toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
+  private addDays(dateStr: string, n: number): string {
+    const d = new Date(dateStr + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
   }
 
   private async incr(key: string): Promise<void> {
@@ -408,9 +423,10 @@ export class AnalyticsService implements OnModuleDestroy {
     }
   }
 
-  /** Non-blocking: enqueue track and return immediately. */
+  /** Non-blocking: enqueue track and return immediately. Only store when consent is not explicitly false. */
   async track(ip: string, userAgent: string, body: TrackPayload, countryHint?: string): Promise<void> {
     if (!this.enabled || !this.redis || !this.redisReady) return;
+    if (body.consent === false) return;
 
     const now = new Date();
     const day = this.dayKey(now);
@@ -446,6 +462,13 @@ export class AnalyticsService implements OnModuleDestroy {
         this.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1),
         this.addRecentSession(nowMs, member),
       ];
+      const cohortTtl = 35 * 24 * 60 * 60;
+      this.redis.set(`${KEY_PREFIX}:first_visit:${sessionId}`, day, 'EX', cohortTtl, 'NX').then((reply) => {
+        if (reply === 'OK' && this.redis) {
+          this.redis.sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId).catch(() => {});
+          this.redis.expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl).catch(() => {});
+        }
+      }).catch(() => {});
       if (body.timezone && typeof body.timezone === 'string' && body.timezone.trim()) {
         try {
           const tz = body.timezone.trim();
@@ -599,6 +622,7 @@ export class AnalyticsService implements OnModuleDestroy {
     const timeSeries: TimeSeriesPoint[] = [];
     let totalLikes = 0;
     const byHourTz: Record<string, number> = {};
+    let retention: { day1Pct: number; day7Pct: number; day30Pct: number; cohortDays: number } | undefined;
 
     const WEEKDAY_NAMES: Record<string, string> = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
 
@@ -669,6 +693,47 @@ export class AnalyticsService implements OnModuleDestroy {
         mergeTz(byHourTz, hourTzDay);
 
         timeSeries.push({ date: day, pageviews: pvNum, uniques: uniquesDay || 0 });
+      }
+
+      try {
+        let totalCohort = 0;
+        let totalReturned1 = 0;
+        let totalReturned7 = 0;
+        let totalReturned30 = 0;
+        let cohortDaysCount = 0;
+        for (const day of days) {
+          const cohortMembers = await this.redis.smembers(`${KEY_PREFIX}:cohort:${day}`);
+          const cohortSize = cohortMembers.length;
+          if (cohortSize === 0) continue;
+          cohortDaysCount += 1;
+          totalCohort += cohortSize;
+          const day1 = this.addDays(day, 1);
+          const day7 = this.addDays(day, 7);
+          const day30 = this.addDays(day, 30);
+          const [pages1, pages7, pages30] = await Promise.all([
+            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day1}`),
+            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day7}`),
+            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day30}`),
+          ]);
+          const set1 = new Set(Object.keys(pages1 || {}));
+          const set7 = new Set(Object.keys(pages7 || {}));
+          const set30 = new Set(Object.keys(pages30 || {}));
+          for (const sid of cohortMembers) {
+            if (set1.has(sid)) totalReturned1 += 1;
+            if (set7.has(sid)) totalReturned7 += 1;
+            if (set30.has(sid)) totalReturned30 += 1;
+          }
+        }
+        if (totalCohort > 0 && cohortDaysCount > 0) {
+          retention = {
+            day1Pct: Math.round((totalReturned1 / totalCohort) * 1000) / 10,
+            day7Pct: Math.round((totalReturned7 / totalCohort) * 1000) / 10,
+            day30Pct: Math.round((totalReturned30 / totalCohort) * 1000) / 10,
+            cohortDays: cohortDaysCount,
+          };
+        }
+      } catch {
+        retention = undefined;
       }
     } catch (error) {
       this.lastRedisError = error instanceof Error ? error.message : 'Failed reading analytics stats';
@@ -759,6 +824,7 @@ export class AnalyticsService implements OnModuleDestroy {
       funnelByUtmSource,
       funnelByPath,
       byHourTz: Object.keys(byHourTz).length > 0 ? byHourTz : undefined,
+      retention,
     };
   }
 
