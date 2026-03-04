@@ -7,6 +7,7 @@ import {
   Body,
   Req,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
@@ -105,6 +106,141 @@ export class AdminController {
     return {
       users: list,
       pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) },
+    };
+  }
+
+  @Get('users/:id')
+  async userDetail(@Req() req: Request, @Param('id') id: string) {
+    requireAdmin(req);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { reviews: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const [commentsCount, helpfulVotesCount, complaintVotesCount, commentVotesCount, reviews, complaints, posts, sessions, comments, helpfulVotes] = await Promise.all([
+      this.prisma.comment.count({ where: { authorId: id } }),
+      this.prisma.helpfulVote.count({ where: { userId: id } }),
+      this.prisma.complaintVote.count({ where: { userId: id } }),
+      this.prisma.commentVote.count({ where: { userId: id } }),
+      this.prisma.review.findMany({
+        where: { authorId: id },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { name: true } },
+          company: { select: { name: true } },
+        },
+      }),
+      this.prisma.complaint.findMany({
+        where: { authorId: id },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          product: { select: { name: true } },
+          company: { select: { name: true } },
+        },
+      }),
+      this.prisma.post.findMany({
+        where: { authorId: id },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: { select: { comments: true } },
+        },
+      }),
+      this.prisma.session.findMany({
+        where: { userId: id },
+        select: { createdAt: true },
+      }),
+      this.prisma.comment.findMany({
+        where: { authorId: id },
+        select: { createdAt: true },
+      }),
+      this.prisma.helpfulVote.findMany({
+        where: { userId: id },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const dayKeys = Array.from({ length: 7 }, (_, idx) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - idx));
+      return d.toISOString().slice(0, 10);
+    });
+    const seriesMap: Record<string, { logins: number; comments: number; votes: number }> = {};
+    dayKeys.forEach((key) => {
+      seriesMap[key] = { logins: 0, comments: 0, votes: 0 };
+    });
+    sessions.forEach((s) => {
+      const key = s.createdAt.toISOString().slice(0, 10);
+      if (seriesMap[key]) seriesMap[key].logins += 1;
+    });
+    comments.forEach((c) => {
+      const key = c.createdAt.toISOString().slice(0, 10);
+      if (seriesMap[key]) seriesMap[key].comments += 1;
+    });
+    helpfulVotes.forEach((v) => {
+      const key = v.createdAt.toISOString().slice(0, 10);
+      if (seriesMap[key]) seriesMap[key].votes += 1;
+    });
+
+    const lastActivityDate = [user.updatedAt, ...reviews.map((r) => r.createdAt), ...complaints.map((c) => c.createdAt), ...posts.map((p) => p.createdAt)]
+      .reduce((max, current) => (current > max ? current : max), user.createdAt);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name ?? user.username,
+        role: user.role.toLowerCase(),
+        status: 'active',
+        joinedAt: user.createdAt.toISOString().slice(0, 10),
+        reviewCount: user._count.reviews,
+        lastActive: lastActivityDate.toISOString().slice(0, 10),
+        lastLoginAt: sessions.length > 0 ? sessions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0].createdAt.toISOString() : undefined,
+      },
+      metrics: {
+        commentsCount,
+        votesCount: helpfulVotesCount + complaintVotesCount + commentVotesCount,
+      },
+      activitySeries: dayKeys.map((date) => ({
+        date,
+        device: 'Unknown',
+        country: 'Unknown',
+        logins: seriesMap[date].logins,
+        comments: seriesMap[date].comments,
+        votes: seriesMap[date].votes,
+      })),
+      reviews: reviews.map((r) => ({
+        id: r.id,
+        title: r.title,
+        productName: r.product?.name ?? r.company?.name ?? '-',
+        score: r.overallScore,
+        status: r.status.toLowerCase(),
+        createdAt: r.createdAt.toISOString(),
+      })),
+      complaints: complaints.map((c) => ({
+        id: c.id,
+        subject: c.title,
+        relatedTo: c.product ? 'product' : c.company ? 'company' : 'general',
+        priority: c.reportCount >= 10 ? 'high' : c.reportCount >= 3 ? 'medium' : 'low',
+        status: c.status.toLowerCase() === 'closed' ? 'dismissed' : c.status.toLowerCase(),
+        createdAt: c.createdAt.toISOString(),
+      })),
+      discussions: posts.map((p) => ({
+        id: p.id,
+        title: p.content.slice(0, 72) + (p.content.length > 72 ? '...' : ''),
+        category: 'Post',
+        commentCount: p._count.comments,
+        status: 'open',
+        createdAt: p.createdAt.toISOString(),
+      })),
+      feedbacks: [],
     };
   }
 
