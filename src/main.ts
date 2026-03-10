@@ -14,6 +14,7 @@ import { ConfigService } from './config/config.service';
 import { validateEnv } from './config/env.schema';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 import './socket/socket.types';
+import { AuthService } from './auth/auth.service';
 
 type ValidationIssue = {
   field: string;
@@ -49,6 +50,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+  const authService = app.get(AuthService);
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -147,8 +149,18 @@ async function bootstrap() {
     transports: ['websocket', 'polling'],
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     void socket.join('reviews');
+
+    const cookieHeader = socket.handshake.headers.cookie;
+    const token = authService.getSessionTokenFromRequest({
+      headers: { cookie: cookieHeader },
+      cookies: {},
+    } as Request);
+    const user = await authService.getSessionFromToken(token);
+    if (user?.id) {
+      void socket.join(`user:${user.id}`);
+    }
   });
 
   globalThis.__socketIO = io;

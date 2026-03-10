@@ -54,6 +54,25 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().max(100).optional(),
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be at most 30 characters')
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      'Username can only contain letters, numbers, and underscores',
+    )
+    .optional(),
+  bio: z.string().max(500).optional(),
+});
+
 export const createReviewSchema = z.object({
   title: z
     .string()
@@ -87,6 +106,8 @@ export const createReplySchema = z.object({
 
 export type LoginDto = z.infer<typeof loginSchema>;
 export type RegisterDto = z.infer<typeof registerSchema>;
+export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
+export type UpdateProfileDto = z.infer<typeof updateProfileSchema>;
 export type CreateReviewDto = z.infer<typeof createReviewSchema>;
 export type CreateCommentDto = z.infer<typeof createCommentSchema>;
 export type CreateComplaintDto = z.infer<typeof createComplaintSchema>;

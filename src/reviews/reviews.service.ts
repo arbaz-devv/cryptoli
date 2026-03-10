@@ -3,12 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SocketService } from '../socket/socket.service';
 import { NotFoundError } from '../common/errors';
 import { createReviewSchema, calculateOverallScore } from '../common/utils';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly socketService: SocketService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async list(
@@ -218,9 +220,18 @@ export class ReviewsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const review = await tx.review.findUnique({
         where: { id: reviewId },
-        select: { id: true },
+        select: {
+          id: true,
+          title: true,
+          authorId: true,
+        },
       });
       if (!review) throw new NotFoundError('Review not found');
+
+      const actor = await tx.user.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
 
       const existingVote = await tx.helpfulVote.findUnique({
         where: { userId_reviewId: { userId, reviewId } },
@@ -257,6 +268,9 @@ export class ReviewsService {
       });
 
       return {
+        reviewAuthorId: review.authorId,
+        reviewTitle: review.title,
+        actorUsername: actor?.username ?? 'Someone',
         voteType: nextVoteType,
         helpfulCount,
         downVoteCount,
@@ -268,6 +282,18 @@ export class ReviewsService {
       result.helpfulCount,
       result.downVoteCount,
     );
+
+    if (result.reviewAuthorId !== userId && result.voteType) {
+      await this.notificationsService.createForUser({
+        userId: result.reviewAuthorId,
+        type: 'NEW_REACTION',
+        title: 'Someone reacted to your rating',
+        message: `${result.actorUsername} ${
+          result.voteType === 'UP' ? 'liked' : 'disliked'
+        } your rating "${result.reviewTitle}".`,
+        link: '/',
+      });
+    }
 
     return result;
   }

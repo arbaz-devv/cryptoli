@@ -16,6 +16,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { SocketModule } from './socket/socket.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AdminModule } from './admin/admin.module';
     CompaniesModule,
     AnalyticsModule,
     AdminModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

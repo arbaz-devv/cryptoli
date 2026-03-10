@@ -2,10 +2,16 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createCommentSchema } from '../common/utils';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SocketService } from '../socket/socket.service';
 
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly socketService: SocketService,
+  ) {}
 
   async create(body: unknown, authorId: string) {
     const validated = createCommentSchema.parse(body);
@@ -52,6 +58,66 @@ export class CommentsService {
         },
       },
     });
+
+    // Notify parent comment/reply author when someone replies (unless replying to self)
+    if (validated.parentId && validated.reviewId) {
+      const parent = await this.prisma.comment.findUnique({
+        where: { id: validated.parentId },
+        select: { authorId: true },
+      });
+      if (parent && parent.authorId !== authorId) {
+        const review = await this.prisma.review.findUnique({
+          where: { id: validated.reviewId },
+          select: { title: true },
+        });
+        const isReplyToReply = await this.prisma.comment
+          .findUnique({
+            where: { id: validated.parentId },
+            select: { parentId: true },
+          })
+          .then((c) => !!c?.parentId);
+        await this.notificationsService.createForUser({
+          userId: parent.authorId,
+          type: 'NEW_COMMENT',
+          title: 'New reply to your comment',
+          message: isReplyToReply
+            ? `${comment.author.username} replied to your reply.`
+            : `${comment.author.username} replied to your comment on "${review?.title ?? 'a review'}".`,
+          link: `/?review=${validated.reviewId}`,
+        });
+      }
+    }
+
+    if (validated.reviewId) {
+      const review = await this.prisma.review.findUnique({
+        where: { id: validated.reviewId },
+        select: {
+          id: true,
+          title: true,
+          authorId: true,
+          author: {
+            select: {
+              username: true,
+            },
+          },
+        },
+      });
+
+      if (review && review.authorId !== authorId) {
+        await this.notificationsService.createForUser({
+          userId: review.authorId,
+          type: 'NEW_COMMENT',
+          title: 'New comment on your rating',
+          message: `${comment.author.username} commented on "${review.title}".`,
+          link: '/',
+        });
+      }
+
+      const commentCount = await this.prisma.comment.count({
+        where: { reviewId: validated.reviewId, parentId: null },
+      });
+      this.socketService.emitCommentCountUpdated(validated.reviewId, commentCount);
+    }
 
     return comment;
   }
@@ -268,10 +334,10 @@ export class CommentsService {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.findUnique({
         where: { id: commentId },
-        select: { id: true },
+        select: { id: true, authorId: true },
       });
       if (!comment) throw new NotFoundError('Comment not found');
 
@@ -319,7 +385,41 @@ export class CommentsService {
         voteType: nextVoteType,
         helpfulCount,
         downVoteCount,
+        commentAuthorId: comment.authorId,
+        voterId: userId,
+        isNewUpVote: nextVoteType === 'UP',
       };
     });
+
+    // Notify comment author when someone likes (UP votes) their comment (unless self)
+    if (
+      result.commentAuthorId &&
+      result.voterId !== result.commentAuthorId &&
+      result.isNewUpVote
+    ) {
+      const commentWithReview = await this.prisma.comment.findUnique({
+        where: { id: commentId },
+        select: { reviewId: true },
+      });
+      const voter = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
+      await this.notificationsService.createForUser({
+        userId: result.commentAuthorId,
+        type: 'NEW_REACTION',
+        title: 'Someone liked your comment',
+        message: `${voter?.username ?? 'Someone'} found your comment helpful.`,
+        link: commentWithReview?.reviewId
+          ? `/?review=${commentWithReview.reviewId}`
+          : '/',
+      });
+    }
+
+    return {
+      voteType: result.voteType,
+      helpfulCount: result.helpfulCount,
+      downVoteCount: result.downVoteCount,
+    };
   }
 }

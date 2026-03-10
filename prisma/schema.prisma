@@ -91,6 +91,7 @@ model User {
   following      Follow[]        @relation("Following")
   sessions       Session[]
   notifications  Notification[]
+  pushSubscriptions PushSubscription[]
   helpfulVotes   HelpfulVote[]
   companyFollows CompanyFollow[]
   complaints     Complaint[]
@@ -251,6 +252,18 @@ model Notification {
   link      String?
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Follow {

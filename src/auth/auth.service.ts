@@ -12,6 +12,7 @@ export interface SessionUser {
   role: string;
   name: string | null;
   avatar: string | null;
+  bio: string | null;
   verified: boolean;
   reputation: number;
 }
@@ -147,6 +148,7 @@ export class AuthService {
         role: session.user.role,
         name: session.user.name ?? null,
         avatar: session.user.avatar ?? null,
+        bio: session.user.bio ?? null,
         verified: session.user.verified,
         reputation: session.user.reputation,
       };
@@ -157,5 +159,59 @@ export class AuthService {
 
   async deleteSession(token: string): Promise<void> {
     await this.prisma.session.deleteMany({ where: { token } });
+  }
+
+  async getUserById(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+  }
+
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+  }
+
+  async updateProfile(
+    userId: string,
+    data: { name?: string; username?: string; bio?: string },
+  ): Promise<SessionUser> {
+    const updateData: {
+      name?: string | null;
+      username?: string;
+      bio?: string | null;
+    } = {};
+    if (data.name !== undefined) updateData.name = data.name.trim() || null;
+    if (data.username !== undefined) updateData.username = data.username.trim();
+    if (data.bio !== undefined) updateData.bio = data.bio.trim() || null;
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        name: true,
+        avatar: true,
+        bio: true,
+        verified: true,
+        reputation: true,
+      },
+    });
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      name: user.name ?? null,
+      avatar: user.avatar ?? null,
+      bio: user.bio ?? null,
+      verified: user.verified,
+      reputation: user.reputation,
+    };
   }
 }
