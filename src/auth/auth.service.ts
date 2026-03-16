@@ -45,6 +45,65 @@ export class AuthService {
     return !existing;
   }
 
+  /** Generate backend-validated username suggestions that are not already taken. */
+  async generateUsernameSuggestions(
+    baseRaw: string,
+    exceptUserId?: string,
+  ): Promise<string[]> {
+    const raw = baseRaw.trim();
+    if (raw.length < 3 || raw.length > 30) return [];
+    if (!/^[a-zA-Z0-9_]+$/.test(raw)) return [];
+
+    const base = raw.replace(/[^a-zA-Z0-9_]/g, '');
+    if (!base) return [];
+
+    const suggestions = new Set<string>();
+    const year = new Date().getFullYear();
+    const shortYear = year % 100;
+    const len = base.length;
+
+    const addCandidate = (candidate: string) => {
+      const normalized = candidate.slice(0, 30);
+      if (normalized && normalized !== raw && /^[a-zA-Z0-9_]+$/.test(normalized)) {
+        suggestions.add(normalized);
+      }
+    };
+
+    // Slightly varied base forms
+    addCandidate(`${base}_`);
+    if (base.length > 3) {
+      addCandidate(`${base.slice(0, -1)}_${base.slice(-1)}`);
+    }
+
+    // Short numeric tweaks
+    addCandidate(`${base}${shortYear}`);
+    addCandidate(`${base}_${shortYear}`);
+    addCandidate(`${base}${(len % 10) + 1}`);
+    addCandidate(`${base}_${(len % 10) + 1}`);
+
+    // Simple domain-related suffixes/prefixes
+    const adjectives = ['real', 'crypto', 'secure', 'pro', 'official', 'hub', 'reviews', 'wallet'];
+    for (const word of adjectives) {
+      addCandidate(`${base}_${word}`);
+      addCandidate(`${word}_${base}`);
+      if (suggestions.size >= 20) break;
+    }
+
+    const candidates = Array.from(suggestions).slice(0, 20);
+    if (candidates.length === 0) return [];
+
+    const existing = await this.prisma.user.findMany({
+      where: {
+        username: { in: candidates },
+        ...(exceptUserId ? { id: { not: exceptUserId } } : {}),
+      },
+      select: { username: true },
+    });
+    const takenSet = new Set(existing.map((u) => u.username));
+
+    return candidates.filter((name) => !takenSet.has(name)).slice(0, 8);
+  }
+
   async findUserByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },

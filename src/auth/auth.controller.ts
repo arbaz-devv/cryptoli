@@ -82,6 +82,20 @@ export class AuthController {
     return { available };
   }
 
+  @Get('username-suggestions')
+  async usernameSuggestions(
+    @Query('base') base: string | undefined,
+    @Req() req: Request,
+  ) {
+    const token = this.authService.getSessionTokenFromRequest(req);
+    const currentUser = await this.authService.getSessionFromToken(token);
+    const suggestions = await this.authService.generateUsernameSuggestions(
+      base ?? '',
+      currentUser?.id,
+    );
+    return { suggestions };
+  }
+
   @Patch('me')
   @UseGuards(AuthGuard)
   async updateProfile(
