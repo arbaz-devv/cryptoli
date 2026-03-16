@@ -15,6 +15,7 @@ import { TrendingModule } from './trending/trending.module';
 import { CompaniesModule } from './companies/companies.module';
 import { SocketModule } from './socket/socket.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
@@ -36,6 +37,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     TrendingModule,
     CompaniesModule,
     AnalyticsModule,
+    UsersModule,
     AdminModule,
     NotificationsModule,
   ],
