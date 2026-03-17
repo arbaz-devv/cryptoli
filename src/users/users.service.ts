@@ -1,57 +1,105 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+
+const PROFILE_CACHE_PREFIX = 'profile:v2:';
+const PROFILE_CACHE_TTL_SEC = 90;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
+  ) {}
 
   async getPublicProfile(viewerId: string | null, username: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        avatar: true,
-        bio: true,
-        verified: true,
-        reputation: true,
-        createdAt: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
+    const redis = this.redisService.getClient();
+    const cacheEnabled = this.redisService.isReady() && redis !== null;
+    const cacheKey = `${PROFILE_CACHE_PREFIX}${username}`;
+    let cached: { user: unknown; stats: unknown } | null = null;
+    if (cacheEnabled) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw) cached = JSON.parse(raw) as { user: unknown; stats: unknown };
+      } catch {
+        // ignore cache read errors
+      }
     }
 
-    const [followersCount, followingCount, postsCount, complaintsCount, isFollowing] =
-      await Promise.all([
-        this.prisma.follow.count({ where: { followingId: user.id } }),
-        this.prisma.follow.count({ where: { followerId: user.id } }),
-        this.prisma.post.count({ where: { authorId: user.id } }),
-        this.prisma.complaint.count({ where: { authorId: user.id } }),
-        viewerId
-          ? this.prisma.follow
-              .findFirst({
-                where: { followerId: viewerId, followingId: user.id },
-                select: { id: true },
-              })
-              .then(Boolean)
-          : Promise.resolve(false),
-      ]);
+    type ProfileUser = {
+      id: string;
+      email: string;
+      username: string;
+      avatar: string | null;
+      bio: string | null;
+      verified: boolean;
+      reputation: number;
+      createdAt: Date;
+    };
+    let user: ProfileUser | null;
+    let stats: { followersCount: number; followingCount: number; postsCount: number; complaintsCount: number };
+
+    if (cached?.user && cached?.stats && typeof cached.stats === 'object' && 'followersCount' in cached.stats) {
+      user = cached.user as ProfileUser;
+      stats = cached.stats as typeof stats;
+    } else {
+      user = await this.prisma.user.findUnique({
+        where: { username },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          avatar: true,
+          bio: true,
+          verified: true,
+          reputation: true,
+          createdAt: true,
+        },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      const [followersCount, followingCount, postsCount, complaintsCount] =
+        await this.prisma.$transaction([
+          this.prisma.follow.count({ where: { followingId: user.id } }),
+          this.prisma.follow.count({ where: { followerId: user.id } }),
+          this.prisma.post.count({ where: { authorId: user.id } }),
+          this.prisma.complaint.count({ where: { authorId: user.id } }),
+        ]);
+      stats = { followersCount, followingCount, postsCount, complaintsCount };
+      if (cacheEnabled) {
+        try {
+          await redis!.setex(cacheKey, PROFILE_CACHE_TTL_SEC, JSON.stringify({ user, stats }));
+        } catch {
+          // ignore cache write errors
+        }
+      }
+    }
+
+    let isFollowing = false;
+    if (viewerId && user) {
+      const follow = await this.prisma.follow.findFirst({
+        where: { followerId: viewerId, followingId: user.id },
+        select: { id: true },
+      });
+      isFollowing = Boolean(follow);
+    }
 
     return {
       user,
-      stats: {
-        followersCount,
-        followingCount,
-        postsCount,
-        complaintsCount,
-      },
-      viewerState: {
-        isFollowing,
-      },
+      stats,
+      viewerState: { isFollowing },
     };
+  }
+
+  private async invalidateProfileCache(username: string): Promise<void> {
+    const redis = this.redisService.getClient();
+    if (!this.redisService.isReady() || !redis) return;
+    try {
+      await redis.del(`${PROFILE_CACHE_PREFIX}${username}`);
+    } catch {
+      // ignore
+    }
   }
 
   async followUser(followerId: string, targetUsername: string) {
@@ -76,6 +124,7 @@ export class UsersService {
     } catch {
       // unique constraint already-following: treat as success
     }
+    await this.invalidateProfileCache(targetUsername);
 
     return { following: true };
   }
@@ -98,6 +147,7 @@ export class UsersService {
         followingId: target.id,
       },
     });
+    await this.invalidateProfileCache(targetUsername);
 
     return { following: false };
   }
@@ -199,11 +249,11 @@ export class UsersService {
       select: { followingId: true },
     });
     const followingSet = new Set(follows.map((f) => f.followingId));
-    const idToUsername = new Map(users.map((u) => [u.id, u.username]));
+    const idByUsername = new Map(users.map((u) => [u.username, u.id]));
     const following: Record<string, boolean> = {};
     for (const u of unique) {
-      const found = users.find((x) => x.username === u);
-      following[u] = found ? followingSet.has(found.id) : false;
+      const id = idByUsername.get(u);
+      following[u] = id ? followingSet.has(id) : false;
     }
     return { following };
   }

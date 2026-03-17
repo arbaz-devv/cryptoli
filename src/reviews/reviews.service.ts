@@ -18,6 +18,7 @@ export class ReviewsService {
     limit: number,
     category: string | undefined,
     companyId: string | undefined,
+    username: string | undefined,
     status: string,
     user: { id: string } | null,
   ) {
@@ -25,6 +26,7 @@ export class ReviewsService {
       ...(status && { status }),
       ...(category && { company: { category } }),
       ...(companyId && { companyId }),
+      ...(username && { author: { username } }),
     };
 
     const reviews = await this.prisma.review.findMany({

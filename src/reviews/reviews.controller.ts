@@ -27,6 +27,7 @@ export class ReviewsController {
     @Query('limit') limit = '20',
     @Query('category') category?: string,
     @Query('companyId') companyId?: string,
+    @Query('username') username?: string,
     @Query('status') status = 'APPROVED',
     @Req() req?: Request & { user?: SessionUser | null },
   ) {
@@ -42,6 +43,7 @@ export class ReviewsController {
       safeLimit,
       category,
       companyId,
+      username?.trim() || undefined,
       safeStatus,
       req?.user ?? null,
     );

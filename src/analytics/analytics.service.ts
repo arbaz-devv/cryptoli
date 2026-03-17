@@ -1,6 +1,7 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { isIP } from 'node:net';
 import Redis from 'ioredis';
+import { RedisService } from '../redis/redis.service';
 import * as geoip from 'geoip-lite';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const UAParser = require('ua-parser-js') as new (ua?: string) => {
@@ -121,58 +122,11 @@ const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
 
 @Injectable()
-export class AnalyticsService implements OnModuleDestroy {
-  private redis: Redis | null = null;
-  private enabled = false;
-  private redisReady = false;
-  private lastRedisError: string | null = null;
+export class AnalyticsService {
+  constructor(private readonly redisService: RedisService) {}
 
-  constructor() {
-    const url = process.env.REDIS_URL?.trim();
-    if (url) {
-      try {
-        this.redis = new Redis(url, { maxRetriesPerRequest: 10 });
-        this.redis.on('ready', () => {
-          this.enabled = true;
-          this.redisReady = true;
-          this.lastRedisError = null;
-          console.log('Analytics Redis connection ready');
-        });
-        this.redis.on('error', (error: unknown) => {
-          this.enabled = false;
-          this.redisReady = false;
-          this.lastRedisError =
-            error instanceof Error ? error.message : 'Unknown Redis error';
-          console.error('Analytics Redis error:', this.lastRedisError);
-        });
-        this.redis.on('end', () => {
-          this.enabled = false;
-          this.redisReady = false;
-        });
-      } catch (error) {
-        this.enabled = false;
-        this.redisReady = false;
-        this.lastRedisError =
-          error instanceof Error
-            ? error.message
-            : 'Failed to initialize Redis client';
-        console.error(
-          'Failed to initialize analytics Redis client:',
-          this.lastRedisError,
-        );
-      }
-      return;
-    }
-    this.lastRedisError = 'REDIS_URL is not set';
-  }
-
-  async onModuleDestroy() {
-    if (this.redis) {
-      await this.redis.quit();
-      this.redis = null;
-    }
-    this.enabled = false;
-    this.redisReady = false;
+  private get redis(): Redis | null {
+    return this.redisService.getClient();
   }
 
   private dayKey(date: Date): string {
@@ -491,7 +445,7 @@ export class AnalyticsService implements OnModuleDestroy {
     body: TrackPayload,
     countryHint?: string,
   ): Promise<void> {
-    if (!this.enabled || !this.redis || !this.redisReady) return;
+    if (!this.redisService.isReady() || !this.redis) return;
     if (body.consent === false) return;
 
     const now = new Date();
@@ -575,13 +529,14 @@ export class AnalyticsService implements OnModuleDestroy {
         }
       }
       void Promise.all(promises).catch((error: unknown) => {
-        this.lastRedisError =
+        this.redisService.setLastError(
           error instanceof Error
             ? error.message
-            : 'Failed writing analytics page_view';
+            : 'Failed writing analytics page_view',
+        );
         console.error(
           'Analytics write error (page_view):',
-          this.lastRedisError,
+          this.redisService.getLastError(),
         );
       });
       return;
@@ -589,11 +544,12 @@ export class AnalyticsService implements OnModuleDestroy {
 
     if (body.event === LIKE_EVENT) {
       void this.incr(`${KEY_PREFIX}:like:${day}`).catch((error: unknown) => {
-        this.lastRedisError =
+        this.redisService.setLastError(
           error instanceof Error
             ? error.message
-            : 'Failed writing analytics like';
-        console.error('Analytics write error (like):', this.lastRedisError);
+            : 'Failed writing analytics like',
+        );
+        console.error('Analytics write error (like):', this.redisService.getLastError());
       });
       return;
     }
@@ -609,11 +565,12 @@ export class AnalyticsService implements OnModuleDestroy {
         ),
         this.hincrby(`${KEY_PREFIX}:funnel:path:${day}`, `${path}|${event}`, 1),
       ]).catch((error: unknown) => {
-        this.lastRedisError =
+        this.redisService.setLastError(
           error instanceof Error
             ? error.message
-            : 'Failed writing funnel analytics';
-        console.error('Analytics write error (funnel):', this.lastRedisError);
+            : 'Failed writing funnel analytics',
+        );
+        console.error('Analytics write error (funnel):', this.redisService.getLastError());
       });
       return;
     }
@@ -635,13 +592,14 @@ export class AnalyticsService implements OnModuleDestroy {
             this.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec),
             this.incr(`${KEY_PREFIX}:duration_count:${day}`),
           ]).catch((error: unknown) => {
-            this.lastRedisError =
+            this.redisService.setLastError(
               error instanceof Error
                 ? error.message
-                : 'Failed writing analytics duration';
+                : 'Failed writing analytics duration',
+            );
             console.error(
               'Analytics write error (duration):',
-              this.lastRedisError,
+              this.redisService.getLastError(),
             );
           });
           // Bounce: single pageview + left within 30s
@@ -723,7 +681,7 @@ export class AnalyticsService implements OnModuleDestroy {
    * Results are cached in memory for 1 minute per (from, to) to speed up repeated requests.
    */
   async getStats(from: string, to: string): Promise<AnalyticsStats | null> {
-    if (!this.redis || !this.redisReady) return this.emptyStats(from, to);
+    if (!this.redis || !this.redisService.isReady()) return this.emptyStats(from, to);
 
     const cacheKey = `${from}:${to}`;
     const now = Date.now();
@@ -933,11 +891,12 @@ export class AnalyticsService implements OnModuleDestroy {
         retention = undefined;
       }
     } catch (error) {
-      this.lastRedisError =
+      this.redisService.setLastError(
         error instanceof Error
           ? error.message
-          : 'Failed reading analytics stats';
-      console.error('Analytics read error:', this.lastRedisError);
+          : 'Failed reading analytics stats',
+      );
+      console.error('Analytics read error:', this.redisService.getLastError());
       return this.emptyStats(days[0] || from, days[days.length - 1] || to);
     }
 
@@ -1066,17 +1025,13 @@ export class AnalyticsService implements OnModuleDestroy {
     return result;
   }
 
-  isEnabled(): boolean {
-    return this.enabled && this.redisReady;
-  }
-
   /** Real-time: active visitors in last 5 minutes and count by country. */
   async getRealtime(): Promise<{
     activeNow: number;
     byCountry: Record<string, number>;
   }> {
     const out = { activeNow: 0, byCountry: {} as Record<string, number> };
-    if (!this.redis || !this.redisReady) return out;
+    if (!this.redis || !this.redisService.isReady()) return out;
 
     const nowMs = Date.now();
     const minScore = nowMs - RECENT_WINDOW_MS;
@@ -1107,24 +1062,25 @@ export class AnalyticsService implements OnModuleDestroy {
     if (!this.redis) return false;
     try {
       const pong = await this.redis.ping();
-      const healthy = pong === 'PONG';
-      this.redisReady = healthy;
-      this.enabled = healthy;
-      if (healthy) {
-        this.lastRedisError = null;
+      if (pong === 'PONG') {
+        this.redisService.setLastError(null);
+        return true;
       }
-      return healthy;
+      return false;
     } catch (error) {
-      this.enabled = false;
-      this.redisReady = false;
-      this.lastRedisError =
-        error instanceof Error ? error.message : 'Redis ping failed';
+      this.redisService.setLastError(
+        error instanceof Error ? error.message : 'Redis ping failed',
+      );
       console.error(
         'Analytics Redis health check failed:',
-        this.lastRedisError,
+        this.redisService.getLastError(),
       );
       return false;
     }
+  }
+
+  isEnabled(): boolean {
+    return this.redisService.isReady();
   }
 
   getHealthDetails(): {
@@ -1134,8 +1090,8 @@ export class AnalyticsService implements OnModuleDestroy {
   } {
     return {
       configured: Boolean(process.env.REDIS_URL?.trim()),
-      connected: this.redisReady,
-      lastError: this.lastRedisError,
+      connected: this.redisService.isReady(),
+      lastError: this.redisService.getLastError(),
     };
   }
 }

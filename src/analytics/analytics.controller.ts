@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
 import { isIP } from 'node:net';
 import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsService } from './analytics.service';
 import { TrackDto } from './dto/track.dto';
@@ -117,6 +118,8 @@ export class AnalyticsController {
     private readonly prisma: PrismaService,
   ) {}
 
+  /** Higher throttle limit: many page_view/page_leave/funnel events per session. */
+  @Throttle({ short: { limit: 300, ttl: 60_000 }, long: { limit: 600, ttl: 60_000 } })
   @Post('track')
   track(@Req() req: Request, @Body() body: TrackDto): { ok: boolean } {
     const ip = getClientIp(req);

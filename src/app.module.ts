@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from './config/config.module';
+import { RedisModule } from './redis/redis.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -22,9 +23,10 @@ import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
     ConfigModule,
+    RedisModule,
     ThrottlerModule.forRoot([
       { name: 'short', ttl: 60_000, limit: 10 },
-      { name: 'long', ttl: 60_000, limit: 100 },
+      { name: 'long', ttl: 3600_000, limit: 500 },
     ]),
     PrismaModule,
     AuthModule,
