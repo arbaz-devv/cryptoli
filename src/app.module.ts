@@ -5,6 +5,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from './config/config.module';
 import { RedisModule } from './redis/redis.module';
+import { RedisService } from './redis/redis.service';
+import { RedisThrottlerStorage } from './redis/redis-throttler-storage';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { ReviewsModule } from './reviews/reviews.module';
@@ -24,10 +26,16 @@ import { NotificationsModule } from './notifications/notifications.module';
   imports: [
     ConfigModule,
     RedisModule,
-    ThrottlerModule.forRoot([
-      { name: 'short', ttl: 60_000, limit: 10 },
-      { name: 'long', ttl: 3600_000, limit: 500 },
-    ]),
+    ThrottlerModule.forRootAsync({
+      useFactory: (redis: RedisService) => ({
+        throttlers: [
+          { name: 'short', ttl: 60_000, limit: 10 },
+          { name: 'long', ttl: 3600_000, limit: 500 },
+        ],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+      inject: [RedisService],
+    }),
     PrismaModule,
     AuthModule,
     SocketModule,

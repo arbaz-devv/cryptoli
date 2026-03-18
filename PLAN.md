@@ -150,7 +150,7 @@
 
 ---
 
-### [ ] 9. In-memory throttle store — use Redis when available
+### [x] 9. In-memory throttle store — use Redis when available
 
 **Problem:** `ThrottlerModule.forRoot([...])` uses default in-memory store. Counters reset on restart. In multi-instance deploys, each instance has separate counts.
 
