@@ -34,6 +34,8 @@ Database schema in `prisma/schema.prisma`. Reactions are polymorphic (nullable F
 - **AuthModule <-> NotificationsModule is a circular dependency** resolved with `forwardRef()` on both sides. Do not add direct imports between these modules.
 - **Socket.IO is manual, not @WebSocketGateway.** Set up in `main.ts`, stored on `globalThis.__socketIO`. SocketService methods no-op when the server isn't initialized (including in tests).
 - **Profile cache (Redis) must be invalidated manually.** If you add mutations affecting profile data in UsersService, call `invalidateProfileCache(username)`.
+- **Search before writing.** Before creating new code, search the codebase to confirm the functionality doesn't already exist — don't assume not implemented.
+- **Write tests for what you change.** Write or update tests for code you create or modify. Tests must pass before the task is complete.
 
 ## Errors
 
