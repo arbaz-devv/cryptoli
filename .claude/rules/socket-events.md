@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/socket/**"
-  - "src/**/services/**"
+  - "src/**/*.service.ts"
 ---
 Socket.IO is push-only (server -> client). No client -> server events are defined.
 

@@ -24,7 +24,7 @@ Cascade chains are defined in `prisma/schema.prisma` via `onDelete: Cascade`. Be
 
 ## Denormalized Counters
 
-Several models have denormalized count fields updated via `$transaction` with a recount pattern. The canonical implementation is `ReviewsService.vote()`. Run `grep -rn 'helpfulCount\|upvoteCount\|downvoteCount\|commentCount' src/` to find all denormalized fields and their update sites.
+Several models have denormalized count fields updated via `$transaction` with a recount pattern. The canonical implementation is `ReviewsService.vote()`. Run `grep -rn 'helpfulCount\|downVoteCount\|reportCount' src/` to find all denormalized fields and their update sites. Note: `commentCount` is NOT a schema field — it is computed at query time via `_count`.
 
 The `criteriaScores` field on Review is Json. Scoring weights are in `calculateOverallScore()` at `src/common/utils.ts`.
 

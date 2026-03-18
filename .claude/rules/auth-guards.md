@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/**/controllers/**"
   - "src/**/*.controller.ts"
+  - "src/**/*.guard.ts"
 ---
 Three guards exist — use the right one:
 - `@UseGuards(AuthGuard)` — user MUST be authenticated (401 if not). Sets `req.user` to SessionUser.
