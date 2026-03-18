@@ -11,6 +11,7 @@ import {
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import { AdminGuard } from '../admin/admin.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ComplaintsService } from './complaints.service';
 
@@ -74,7 +75,7 @@ export class ComplaintsController {
   }
 
   @Post(':id/reply')
-  @UseGuards(AuthGuard)
+  @UseGuards(AdminGuard)
   reply(@Param('id') id: string, @Body() body: { content: string }) {
     return this.complaintsService.reply(id, body.content);
   }

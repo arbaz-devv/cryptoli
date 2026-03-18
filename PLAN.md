@@ -42,7 +42,7 @@
 
 ---
 
-### [ ] 3. Complaint reply authorization bypass
+### [x] 3. Complaint reply authorization bypass
 
 **Problem:** `POST /api/complaints/:id/reply` only requires `AuthGuard`. Any authenticated user can post company replies — the `req.user` is never passed to the service, no ownership check exists. There is no company-user ownership model in the schema.
 
