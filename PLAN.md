@@ -79,7 +79,7 @@
 
 ---
 
-### [ ] 5. `helpful()` race condition — non-transactional vote count
+### [x] 5. `helpful()` race condition — non-transactional vote count
 
 **Problem:** `reviews.service.ts:helpful()` (lines ~303-342) uses `{ increment: 1 }` / `{ decrement: 1 }` outside a transaction. The `vote()` method on the same file correctly uses `$transaction` with recount. This violates CLAUDE.md constraint.
 

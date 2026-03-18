@@ -301,43 +301,48 @@ export class ReviewsService {
   }
 
   async helpful(reviewId: string, userId: string) {
-    const review = await this.prisma.review.findUnique({
-      where: { id: reviewId },
-    });
-    if (!review) throw new NotFoundError('Review not found');
-
-    const existing = await this.prisma.helpfulVote.findUnique({
-      where: { userId_reviewId: { userId, reviewId } },
-    });
-
-    if (existing) {
-      await this.prisma.helpfulVote.delete({ where: { id: existing.id } });
-      const updated = await this.prisma.review.update({
+    const result = await this.prisma.$transaction(async (tx) => {
+      const review = await tx.review.findUnique({
         where: { id: reviewId },
-        data: { helpfulCount: { decrement: 1 } },
-        select: { helpfulCount: true, downVoteCount: true },
+        select: { id: true },
       });
-      this.socketService.emitReviewVoteUpdated(
-        reviewId,
-        updated.helpfulCount,
-        updated.downVoteCount,
-      );
-      return { helpful: false };
-    } else {
-      await this.prisma.helpfulVote.create({
-        data: { userId, reviewId },
+      if (!review) throw new NotFoundError('Review not found');
+
+      const existing = await tx.helpfulVote.findUnique({
+        where: { userId_reviewId: { userId, reviewId } },
       });
-      const updated = await this.prisma.review.update({
+
+      let helpful: boolean;
+
+      if (existing) {
+        await tx.helpfulVote.delete({ where: { id: existing.id } });
+        helpful = false;
+      } else {
+        await tx.helpfulVote.create({
+          data: { userId, reviewId },
+        });
+        helpful = true;
+      }
+
+      const [helpfulCount, downVoteCount] = await Promise.all([
+        tx.helpfulVote.count({ where: { reviewId, voteType: 'UP' } }),
+        tx.helpfulVote.count({ where: { reviewId, voteType: 'DOWN' } }),
+      ]);
+
+      await tx.review.update({
         where: { id: reviewId },
-        data: { helpfulCount: { increment: 1 } },
-        select: { helpfulCount: true, downVoteCount: true },
+        data: { helpfulCount, downVoteCount },
       });
-      this.socketService.emitReviewVoteUpdated(
-        reviewId,
-        updated.helpfulCount,
-        updated.downVoteCount,
-      );
-      return { helpful: true };
-    }
+
+      return { helpful, helpfulCount, downVoteCount };
+    });
+
+    this.socketService.emitReviewVoteUpdated(
+      reviewId,
+      result.helpfulCount,
+      result.downVoteCount,
+    );
+
+    return { helpful: result.helpful };
   }
 }
