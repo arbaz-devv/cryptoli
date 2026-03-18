@@ -52,6 +52,21 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const authService = app.get(AuthService);
 
+  if (config.trustProxy) {
+    const expressApp = app.getHttpAdapter().getInstance() as {
+      set: (key: string, value: string | number | boolean) => void;
+    };
+    let proxyValue: string | number | boolean = config.trustProxy;
+    if (config.trustProxy === 'true') {
+      proxyValue = true;
+    } else if (config.trustProxy === 'false') {
+      proxyValue = false;
+    } else if (/^\d+$/.test(config.trustProxy)) {
+      proxyValue = parseInt(config.trustProxy, 10);
+    }
+    expressApp.set('trust proxy', proxyValue);
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

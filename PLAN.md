@@ -133,7 +133,7 @@
 
 ---
 
-### [ ] 8. No proxy trust configuration — throttler uses wrong IP
+### [x] 8. No proxy trust configuration — throttler uses wrong IP
 
 **Problem:** No `trust proxy` setting in main.ts. Behind a reverse proxy, `req.ip` returns the proxy IP. ThrottlerGuard rate-limits by `req.ip`, so all users share one bucket.
 
