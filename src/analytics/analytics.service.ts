@@ -549,7 +549,10 @@ export class AnalyticsService {
             ? error.message
             : 'Failed writing analytics like',
         );
-        console.error('Analytics write error (like):', this.redisService.getLastError());
+        console.error(
+          'Analytics write error (like):',
+          this.redisService.getLastError(),
+        );
       });
       return;
     }
@@ -570,7 +573,10 @@ export class AnalyticsService {
             ? error.message
             : 'Failed writing funnel analytics',
         );
-        console.error('Analytics write error (funnel):', this.redisService.getLastError());
+        console.error(
+          'Analytics write error (funnel):',
+          this.redisService.getLastError(),
+        );
       });
       return;
     }
@@ -681,7 +687,8 @@ export class AnalyticsService {
    * Results are cached in memory for 1 minute per (from, to) to speed up repeated requests.
    */
   async getStats(from: string, to: string): Promise<AnalyticsStats | null> {
-    if (!this.redis || !this.redisService.isReady()) return this.emptyStats(from, to);
+    if (!this.redis || !this.redisService.isReady())
+      return this.emptyStats(from, to);
 
     const cacheKey = `${from}:${to}`;
     const now = Date.now();

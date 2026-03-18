@@ -52,11 +52,13 @@ export class NotificationsService {
       unreadCount,
     });
 
-    this.pushService.sendToUser(input.userId, {
-      title: input.title,
-      body: input.message,
-      url: input.link,
-    }).catch(() => {});
+    this.pushService
+      .sendToUser(input.userId, {
+        title: input.title,
+        body: input.message,
+        url: input.link,
+      })
+      .catch(() => {});
 
     return notification;
   }

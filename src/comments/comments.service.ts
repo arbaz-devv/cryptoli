@@ -116,7 +116,10 @@ export class CommentsService {
       const commentCount = await this.prisma.comment.count({
         where: { reviewId: validated.reviewId, parentId: null },
       });
-      this.socketService.emitCommentCountUpdated(validated.reviewId, commentCount);
+      this.socketService.emitCommentCountUpdated(
+        validated.reviewId,
+        commentCount,
+      );
     }
 
     return comment;

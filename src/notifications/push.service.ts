@@ -42,7 +42,10 @@ export class PushService implements OnModuleInit {
     });
   }
 
-  async sendToUser(userId: string, payload: { title: string; body: string; url?: string }) {
+  async sendToUser(
+    userId: string,
+    payload: { title: string; body: string; url?: string },
+  ) {
     if (!this.vapidConfigured) return;
 
     const subs = await this.prisma.pushSubscription.findMany({
