@@ -334,6 +334,7 @@ export class AuthController {
         username: string;
       };
     },
+    @Res({ passthrough: true }) res: Response,
   ) {
     let parsed: { currentPassword: string; newPassword: string };
     try {
@@ -370,6 +371,10 @@ export class AuthController {
       parsed.newPassword,
     );
     await this.authService.updatePassword(req.user.id, nextPasswordHash);
+
+    const newToken = await this.authService.createSession(req.user.id);
+    await this.authService.deleteOtherSessions(req.user.id, newToken);
+    res.cookie('session', newToken, this.sessionCookieOptions());
 
     await this.notificationsService.createForUser({
       userId: req.user.id,

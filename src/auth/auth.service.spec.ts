@@ -19,10 +19,7 @@ describe('AuthService — passwordHash exclusion', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(
-      prisma as unknown as PrismaService,
-      config,
-    );
+    service = new AuthService(prisma as unknown as PrismaService, config);
   });
 
   it('findUserByEmailOrUsername should use select without passwordHash', async () => {
@@ -76,5 +73,44 @@ describe('AuthService — passwordHash exclusion', () => {
     expect(result).toHaveProperty('passwordHash');
     const call = prisma.user.findUnique.mock.calls[0][0];
     expect(call.select.passwordHash).toBe(true);
+  });
+});
+
+describe('AuthService — deleteOtherSessions', () => {
+  let service: AuthService;
+  let prisma: {
+    user: { findFirst: jest.Mock; findUnique: jest.Mock };
+    session: { deleteMany: jest.Mock };
+  };
+
+  beforeEach(() => {
+    prisma = {
+      user: { findFirst: jest.fn(), findUnique: jest.fn() },
+      session: { deleteMany: jest.fn() },
+    };
+    const config = { jwtSecret: 'test-secret' } as ConfigService;
+    service = new AuthService(prisma as unknown as PrismaService, config);
+  });
+
+  it('should delete all sessions for user except the given token', async () => {
+    prisma.session.deleteMany.mockResolvedValue({ count: 3 });
+
+    const count = await service.deleteOtherSessions(
+      'user-1',
+      'keep-this-token',
+    );
+
+    expect(count).toBe(3);
+    expect(prisma.session.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', token: { not: 'keep-this-token' } },
+    });
+  });
+
+  it('should return 0 when no other sessions exist', async () => {
+    prisma.session.deleteMany.mockResolvedValue({ count: 0 });
+
+    const count = await service.deleteOtherSessions('user-1', 'only-token');
+
+    expect(count).toBe(0);
   });
 });

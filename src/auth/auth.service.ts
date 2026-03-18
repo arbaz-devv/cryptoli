@@ -281,6 +281,16 @@ export class AuthService {
     });
   }
 
+  async deleteOtherSessions(
+    userId: string,
+    exceptToken: string,
+  ): Promise<number> {
+    const result = await this.prisma.session.deleteMany({
+      where: { userId, token: { not: exceptToken } },
+    });
+    return result.count;
+  }
+
   async updateProfile(
     userId: string,
     data: { username?: string; bio?: string },

@@ -117,7 +117,7 @@
 
 ---
 
-### [ ] 7. Password change does not invalidate other sessions
+### [x] 7. Password change does not invalidate other sessions
 
 **Problem:** `auth.service.ts:updatePassword()` only updates the hash. Existing sessions (including attacker's stolen session) remain valid for up to 7 days.
 
