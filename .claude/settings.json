@@ -70,8 +70,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run lint 2>&1 | tail -20 && npm run test -- --passWithNoTests 2>&1 | tail -20",
-            "timeout": 120
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run build 2>&1 | tail -10 && npm run lint 2>&1 | tail -20 && npm run test -- --passWithNoTests 2>&1 | tail -20",
+            "timeout": 180
           }
         ]
       }
