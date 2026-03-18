@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
@@ -210,6 +211,10 @@ export class AuthService {
     return cookies.session;
   }
 
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
   async createSession(userId: string): Promise<string> {
     const token = jwt.sign({ userId }, this.config.jwtSecret, {
       expiresIn: '7d',
@@ -217,7 +222,7 @@ export class AuthService {
     await this.prisma.session.create({
       data: {
         userId,
-        token,
+        token: this.hashToken(token),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
@@ -231,7 +236,7 @@ export class AuthService {
     try {
       jwt.verify(token, this.config.jwtSecret);
       const session = await this.prisma.session.findUnique({
-        where: { token },
+        where: { token: this.hashToken(token) },
         include: {
           user: {
             select: {
@@ -264,7 +269,9 @@ export class AuthService {
   }
 
   async deleteSession(token: string): Promise<void> {
-    await this.prisma.session.deleteMany({ where: { token } });
+    await this.prisma.session.deleteMany({
+      where: { token: this.hashToken(token) },
+    });
   }
 
   async getUserById(userId: string) {
@@ -286,7 +293,7 @@ export class AuthService {
     exceptToken: string,
   ): Promise<number> {
     const result = await this.prisma.session.deleteMany({
-      where: { userId, token: { not: exceptToken } },
+      where: { userId, token: { not: this.hashToken(exceptToken) } },
     });
     return result.count;
   }

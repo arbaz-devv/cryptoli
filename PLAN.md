@@ -168,7 +168,7 @@
 
 ---
 
-### [ ] 10. Session tokens stored as plain JWTs — hash before storing
+### [x] 10. Session tokens stored as plain JWTs — hash before storing
 
 **Problem:** Raw JWTs stored in `Session.token` column. If DB is compromised, all sessions are immediately usable.
 
