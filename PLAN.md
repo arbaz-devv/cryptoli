@@ -28,7 +28,7 @@
 
 ---
 
-### [ ] 2. Admin login endpoint has no dedicated rate limiting
+### [x] 2. Admin login endpoint has no dedicated rate limiting
 
 **Problem:** `admin-auth.controller.ts` `POST /api/admin/auth/login` has no `@Throttle()` decorator, falls through to global limits (10/min). User auth endpoints correctly override to 5 req/60s.
 
