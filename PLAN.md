@@ -95,7 +95,7 @@
 
 ---
 
-### [ ] 6. User queries fetch passwordHash unnecessarily
+### [x] 6. User queries fetch passwordHash unnecessarily
 
 **Problem:** Multiple Prisma queries on the User model omit `select`, returning all columns including `passwordHash`. The hash is never sent to clients but lives in memory unnecessarily.
 
