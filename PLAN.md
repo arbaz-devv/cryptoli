@@ -59,7 +59,7 @@
 
 ---
 
-### [ ] 4. Analytics API key grants admin access — separate keys completely
+### [x] 4. Analytics API key grants admin access — separate keys completely
 
 **Problem:** `admin.guard.ts:19` uses `process.env.ANALYTICS_API_KEY || process.env.ADMIN_API_KEY` — the analytics key grants full admin access. Also: admin key accepted via `?key=` query string (leaks in logs). Also: analytics endpoints are completely open when `ANALYTICS_API_KEY` is unset.
 
