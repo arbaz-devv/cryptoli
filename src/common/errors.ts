@@ -62,13 +62,15 @@ export function handleError(error: unknown): {
   }
 
   if (error instanceof Error) {
+    console.error('[UnhandledError]', error.message, error.stack);
     return {
       statusCode: 500,
-      message: error.message || 'Internal server error',
+      message: 'Internal server error',
       code: 'INTERNAL_ERROR',
     };
   }
 
+  console.error('[UnknownError]', error);
   return {
     statusCode: 500,
     message: 'Internal server error',
