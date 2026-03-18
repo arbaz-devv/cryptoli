@@ -64,7 +64,11 @@ export class AuthService {
 
     const addCandidate = (candidate: string) => {
       const normalized = candidate.slice(0, 30);
-      if (normalized && normalized !== raw && /^[a-zA-Z0-9_]+$/.test(normalized)) {
+      if (
+        normalized &&
+        normalized !== raw &&
+        /^[a-zA-Z0-9_]+$/.test(normalized)
+      ) {
         suggestions.add(normalized);
       }
     };
@@ -82,7 +86,16 @@ export class AuthService {
     addCandidate(`${base}_${(len % 10) + 1}`);
 
     // Simple domain-related suffixes/prefixes
-    const adjectives = ['real', 'crypto', 'secure', 'pro', 'official', 'hub', 'reviews', 'wallet'];
+    const adjectives = [
+      'real',
+      'crypto',
+      'secure',
+      'pro',
+      'official',
+      'hub',
+      'reviews',
+      'wallet',
+    ];
     for (const word of adjectives) {
       addCandidate(`${base}_${word}`);
       addCandidate(`${word}_${base}`);

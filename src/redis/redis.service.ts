@@ -21,7 +21,8 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       });
       this.client.on('error', (error: unknown) => {
         this.ready = false;
-        this.lastError = error instanceof Error ? error.message : 'Unknown Redis error';
+        this.lastError =
+          error instanceof Error ? error.message : 'Unknown Redis error';
       });
       this.client.on('end', () => {
         this.ready = false;
@@ -29,7 +30,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.ready = false;
       this.lastError =
-        error instanceof Error ? error.message : 'Failed to initialize Redis client';
+        error instanceof Error
+          ? error.message
+          : 'Failed to initialize Redis client';
     }
   }
 

@@ -25,7 +25,12 @@ export class UsersController {
     @Req() req?: Request & { user?: SessionUser | null },
   ) {
     const viewerId = req?.user?.id ?? null;
-    const list = usernames ? usernames.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const list = usernames
+      ? usernames
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
     return this.usersService.getFollowStatusBulk(viewerId, list);
   }
 
@@ -77,4 +82,3 @@ export class UsersController {
     return this.usersService.listFollowing(username);
   }
 }
-

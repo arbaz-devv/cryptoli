@@ -119,7 +119,10 @@ export class AnalyticsController {
   ) {}
 
   /** Higher throttle limit: many page_view/page_leave/funnel events per session. */
-  @Throttle({ short: { limit: 300, ttl: 60_000 }, long: { limit: 600, ttl: 60_000 } })
+  @Throttle({
+    short: { limit: 300, ttl: 60_000 },
+    long: { limit: 600, ttl: 60_000 },
+  })
   @Post('track')
   track(@Req() req: Request, @Body() body: TrackDto): { ok: boolean } {
     const ip = getClientIp(req);

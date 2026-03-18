@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -37,9 +41,19 @@ export class UsersService {
       createdAt: Date;
     };
     let user: ProfileUser | null;
-    let stats: { followersCount: number; followingCount: number; postsCount: number; complaintsCount: number };
+    let stats: {
+      followersCount: number;
+      followingCount: number;
+      postsCount: number;
+      complaintsCount: number;
+    };
 
-    if (cached?.user && cached?.stats && typeof cached.stats === 'object' && 'followersCount' in cached.stats) {
+    if (
+      cached?.user &&
+      cached?.stats &&
+      typeof cached.stats === 'object' &&
+      'followersCount' in cached.stats
+    ) {
       user = cached.user as ProfileUser;
       stats = cached.stats as typeof stats;
     } else {
@@ -69,7 +83,11 @@ export class UsersService {
       stats = { followersCount, followingCount, postsCount, complaintsCount };
       if (cacheEnabled) {
         try {
-          await redis!.setex(cacheKey, PROFILE_CACHE_TTL_SEC, JSON.stringify({ user, stats }));
+          await redis.setex(
+            cacheKey,
+            PROFILE_CACHE_TTL_SEC,
+            JSON.stringify({ user, stats }),
+          );
         } catch {
           // ignore cache write errors
         }
@@ -216,7 +234,10 @@ export class UsersService {
     };
   }
 
-  async getFollowStatus(viewerId: string | null, username: string): Promise<{ following: boolean }> {
+  async getFollowStatus(
+    viewerId: string | null,
+    username: string,
+  ): Promise<{ following: boolean }> {
     if (!viewerId) return { following: false };
     const target = await this.prisma.user.findUnique({
       where: { username },
@@ -235,7 +256,9 @@ export class UsersService {
     usernames: string[],
   ): Promise<{ following: Record<string, boolean> }> {
     const list = Array.isArray(usernames) ? usernames : [];
-    const unique = [...new Set(list)].filter((u) => u && typeof u === 'string').slice(0, 50);
+    const unique = [...new Set(list)]
+      .filter((u) => u && typeof u === 'string')
+      .slice(0, 50);
     if (!viewerId || unique.length === 0) {
       return { following: Object.fromEntries(unique.map((u) => [u, false])) };
     }
@@ -258,4 +281,3 @@ export class UsersService {
     return { following };
   }
 }
-

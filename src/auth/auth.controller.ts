@@ -145,7 +145,10 @@ export class AuthController {
       const user = await this.authService.updateProfile(req.user.id, data);
       return { user };
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         const target = (err.meta?.target as string[] | undefined)?.[0];
         if (target === 'username') {
           throw new ConflictException('Username is already taken');
@@ -208,7 +211,7 @@ export class AuthController {
     }
 
     const passwordHash = await this.authService.hashPassword(password);
-    let user;
+    let user: Awaited<ReturnType<AuthService['createUser']>>;
     try {
       user = await this.authService.createUser({
         email,
@@ -216,7 +219,10 @@ export class AuthController {
         passwordHash,
       });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         const target = (err.meta?.target as string[] | undefined)?.[0];
         if (target === 'email') {
           throw new ConflictException('Email is already registered');
@@ -321,7 +327,8 @@ export class AuthController {
   @UseGuards(AuthGuard)
   async changePassword(
     @Body() body: unknown,
-    @Req() req: Request & {
+    @Req()
+    req: Request & {
       user: {
         id: string;
         username: string;
