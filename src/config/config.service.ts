@@ -53,4 +53,8 @@ export class ConfigService implements OnModuleInit {
   get isProduction(): boolean {
     return this.getOrThrow().NODE_ENV === 'production';
   }
+
+  get trustProxy(): string | undefined {
+    return this.getOrThrow().TRUST_PROXY;
+  }
 }

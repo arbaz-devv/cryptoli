@@ -15,8 +15,7 @@ export class AdminGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   private getApiKey(req: Request): string | null {
-    const envKey =
-      process.env.ANALYTICS_API_KEY || process.env.ADMIN_API_KEY || '';
+    const envKey = process.env.ADMIN_API_KEY || '';
     if (!envKey.trim()) return null;
     const headerKey =
       typeof req.headers?.['x-admin-key'] === 'string'
@@ -24,10 +23,7 @@ export class AdminGuard implements CanActivate {
         : Array.isArray(req.headers?.['x-admin-key'])
           ? req.headers['x-admin-key'][0]
           : undefined;
-    const query = (req as Request & { query?: { key?: string } }).query;
-    const queryKey = typeof query?.key === 'string' ? query.key : undefined;
-    const provided = headerKey || queryKey;
-    return provided === envKey ? envKey : null;
+    return headerKey === envKey ? envKey : null;
   }
 
   private getAdminFromToken(req: Request): { email: string } | null {

@@ -245,7 +245,19 @@ export class AdminService {
   async getUserDetail(id: string, lazy = false) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: { _count: { select: { reviews: true } } },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        avatar: true,
+        role: true,
+        verified: true,
+        reputation: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { reviews: true } },
+      },
     });
     if (!user) throw new NotFoundException('User not found');
 

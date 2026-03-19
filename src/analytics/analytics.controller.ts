@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { isIP } from 'node:net';
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
 
 function firstHeader(req: Request, name: string): string {
@@ -133,16 +142,12 @@ export class AnalyticsController {
     return { ok: true };
   }
 
+  @UseGuards(AnalyticsGuard)
   @Get('stats')
   async stats(
     @Query('from') from: string,
     @Query('to') to: string,
-    @Query('key') key?: string,
   ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
-    const apiKey = process.env.ANALYTICS_API_KEY;
-    if (apiKey && apiKey.length > 0 && key !== apiKey) {
-      return { ok: false, error: 'Unauthorized' };
-    }
     const fromDate =
       from ||
       new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
@@ -181,35 +186,26 @@ export class AnalyticsController {
     };
   }
 
+  @UseGuards(AnalyticsGuard)
   @Get('realtime')
-  async realtime(@Query('key') key?: string): Promise<{
+  async realtime(): Promise<{
     ok: boolean;
     activeNow?: number;
     byCountry?: Record<string, number>;
     error?: string;
   }> {
-    const apiKey = process.env.ANALYTICS_API_KEY;
-    if (apiKey && apiKey.length > 0 && key !== apiKey) {
-      return { ok: false, error: 'Unauthorized' };
-    }
     const data = await this.analyticsService.getRealtime();
     return { ok: true, activeNow: data.activeNow, byCountry: data.byCountry };
   }
 
   /** Latest registered users (real data from DB) for admin analytics dashboard */
+  @UseGuards(AnalyticsGuard)
   @Get('latest-members')
-  async latestMembers(
-    @Query('limit') limit = '8',
-    @Query('key') key?: string,
-  ): Promise<{
+  async latestMembers(@Query('limit') limit = '8'): Promise<{
     ok: boolean;
     members?: { id: string; name: string; date: string }[];
     error?: string;
   }> {
-    const apiKey = process.env.ANALYTICS_API_KEY;
-    if (apiKey && apiKey.length > 0 && key !== apiKey) {
-      return { ok: false, error: 'Unauthorized' };
-    }
     const take = Math.min(20, Math.max(1, parseInt(limit, 10) || 8));
     try {
       const users = await this.prisma.user.findMany({

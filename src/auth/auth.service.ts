@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
@@ -28,6 +29,7 @@ export class AuthService {
       where: {
         OR: [{ email }, { username }],
       },
+      select: { id: true, email: true, username: true },
     });
   }
 
@@ -41,6 +43,7 @@ export class AuthService {
         username: username.trim(),
         ...(exceptUserId ? { id: { not: exceptUserId } } : {}),
       },
+      select: { id: true },
     });
     return !existing;
   }
@@ -120,6 +123,16 @@ export class AuthService {
   async findUserByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        avatar: true,
+        verified: true,
+        reputation: true,
+        passwordHash: true,
+      },
     });
   }
 
@@ -198,14 +211,20 @@ export class AuthService {
     return cookies.session;
   }
 
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
   async createSession(userId: string): Promise<string> {
-    const token = jwt.sign({ userId }, this.config.jwtSecret, {
-      expiresIn: '7d',
-    });
+    const token = jwt.sign(
+      { userId, jti: randomUUID() },
+      this.config.jwtSecret,
+      { expiresIn: '7d' },
+    );
     await this.prisma.session.create({
       data: {
         userId,
-        token,
+        token: this.hashToken(token),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
@@ -219,8 +238,21 @@ export class AuthService {
     try {
       jwt.verify(token, this.config.jwtSecret);
       const session = await this.prisma.session.findUnique({
-        where: { token },
-        include: { user: true },
+        where: { token: this.hashToken(token) },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              role: true,
+              avatar: true,
+              bio: true,
+              verified: true,
+              reputation: true,
+            },
+          },
+        },
       });
       if (!session || session.expiresAt < new Date()) return null;
       return {
@@ -239,12 +271,15 @@ export class AuthService {
   }
 
   async deleteSession(token: string): Promise<void> {
-    await this.prisma.session.deleteMany({ where: { token } });
+    await this.prisma.session.deleteMany({
+      where: { token: this.hashToken(token) },
+    });
   }
 
   async getUserById(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
+      select: { id: true, passwordHash: true },
     });
   }
 
@@ -253,6 +288,16 @@ export class AuthService {
       where: { id: userId },
       data: { passwordHash },
     });
+  }
+
+  async deleteOtherSessions(
+    userId: string,
+    exceptToken: string,
+  ): Promise<number> {
+    const result = await this.prisma.session.deleteMany({
+      where: { userId, token: { not: this.hashToken(exceptToken) } },
+    });
+    return result.count;
   }
 
   async updateProfile(
