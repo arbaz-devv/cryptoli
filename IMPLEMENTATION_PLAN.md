@@ -284,7 +284,7 @@
 
 ---
 
-## Phase 7: Integration Tests (Tier 2 — Real Database) — PARTIAL (17 tests)
+## Phase 7: Integration Tests (Tier 2 — Real Database) — DONE (38 tests)
 > Verify that Prisma queries, transactions, and constraints actually work. Requires Docker.
 
 - [x] **7.1 — `test/integration/auth-sessions.spec.ts`** — 4 tests
@@ -323,11 +323,17 @@
   - Delete Review → Comments, HelpfulVotes, Reactions, Media gone
   - Delete Comment → child Comments, CommentVotes, Reactions gone
 
-- [ ] **7.7 — `test/integration/analytics-tracking.spec.ts`** *(requires Redis container)*
+- [x] **7.7 — `test/integration/analytics-tracking.spec.ts`** — 6 tests *(requires Redis container)*
   - `track()` page_view → Redis keys exist with correct values
   - `getStats()` → aggregated data matches what was tracked
   - `getRealtime()` → active sessions reflect recent tracks
   - Redis unavailable → graceful no-op (stop Redis container mid-test)
+
+> **Learnings:**
+> - Integration tests must run with `maxWorkers: 1` — parallel `TRUNCATE ... CASCADE` causes deadlocks between test suites sharing the same PostgreSQL container
+> - `jest-integration.json` now has `forceExit: true` to handle the `getTestRedis()` singleton lingering after globalTeardown
+> - Analytics `track()` uses fire-and-forget (`void Promise.all(...)`) — integration tests need a small delay + Redis PING round-trip before asserting on written keys
+> - `toHaveProperty('google.com')` fails in Jest because the dot is interpreted as a nested path — use bracket notation (`obj['google.com']`) instead
 
 ---
 
@@ -438,7 +444,7 @@
 - `main.ts` — covered by e2e indirectly
 - `api.controller.ts` / `data.service.ts` — dead code
 
-**Actual totals:** 335 unit + 32 integration + 78 e2e = **445 tests** (335 run via `npm test`)
+**Actual totals:** 335 unit + 38 integration + 78 e2e = **451 tests** (335 run via `npm test`)
 
 ---
 

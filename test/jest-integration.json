@@ -8,5 +8,7 @@
   "testEnvironment": "node",
   "globalSetup": "<rootDir>/test/helpers/test-db.setup.ts",
   "globalTeardown": "<rootDir>/test/helpers/test-db.teardown.ts",
-  "testTimeout": 30000
+  "testTimeout": 30000,
+  "maxWorkers": 1,
+  "forceExit": true
 }
