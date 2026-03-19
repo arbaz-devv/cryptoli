@@ -71,28 +71,21 @@
 
 ---
 
-## Phase 4: Infrastructure Unit Tests (P4)
+## Phase 4: Infrastructure Unit Tests (P4) ✅
 > Redis, Socket, Config, Utilities. All mocked (Tier 1).
 
-- [ ] **4.1 — `src/common/utils.spec.ts`** *(NEW — 56.52% indirect)*
-  - `hashPassword` / `verifyPassword` round-trip
-  - `calculateOverallScore()`: known weights, unknown keys
-  - All 8 Zod schemas: valid passes, invalid rejects with correct messages
+- [x] **4.1 — `src/common/utils.spec.ts`** ✅ 30 tests (hashPassword/verifyPassword, calculateOverallScore, 8 Zod schemas)
+- [x] **4.2 — `src/config/config.service.spec.ts`** ✅ 11 tests
+- [x] **4.3 — `src/config/env.schema.spec.ts`** ✅ 7 tests
+- [x] **4.4 — `src/socket/socket.service.spec.ts`** ✅ 10 tests (no-op + all 7 emit methods)
+- [x] **4.5 — `src/redis/redis.service.spec.ts`** ✅ 9 tests (ioredis mocked, event handlers tested)
+- [x] **4.6 — `src/prisma/prisma.service.spec.ts`** ✅ 2 tests
 
-- [ ] **4.2 — `src/config/config.service.spec.ts`** *(NEW — 14% lines)*
-  - Getter correctness, `jwtSecret` production guard, `isProduction`
-
-- [ ] **4.3 — `src/config/env.schema.spec.ts`** *(NEW — 23% lines)*
-  - `validateEnv()`: valid/invalid env, defaults
-
-- [ ] **4.4 — `src/socket/socket.service.spec.ts`** *(NEW — 8% lines)*
-  - All 7 emit methods: no-op when undefined, correct room + event name when defined
-
-- [ ] **4.5 — `src/redis/redis.service.spec.ts`** *(NEW — 0%)*
-  - `onModuleInit()`: client creation / no-op, `isReady()`, `onModuleDestroy()`
-
-- [ ] **4.6 — `src/prisma/prisma.service.spec.ts`** *(NEW — 60% indirect)*
-  - `onModuleDestroy()`: calls `$disconnect`
+> **Status:** 279 tests, 30 spec files (up from 210/24)
+> **Learnings:**
+> - Zod refinement for JWT_SECRET in production fires during `validateEnv()`, before `ConfigService.jwtSecret` getter — tests must expect throw on `onModuleInit()`
+> - PrismaService `instanceof` check fails due to Prisma's generated client inheritance chain — test methods instead
+> - ioredis must be jest.mock'd to avoid real connections; fire event handlers manually via stored references
 
 ---
 
