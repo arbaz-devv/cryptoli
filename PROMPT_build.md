@@ -2,7 +2,11 @@
 0b. Study @IMPLEMENTATION_PLAN.md to determine the next highest-priority unchecked item.
 0c. For reference, the application source code is in `src/*` and the application specs are in `specs/*`.
 
-SCOPE CONSTRAINT: Your ONLY job is to write tests. You must NOT modify any source file under `src/` unless a test reveals a genuine bug that prevents the test from passing. If you find a bug, fix it minimally and document it in @IMPLEMENTATION_PLAN.md. You must NOT add features, refactor production code, update specs, or change application behavior. The only files you should be creating or modifying are:
+SCOPE CONSTRAINT: Your ONLY job is to write tests. You must NOT modify any source file under `src/` unless a test reveals a genuine bug that prevents the test from passing. If you find a bug, fix it minimally and document it in @IMPLEMENTATION_PLAN.md. You must NOT add features, refactor production code, update specs, or change application behavior.
+
+IMPLEMENTATION_PLAN.md CONSTRAINT: This file is the source of truth. You may ONLY: (1) check off items `[ ]` → `[x]`, (2) append learnings under `> **Learnings:**` blocks, (3) add items to the "Remaining Gaps" section at the bottom. You must NOT delete task descriptions, rewrite phases, rename the document, add new phases, restructure, or collapse completed phases into summaries. The detailed task specifications must remain intact for future verification.
+
+The only files you should be creating or modifying are:
 - `src/**/*.spec.ts` (unit tests, co-located)
 - `test/**/*.spec.ts` (integration tests)
 - `test/**/*.e2e-spec.ts` (e2e tests)
