@@ -305,7 +305,7 @@
   - Reply creates ComplaintReply record
   - Reply transitions complaint status OPEN → IN_PROGRESS
 
-- [ ] **7.4 — `test/integration/comments-voting.spec.ts`**
+- [x] **7.4 — `test/integration/comments-voting.spec.ts`** — 7 tests
   - CommentVote transaction-recount
   - Comment creation with parentId creates threaded reply
   - Comment on review updates actual comment count
@@ -438,7 +438,7 @@
 - `main.ts` — covered by e2e indirectly
 - `api.controller.ts` / `data.service.ts` — dead code
 
-**Actual totals:** 335 unit + 25 integration + 78 e2e = **438 tests** (335 run via `npm test`)
+**Actual totals:** 335 unit + 32 integration + 78 e2e = **445 tests** (335 run via `npm test`)
 
 ---
 
