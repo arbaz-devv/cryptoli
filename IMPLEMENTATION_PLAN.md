@@ -1,6 +1,6 @@
 # Implementation Plan: Cryptoli Backend
 
-> **Created:** 2026-03-19 | **Current:** 367 unit tests, 17 integration, 78 e2e = 462 total
+> **Created:** 2026-03-19 | **Current:** 377 unit tests, 17 integration, 78 e2e = 472 total
 > **Spec:** See `specs/testing-strategy.md` for test conventions; `specs/README.md` for feature specs
 
 ---
@@ -12,9 +12,10 @@
 - [x] **10.1 — Company follows** ✅ `POST/DELETE /api/companies/:slug/follow`, viewerState on getBySlug, 8 new unit tests
 - [x] **10.2 — Reactions CRUD** ✅ ReactionsModule with `POST /api/reactions` (toggle) and `DELETE /api/reactions/:id`, Zod validation, 15 unit tests. Polymorphic across Review/Post/Comment/Complaint. Toggle semantics: same type = remove, new type = create.
 - [x] **10.3 — Reports** ✅ ReportsModule with `POST /api/reports` (authenticated). Append-only, no Prisma relations. Transaction-recount updates `reportCount` on Review/Complaint (Comment has no counter). Zod validation, 9 unit tests.
-- [ ] **10.4 — Posts CRUD** — Schema has Post model (authorId, content, media, comments, reactions). Need: PostsModule with full CRUD, feed integration, unit tests.
+- [x] **10.4 — Posts CRUD** ✅ PostsModule with `GET/POST /api/posts`, `GET/DELETE /api/posts/:id`. Zod validation, author-only delete. 10 unit tests. Feed integration deferred (10.7).
 - [ ] **10.5 — Products endpoints** — Schema has Product model linked from Review/Complaint. Need: products list under company, product detail by slug.
 - [ ] **10.6 — Media upload** — Schema has Media model (IMAGE/VIDEO, linked to Review/Post). Need: upload endpoint, storage integration, media management.
+- [ ] **10.7 — Feed integration for Posts** — Add posts to the feed merge alongside reviews and complaints.
 
 > **Learnings:**
 > - `companyFollow.deleteMany` was missing from prisma mock — added it
@@ -44,4 +45,4 @@
 
 All test infrastructure, unit tests, integration tests, e2e tests, and CI pipeline are complete. See git history for details.
 
-**Actual totals:** 367 unit tests + 17 integration tests + 78 e2e tests = **462 tests**
+**Actual totals:** 377 unit tests + 17 integration tests + 78 e2e tests = **472 tests**

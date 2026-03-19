@@ -129,3 +129,9 @@ export const createReportSchema = z.object({
 });
 
 export type CreateReportDto = z.infer<typeof createReportSchema>;
+
+export const createPostSchema = z.object({
+  content: z.string().min(1).max(5000),
+});
+
+export type CreatePostDto = z.infer<typeof createPostSchema>;
