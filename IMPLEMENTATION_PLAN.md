@@ -1,208 +1,119 @@
 # Implementation Plan: Complete Test Coverage
 
 > **Created:** 2026-03-19 | **Baseline:** 11.13% statements, 45 tests, 10 spec files
-> **Goal:** Complete unit, integration, and e2e test coverage across all `src/` modules
+> **Current:** 75.73% statements, 335 tests, 33 spec files (post-revert)
+> **Goal:** 85%+ statements, 80%+ branches/functions across all `src/` modules
 > **Spec:** See `specs/testing-strategy.md` for conventions, patterns, and infrastructure
 
 ---
 
-## Phase 0: Test Infrastructure Setup
-> Foundation that all other phases depend on. Nothing else can start until this is done.
+## Completed Phases
 
-- [x] **0.1 — Install TestContainers and isolation dependencies** ✅
-- [x] **0.2 — Create `.env.test`** ✅
-- [x] **0.3 — Create TestContainers global setup/teardown** ✅
-- [x] **0.4 — Create shared unit test mock factories** ✅
-- [x] **0.5 — Create test data factory functions** ✅
-- [x] **0.6 — Create E2E app bootstrap helper** ✅
-- [x] **0.7 — Create jest config files** ✅
-- [x] **0.8 — Add npm scripts** ✅
+### Phase 0: Test Infrastructure Setup — DONE
+All 9 helper files, jest configs, .env.test, TestContainers globalSetup with 3-phase validation gate.
 
-> **Learnings:**
-> - `@types/nock` also installed (nock v14 needs it)
-> - Test helpers compile via ts-jest at runtime; `npx tsc --noEmit` excludes `test/` per `tsconfig.build.json`
-> - Coverage threshold (80/80/85/85) added to package.json but will only gate `test:cov` runs, not plain `npm test`
-> - All 45 existing unit tests pass after infrastructure changes
+### Phase 1: Security-Critical Unit Tests — DONE (90 tests)
+auth.guard, optional-auth.guard, auth.service, auth.controller, admin.guard, admin-auth.service, http-exception.filter.
 
----
+### Phase 2: Data Integrity Unit Tests — DONE (52 tests)
+reviews.service (vote/helpful/create/list/getById), complaints.service, comments.service — all with transaction-recount verification.
 
-## Phase 1: Security-Critical Unit Tests (P0) ✅
-> Auth, guards, session management — highest risk if broken. All mocked (Tier 1).
+### Phase 3: Core Business Logic Unit Tests — DONE (51 tests)
+users.service, notifications.service, push.service, feed.service, search.service, trending.service, companies.service.
 
-- [x] **1.1 — `src/auth/auth.guard.spec.ts`** ✅ 5 tests
-- [x] **1.2 — `src/auth/optional-auth.guard.spec.ts`** ✅ 5 tests
-- [x] **1.3 — Expand `src/auth/auth.service.spec.ts`** ✅ expanded from 12→30 tests
-- [x] **1.4 — `src/auth/auth.controller.spec.ts`** ✅ 18 tests
-- [x] **1.5 — Expand `src/admin/admin.guard.spec.ts`** ✅ expanded from 4→11 tests (JWT auth tests added)
-- [x] **1.6 — `src/admin/admin-auth.service.spec.ts`** ✅ 8 tests
-- [x] **1.7 — `src/common/http-exception.filter.spec.ts`** ✅ 8 tests
+### Phase 4: Infrastructure Unit Tests — DONE (69 tests)
+utils (Zod schemas + scoring), config.service, env.schema, socket.service, redis.service, prisma.service.
 
-> **Status:** 121 tests, 15 spec files (up from 45 tests, 10 spec files)
+### Phase 5: Admin Module Unit Tests — DONE (31 tests)
+admin.service (expanded), admin.controller, admin-auth.controller.
 
----
+### Phase 6: Analytics Unit Tests — DONE (29 tests)
+analytics.service, analytics.controller.
 
-## Phase 2: Data Integrity Unit Tests (P1) ✅
-> Voting, transactions, recounts — data corruption risk. All mocked (Tier 1).
+### Phase 7: Integration Tests — PARTIAL (17 tests)
+auth-sessions, reviews-voting, follows, cascade-deletes.
 
-- [x] **2.1 — Expand `src/reviews/reviews.service.spec.ts`** ✅ expanded from 6→20 tests (vote, create, getById, list)
-- [x] **2.2 — `src/complaints/complaints.service.spec.ts`** ✅ 16 tests (vote, create, getById, list, reply)
-- [x] **2.3 — `src/comments/comments.service.spec.ts`** ✅ 15 tests (vote, create, list, getById)
+### Phase 8: E2E Tests — DONE (78 tests)
+All 8 suites: auth, reviews, complaints, comments, users, admin, search-feed-trending, analytics.
 
-> **Status:** 167 tests, 17 spec files
+### Phase 9: CI & Cleanup — DONE
+GitHub Actions pipeline, smoke tests, specs/README updated.
 
 ---
 
-## Phase 3: Core Business Logic Unit Tests (P2) ✅
-> Complex services. All mocked (Tier 1).
+## Remaining Work (priority order)
 
-- [x] **3.1 — `src/users/users.service.spec.ts`** ✅ 12 tests
-- [x] **3.2 — `src/notifications/notifications.service.spec.ts`** ✅ 5 tests
-- [x] **3.3 — `src/notifications/push.service.spec.ts`** ✅ 3 tests
-- [x] **3.4 — `src/feed/feed.service.spec.ts`** ✅ 4 tests
-- [x] **3.5 — `src/search/search.service.spec.ts`** ✅ 6 tests
-- [x] **3.6 — `src/trending/trending.service.spec.ts`** ✅ 4 tests
-- [x] **3.7 — `src/companies/companies.service.spec.ts`** ✅ 6 tests
+### HIGH — Fix Test Quality Issues
 
-> **Status:** 210 tests, 24 spec files (up from 167 tests, 17 spec files)
-> **Learnings:**
-> - Feed service uses chunked merge-sort; mocks must use `mockResolvedValueOnce` then return `[]` for subsequent calls to avoid infinite loop
-> - `follow.deleteMany` was missing from prisma mock — added it
-> - Users service requires RedisService mock (via `createRedisMock`) in addition to Prisma mock
+- [ ] **Fix 27 typecheck errors in test files**
+  - `admin.service.spec.ts`: `Object is of type 'unknown'` / `possibly null` on assertions
+  - `reviews/comments/complaints.service.spec.ts`: `userVote` not in Prisma type
+  - `test/e2e/*.e2e-spec.ts`: type assertion mismatches
+  - Run `npx tsc --noEmit` to verify — all errors are in test files, production is clean
 
----
+- [ ] **Fix lint errors in test files**
+  - 556 problems (354 errors, 202 warnings) concentrated in test/e2e and test/helpers
+  - Primarily `@typescript-eslint` strict-mode violations (`no-unsafe-assignment`, `no-unsafe-member-access`)
+  - Run `npm run lint` to verify
 
-## Phase 4: Infrastructure Unit Tests (P4) ✅
-> Redis, Socket, Config, Utilities. All mocked (Tier 1).
+### MEDIUM — Deepen Shallow Tests
 
-- [x] **4.1 — `src/common/utils.spec.ts`** ✅ 30 tests (hashPassword/verifyPassword, calculateOverallScore, 8 Zod schemas)
-- [x] **4.2 — `src/config/config.service.spec.ts`** ✅ 11 tests
-- [x] **4.3 — `src/config/env.schema.spec.ts`** ✅ 7 tests
-- [x] **4.4 — `src/socket/socket.service.spec.ts`** ✅ 10 tests (no-op + all 7 emit methods)
-- [x] **4.5 — `src/redis/redis.service.spec.ts`** ✅ 9 tests (ioredis mocked, event handlers tested)
-- [x] **4.6 — `src/prisma/prisma.service.spec.ts`** ✅ 2 tests
+- [ ] **Deepen analytics tests (Phase 6)**
+  - Only 3/25+ Redis key patterns verified — need explicit key name assertions
+  - Private methods untested: `normalizePath`, `sanitizeLabel`, `resolveCountry`, `normalizeIp`, `durationBucket`, `referrerLabel`, `bucketLongTail`, `parseFunnelMap`, `approximateDurationPercentile`
+  - Controller IP extraction: only `socket.remoteAddress` + `cf-connecting-ip` tested — need `x-forwarded-for`, RFC 7239, `x-real-ip`, private IP filtering
 
-> **Status:** 279 tests, 30 spec files (up from 210/24)
-> **Learnings:**
-> - Zod refinement for JWT_SECRET in production fires during `validateEnv()`, before `ConfigService.jwtSecret` getter — tests must expect throw on `onModuleInit()`
-> - PrismaService `instanceof` check fails due to Prisma's generated client inheritance chain — test methods instead
-> - ioredis must be jest.mock'd to avoid real connections; fire event handlers manually via stored references
+- [ ] **Complete push.service tests (Phase 3.3)**
+  - Missing 3/6 planned items: VAPID-configured init, send-to-all-subscriptions, stale subscription cleanup on 410/404
+  - Requires mocking the `web-push` module
 
----
+- [ ] **Add admin-auth.controller login flow test (Phase 5.3)**
+  - Current tests only verify throttle decorator metadata
+  - Need: login delegation to AdminAuthService, config endpoint returns loginEnabled
 
-## Phase 5: Admin Module Unit Tests (P3) ✅
-> Admin business logic. All mocked (Tier 1).
+- [ ] **Add admin.service cache TTL test (Phase 5.1)**
+  - Cache behavior (hit within TTL, eviction after TTL) is untested
+  - Module-level Map cache with 30s TTL
 
-- [x] **5.1 — Expand `src/admin/admin.service.spec.ts`** ✅ expanded from 2→19 tests (getStats, getUsers, getUserDetail lazy/full, getReviews, getReview lazy/full, updateReviewStatus, getRatings)
-- [x] **5.2 — `src/admin/admin.controller.spec.ts`** ✅ 8 tests (AdminGuard metadata, pagination clamping, delegation)
-- [x] **5.3 — `src/admin/admin-auth.controller.spec.ts`** ✅ 2 tests (existing — throttle metadata)
+### LOW — Complete Deferred Integration Tests
 
-> **Status:** 306 tests, 31 spec files (up from 279/30)
-> **Learnings:**
-> - Admin caches are module-level (not per-instance), so tests sharing the same cache key hit stale data — use different params or order carefully
-> - `review.groupBy` was missing from prisma mock — added it
-> - Admin service uses `$queryRaw` with BigInt return for session counts — mock must return `[{ count: BigInt(n) }]`
+- [ ] **7.3 — `test/integration/complaints-voting.spec.ts`**
+  - Deferred — patterns identical to reviews-voting
 
----
+- [ ] **7.4 — `test/integration/comments-voting.spec.ts`**
+  - Deferred
 
-## Phase 6: Analytics Unit Tests (P2) ✅
-> Most complex module — 1098 lines, 25+ Redis keys. All mocked (Tier 1).
+- [ ] **7.7 — `test/integration/analytics-tracking.spec.ts`**
+  - Requires Redis container (started but unused in current integration tests)
 
-- [x] **6.1 — `src/analytics/analytics.service.spec.ts`** ✅ 16 tests (track: page_view/like/funnel/page_leave + consent/no-redis guards, getStats, getRealtime, isHealthy, isEnabled, getHealthDetails)
-- [x] **6.2 — `src/analytics/analytics.controller.spec.ts`** ✅ 13 tests (IP extraction, country hint, throttle metadata, guard metadata, latestMembers clamping)
+### LOW — Close Coverage Gap (75.73% → 85%)
 
-> **Status:** 335 tests, 33 spec files (up from 306/31)
-> **Learnings:**
-> - Redis mock `set()` must return a resolved value (analytics uses `.then()` chaining on set for cohort tracking)
-> - Redis mock needed `pfadd`, `pfcount`, `incrby`, `zremrangebyscore` for analytics service
-> - Analytics service uses fire-and-forget patterns (`void Promise.all(...).catch(...)`) — tests verify key writes were initiated
+- [ ] **11 controllers at 0% coverage** — biggest drag on overall numbers
+  - These are thin routing layers; e2e tests cover the HTTP path but jest coverage only counts unit test runs
+  - Options: (a) add lightweight controller unit tests, or (b) combine unit + e2e coverage reports
 
 ---
 
-## Phase 7: Integration Tests (Tier 2 — Real Database) ✅
-> Verify that Prisma queries, transactions, and constraints actually work. Requires Docker.
+## Reverted Scope Violations
 
-- [x] **7.1 — `test/integration/auth-sessions.spec.ts`** ✅ 4 tests (create/lookup, delete, keep-current, cascade)
-- [x] **7.2 — `test/integration/reviews-voting.spec.ts`** ✅ 5 tests (UP, toggle-off, switch, concurrent + recount, unique constraint)
-- [x] **7.5 — `test/integration/follows.spec.ts`** ✅ 4 tests (user follow/unfollow, unique, cascade, company follow)
-- [x] **7.6 — `test/integration/cascade-deletes.spec.ts`** ✅ 4 tests (User, Company, Review, Comment cascades)
-- [ ] **7.3 — complaints-voting** *(deferred — patterns identical to reviews-voting)*
-- [ ] **7.4 — comments-voting** *(deferred)*
-- [ ] **7.7 — analytics-tracking** *(deferred — requires Redis container in test)*
+The following 4 commits were reverted on 2026-03-19 because they added production features outside the testing scope:
 
-> **Status:** 335 unit + 17 integration = 352 total tests
-> **Learnings:**
-> - Jest `globalSetup` runs in separate process; `globalThis` doesn't propagate to workers — `process.env` fallback needed in `getTestPrisma()`
-> - `PushSubscription` table was missing from migration — switched to dynamic table discovery in `truncateAll()`
-> - Concurrent transaction-recount tests: final `helpfulCount` depends on last-to-commit; verify vote records exist, then do a final recount to validate consistency
+- `4ac9312` feat(posts): add PostsModule — REVERTED
+- `59d42f3` feat(reports): add ReportsModule — REVERTED
+- `6a5d13f` feat(reactions): add ReactionsModule — REVERTED
+- `f03348e` feat(companies): add company follow/unfollow — REVERTED (breaking API change)
+
+These features may be re-implemented in a separate branch with proper review.
 
 ---
 
-## Phase 8: E2E Tests (Tier 3 — Full HTTP Stack) ✅
-> Verify the complete request lifecycle. Requires Docker.
+## Learnings
 
-- [x] **8.1 — `test/e2e/auth.e2e-spec.ts`** ✅ 9 tests (register+cookie, duplicate email, Zod validation, login+cookie, wrong password, non-existent user, /me authenticated, /me unauthenticated, logout+verify)
-- [x] **8.2 — `test/e2e/reviews.e2e-spec.ts`** ✅ 5 tests (create authenticated, unauthenticated 401, invalid body 400, list with pagination, vote+helpfulCount)
-- [x] **8.3 — `test/e2e/complaints.e2e-spec.ts`** ✅ 7 tests (create authenticated, unauthenticated 401, list+pagination, vote UP+verify, toggle-off vote, admin reply+status transition, non-admin reply 401)
-- [x] **8.4 — `test/e2e/comments.e2e-spec.ts`** ✅ 11 tests (create comment, reply with parentId, unauthenticated 401, empty content 400, no target 400, list comments, empty list, getById, vote UP, toggle-off, unauthenticated vote 401)
-- [x] **8.5 — `test/e2e/users.e2e-spec.ts`** ✅ 25 tests (public profile shape, no passwordHash, 404, viewerState, follow, unfollow, self-follow 400, idempotent follow/unfollow, followers/following lists, round-trip flow)
-- [x] **8.6 — `test/e2e/admin.e2e-spec.ts`** ✅ 5 tests (admin login JWT, wrong password, stats with API key, stats without key 401, JWT auth for stats)
-- [x] **8.7 — `test/e2e/search-feed-trending.e2e-spec.ts`** ✅ 8 tests (search empty, search no query, search user, feed empty, feed with review, feed pagination, trending structure, trending with review)
-- [x] **8.8 — `test/e2e/analytics.e2e-spec.ts`** ✅ 8 tests (track valid event, track various types, health fields, stats no key 401, stats wrong key 401, stats with key, realtime no key 401, realtime with key)
-
-> **Status:** 335 unit + 17 integration + 78 e2e = 430 total tests
-> **Learnings:**
-> - ThrottlerGuard (registered as APP_GUARD) persists rate-limit state in Redis across tests — must `flushTestRedis()` in `beforeEach` to reset throttle counters
-> - `overrideProvider(APP_GUARD)` / `overrideGuard(ThrottlerGuard)` don't work for multi-provider APP_GUARD tokens — Redis flush is the reliable approach
-> - Review create API returns the review object directly (not wrapped in `{ review }`) — test assertions must use `res.body.id` not `res.body.review.id`
-> - Feed/trending tests need `prisma.review.update({ status: 'APPROVED' })` directly since create API sets APPROVED but list filters by it
-> - Users profile cache in Redis must be flushed before asserting follower counts to avoid stale cached data
-
----
-
-## Phase 9: Cleanup & CI ✅
-> Polish and enforcement
-
-- [x] **9.1 — Migrate existing specs to shared helpers** ✅ Audited — only 6 files use inline mocks, all for specialized needs (ioredis jest.mock, ExecutionContext, etc). Migration not needed; shared helpers already used where appropriate.
-- [x] **9.2 — Add `.env.test` to repo** ✅ Already committed in Phase 0
-- [x] **9.3 — Add CI pipeline (`.github/workflows/test.yml`)** ✅ 3 jobs: unit-tests (npm test + coverage gate), integration-e2e (TestContainers), smoke (manual dispatch)
-- [x] **9.4 — Add post-deploy smoke tests** ✅ `test/smoke/smoke.spec.ts` — 5 read-only GETs with native fetch, `test:smoke` npm script, `jest-smoke.json` config
-- [x] **9.5 — Update `specs/README.md`** ✅ Already done in Phase 0
-
----
-
-## Summary: Coverage Matrix
-
-| Source File | Unit (Tier 1) | Integration (Tier 2) | E2E (Tier 3) | Phase |
-|-------------|:---:|:---:|:---:|:---:|
-| `auth/auth.guard.ts` | Phase 1 | — | Phase 8 | P0 |
-| `auth/optional-auth.guard.ts` | Phase 1 | — | Phase 8 | P0 |
-| `auth/auth.service.ts` | Phase 1 | Phase 7 | Phase 8 | P0 |
-| `auth/auth.controller.ts` | Phase 1 | — | Phase 8 | P0 |
-| `admin/admin.guard.ts` | Phase 1 | — | Phase 8 | P0 |
-| `admin/admin-auth.service.ts` | Phase 1 | — | Phase 8 | P0 |
-| `common/http-exception.filter.ts` | Phase 1 | — | Phase 8 | P0 |
-| `reviews/reviews.service.ts` | Phase 2 | Phase 7 | Phase 8 | P1 |
-| `complaints/complaints.service.ts` | Phase 2 | Phase 7 | Phase 8 | P1 |
-| `comments/comments.service.ts` | Phase 2 | Phase 7 | Phase 8 | P1 |
-| `users/users.service.ts` | Phase 3 | Phase 7 | Phase 8 | P2 |
-| `notifications/notifications.service.ts` | Phase 3 | — | — | P2 |
-| `notifications/push.service.ts` | Phase 3 | — | — | P2 |
-| `feed/feed.service.ts` | Phase 3 | — | Phase 8 | P2 |
-| `search/search.service.ts` | Phase 3 | — | Phase 8 | P2 |
-| `trending/trending.service.ts` | Phase 3 | — | Phase 8 | P2 |
-| `companies/companies.service.ts` | Phase 3 | — | — | P2 |
-| `analytics/analytics.service.ts` | Phase 6 | Phase 7 | Phase 8 | P2 |
-| `analytics/analytics.controller.ts` | Phase 6 | — | Phase 8 | P2 |
-| `common/utils.ts` | Phase 4 | — | — | P4 |
-| `config/config.service.ts` | Phase 4 | — | — | P4 |
-| `config/env.schema.ts` | Phase 4 | — | — | P4 |
-| `socket/socket.service.ts` | Phase 4 | — | — | P4 |
-| `redis/redis.service.ts` | Phase 4 | — | — | P4 |
-| `admin/admin.service.ts` | Phase 5 | — | Phase 8 | P3 |
-
-**Not tested** (by design):
-- `*.module.ts` — pure DI wiring
-- `main.ts` — covered by e2e indirectly
-- `api.controller.ts` / `data.service.ts` — dead code
-
-**Actual totals:** 335 unit tests + 17 integration tests + 78 e2e tests = **430 tests**
+- `@types/nock` needed alongside nock v14
+- Jest `globalSetup` runs in separate process — `globalThis` doesn't propagate to workers, use `process.env` fallback
+- Feed service chunked merge-sort: mocks must use `mockResolvedValueOnce` then `[]`
+- Admin caches are module-level — tests sharing cache keys hit stale data
+- ThrottlerGuard persists rate-limit state in Redis across e2e tests — flush in `beforeEach`
+- `PushSubscription` table was missing from migration — switched to dynamic table discovery in `truncateAll()`
+- Review create API returns object directly (not `{ review }`)
+- Redis mock needs `pfadd`, `pfcount`, `incrby`, `zremrangebyscore` for analytics
