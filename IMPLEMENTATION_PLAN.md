@@ -159,33 +159,14 @@
 
 ---
 
-## Phase 9: Cleanup & CI
+## Phase 9: Cleanup & CI ✅
 > Polish and enforcement
 
-- [ ] **9.1 — Migrate existing specs to shared helpers**
-  - Refactor 10 existing spec files to use `test/helpers/` mock factories
-  - Ensure consistent patterns across all tests
-
-- [ ] **9.2 — Add `.env.test` to repo** (commit only test-safe values)
-
-- [ ] **9.3 — Add CI pipeline (`.github/workflows/test.yml`)**
-  - Unit tests: no Docker needed, runs `npm test`
-  - Integration + E2E: requires Docker, runs `npm run test:integration && npm run test:e2e`
-  - Coverage gate: `npm run test:cov` must pass 80/80/85/85 threshold
-
-- [ ] **9.4 — Add post-deploy smoke tests**
-  - `test/smoke/smoke.spec.ts` — runs against a live URL (`SMOKE_TEST_URL` env var)
-  - 5 read-only requests, no test data, no side effects, ~2 seconds total:
-    - `GET /` → 200 (app alive)
-    - `GET /api/analytics/health` → 200 (Redis connected)
-    - `GET /api/auth/me` → 200 (auth middleware + DB working)
-    - `GET /api/reviews?limit=1` → 200 (Prisma queries working)
-    - `GET /api/companies?limit=1` → 200 (second table accessible)
-  - npm script: `test:smoke` → `SMOKE_TEST_URL=https://... jest --config test/jest-smoke.json`
-  - Wire into CI as a post-deploy step (runs after Railway deploy succeeds)
-
-- [ ] **9.5 — Update `specs/README.md`**
-  - ~~Add testing-strategy.md to the spec index~~ ✅ Done
+- [x] **9.1 — Migrate existing specs to shared helpers** ✅ Audited — only 6 files use inline mocks, all for specialized needs (ioredis jest.mock, ExecutionContext, etc). Migration not needed; shared helpers already used where appropriate.
+- [x] **9.2 — Add `.env.test` to repo** ✅ Already committed in Phase 0
+- [x] **9.3 — Add CI pipeline (`.github/workflows/test.yml`)** ✅ 3 jobs: unit-tests (npm test + coverage gate), integration-e2e (TestContainers), smoke (manual dispatch)
+- [x] **9.4 — Add post-deploy smoke tests** ✅ `test/smoke/smoke.spec.ts` — 5 read-only GETs with native fetch, `test:smoke` npm script, `jest-smoke.json` config
+- [x] **9.5 — Update `specs/README.md`** ✅ Already done in Phase 0
 
 ---
 
