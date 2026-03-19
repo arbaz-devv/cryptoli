@@ -41,27 +41,14 @@
 
 ---
 
-## Phase 2: Data Integrity Unit Tests (P1)
+## Phase 2: Data Integrity Unit Tests (P1) ✅
 > Voting, transactions, recounts — data corruption risk. All mocked (Tier 1).
 
-- [ ] **2.1 — Expand `src/reviews/reviews.service.spec.ts`** *(existing — 36.92% lines)*
-  - `vote()`: all toggle logic (new/same/opposite), recount with `count()`, notification conditions, socket emit ordering, invalid voteType rejection
-  - `create()`: Zod validation, auto-approve, score computation, socket emit
-  - `list()`: pagination, filters, APPROVED-only, userVote enrichment
-  - `getById()`: NotFoundError, includes comments
+- [x] **2.1 — Expand `src/reviews/reviews.service.spec.ts`** ✅ expanded from 6→20 tests (vote, create, getById, list)
+- [x] **2.2 — `src/complaints/complaints.service.spec.ts`** ✅ 16 tests (vote, create, getById, list, reply)
+- [x] **2.3 — `src/comments/comments.service.spec.ts`** ✅ 15 tests (vote, create, list, getById)
 
-- [ ] **2.2 — `src/complaints/complaints.service.spec.ts`** *(NEW — 7.69% lines)*
-  - `vote()`: full transaction-recount, toggle logic, invalid voteType
-  - `create()`: Zod validation, status OPEN
-  - `list()`: pagination, userVote enrichment
-  - `getById()`: NotFoundError, userVote
-  - `reply()`: Zod validation, OPEN→IN_PROGRESS transition, missing complaint/company errors
-
-- [ ] **2.3 — `src/comments/comments.service.spec.ts`** *(NEW — 0%)*
-  - `vote()`: transaction-recount, toggle logic, notification conditions
-  - `create()`: Zod validation, exactly-one-target enforcement, socket emit (review only), notifications
-  - `list()`: top-level + nested replies, userVote enrichment
-  - `getById()`: `id === 'list'` fallback
+> **Status:** 167 tests, 17 spec files
 
 ---
 
