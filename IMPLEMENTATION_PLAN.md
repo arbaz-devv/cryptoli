@@ -9,72 +9,20 @@
 ## Phase 0: Test Infrastructure Setup
 > Foundation that all other phases depend on. Nothing else can start until this is done.
 
-- [ ] **0.1 — Install TestContainers and isolation dependencies**
-  - `npm install -D testcontainers @testcontainers/postgresql nock`
-  - `nock` blocks all outbound HTTP in integration/e2e tests (prevents `ipwho.is` calls, push notifications, etc.)
-  - Verify Docker is available in dev environment
+- [x] **0.1 — Install TestContainers and isolation dependencies** ✅
+- [x] **0.2 — Create `.env.test`** ✅
+- [x] **0.3 — Create TestContainers global setup/teardown** ✅
+- [x] **0.4 — Create shared unit test mock factories** ✅
+- [x] **0.5 — Create test data factory functions** ✅
+- [x] **0.6 — Create E2E app bootstrap helper** ✅
+- [x] **0.7 — Create jest config files** ✅
+- [x] **0.8 — Add npm scripts** ✅
 
-- [ ] **0.2 — Create `.env.test`**
-  - `NODE_ENV=test`
-  - `JWT_SECRET=test-jwt-secret-at-least-32-characters-long`
-  - `CORS_ORIGIN=http://localhost:3000`
-  - `ADMIN_API_KEY=test-admin-key`
-  - `ANALYTICS_API_KEY=test-analytics-key`
-  - `ADMIN_EMAIL=admin@test.com`
-  - `DATABASE_URL` and `REDIS_URL` intentionally **absent** — injected at runtime by TestContainers (never hardcoded, never pointing to real services)
-  - `ADMIN_PASSWORD_HASH` generated in globalSetup from `'testpassword'`
-  - **VAPID keys intentionally absent** — push service no-ops (prevents sending real push notifications)
-  - Safe to commit — all values are test-only, no real credentials
-  - **IMPORTANT:** `.env.test` is NOT auto-loaded by `dotenv`. The globalSetup explicitly reads it or sets env vars manually. This prevents `.env` (with real credentials) from being loaded first via `import 'dotenv/config'` in `main.ts`.
-
-- [ ] **0.3 — Create TestContainers global setup/teardown with three-phase boot sequence**
-  - `test/helpers/test-db.setup.ts` — the critical safety file. Three phases, strict order:
-    - **Phase 1 — Provision:** Start PostgreSQL 16 + Redis 7 containers, run `prisma migrate deploy`, construct test clients with **explicit URLs** from containers (not from `process.env`)
-    - **Phase 2 — Validate (gate):** Before any test runs, verify:
-      - Database is reachable and all expected tables exist (migrations succeeded)
-      - Database is empty (no stale data from a crashed prior run)
-      - Redis is reachable (PING → PONG)
-      - Both hosts are localhost (structural guarantee)
-      - Dangerous credentials (`VAPID_*`) are NOT in environment
-      - **If ANY check fails → stop containers, throw with full diagnostic, zero tests run**
-    - **Phase 3 — Expose:** Store validated URLs on `globalThis.__TEST_DATABASE_URL__` and `globalThis.__TEST_REDIS_URL__` for test file access. Clear dangerous env vars, then set `process.env` as secondary path (for AppModule bootstrap in e2e). Block outbound HTTP via `nock.disableNetConnect()` (localhost only allowed).
-  - `test/helpers/test-db.teardown.ts` — stops containers, re-enables network via `nock.enableNetConnect()`
-  - `test/helpers/test-db.utils.ts`:
-    - `getTestPrisma()` — reads from `globalThis.__TEST_DATABASE_URL__` (not `process.env`), validates localhost, constructs client with `datasourceUrl` (bypasses `.env` auto-loading)
-    - `getTestRedisUrl()` — same pattern for Redis
-    - `truncateAll()` — respects FK order (children first, 19 tables)
-    - `isLocalhostUrl()` — shared URL validator
-  - See `specs/testing-strategy.md` → "Isolation Guarantees" for full implementation code and threat model
-
-- [ ] **0.4 — Create shared unit test mock factories (`test/helpers/`)**
-  - `prisma.mock.ts` — reusable PrismaService mock with `$transaction` callback unwrapping, per-model jest.fn() stubs
-  - `redis.mock.ts` — RedisService mock with `isReady()` toggle
-  - `socket.mock.ts` — SocketService mock with all 7 emit methods as `jest.fn()`
-  - `auth.helpers.ts` — `createMockSessionUser()`, `createTestJwt()`, `mockRequest()`, `mockExecutionContext()`
-
-- [ ] **0.5 — Create test data factory functions (`test/helpers/factories.ts`)**
-  - `createTestUser(prisma, overrides)` — with bcrypt cost 1 for speed
-  - `createTestCompany(prisma, overrides)`
-  - `createTestReview(prisma, authorId, overrides)` — defaults to APPROVED
-  - `createTestComplaint(prisma, authorId, overrides)`
-  - `createTestComment(prisma, authorId, reviewId, overrides)`
-  - Auto-incrementing counter for unique emails/slugs
-
-- [ ] **0.6 — Create E2E app bootstrap helper (`test/helpers/setup-app.ts`)**
-  - Replicates `main.ts` middleware: Helmet, CORS, CSRF, cookie-parser, ValidationPipe, AllExceptionsFilter
-  - Boots real `AppModule` but **overrides PrismaService and RedisService** with explicitly-constructed test instances (from `getTestPrisma()` / `getTestRedisUrl()` — not from `process.env`)
-  - `setupTestApp()` returns `{ app, server }`, `teardownTestApp(app)` calls `app.close()`
-  - **The override is the primary isolation** — even if `.env` has production credentials, the overridden providers point to TestContainers
-
-- [ ] **0.7 — Create jest config files**
-  - `test/jest-integration.json` — `rootDir: "."`, `testRegex: "test/integration/.*\\.spec\\.ts$"`, `globalSetup/globalTeardown` pointing to TestContainers setup, timeout 30000ms
-  - Update `test/jest-e2e.json` — same globalSetup/globalTeardown, `testRegex: "test/e2e/.*\\.e2e-spec\\.ts$"`, timeout 60000ms
-  - Update `package.json` jest config — add `collectCoverageFrom` exclusions (`*.module.ts`, `main.ts`, `*.dto.ts`, `api.controller.ts`, `data.service.ts`), add `coverageThreshold` (80/80/85/85)
-
-- [ ] **0.8 — Add npm scripts**
-  - `test:integration` → `jest --config test/jest-integration.json`
-  - `test:e2e` → `jest --config test/jest-e2e.json`
-  - `test:all` → `npm test && npm run test:integration && npm run test:e2e`
+> **Learnings:**
+> - `@types/nock` also installed (nock v14 needs it)
+> - Test helpers compile via ts-jest at runtime; `npx tsc --noEmit` excludes `test/` per `tsconfig.build.json`
+> - Coverage threshold (80/80/85/85) added to package.json but will only gate `test:cov` runs, not plain `npm test`
+> - All 45 existing unit tests pass after infrastructure changes
 
 ---
 

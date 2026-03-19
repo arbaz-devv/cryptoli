@@ -1,12 +1,12 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
-  "testRegex": "test/e2e/.*\\.e2e-spec\\.ts$",
+  "testRegex": "test/integration/.*\\.spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "testEnvironment": "node",
   "globalSetup": "<rootDir>/test/helpers/test-db.setup.ts",
   "globalTeardown": "<rootDir>/test/helpers/test-db.teardown.ts",
-  "testTimeout": 60000
+  "testTimeout": 30000
 }
