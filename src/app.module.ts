@@ -22,7 +22,6 @@ import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReactionsModule } from './reactions/reactions.module';
-import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -53,7 +52,6 @@ import { ReportsModule } from './reports/reports.module';
     AdminModule,
     NotificationsModule,
     ReactionsModule,
-    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

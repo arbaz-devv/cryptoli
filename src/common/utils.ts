@@ -120,12 +120,3 @@ export const createReactionSchema = z.object({
 });
 
 export type CreateReactionDto = z.infer<typeof createReactionSchema>;
-
-export const createReportSchema = z.object({
-  reason: z.string().min(1).max(2000),
-  reviewId: z.string().optional(),
-  commentId: z.string().optional(),
-  complaintId: z.string().optional(),
-});
-
-export type CreateReportDto = z.infer<typeof createReportSchema>;
