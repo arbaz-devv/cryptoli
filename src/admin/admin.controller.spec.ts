@@ -103,7 +103,10 @@ describe('AdminController', () => {
   describe('updateReviewStatus()', () => {
     it('should delegate to admin.updateReviewStatus()', async () => {
       await controller.updateReviewStatus('r1', { status: 'APPROVED' } as any);
-      expect(mockAdminService.updateReviewStatus).toHaveBeenCalledWith('r1', 'APPROVED');
+      expect(mockAdminService.updateReviewStatus).toHaveBeenCalledWith(
+        'r1',
+        'APPROVED',
+      );
     });
   });
 

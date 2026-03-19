@@ -1,7 +1,12 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { setupTestApp, teardownTestApp } from '../helpers/setup-app';
-import { truncateAll, getTestPrisma, flushTestRedis, getTestRedis } from '../helpers/test-db.utils';
+import {
+  truncateAll,
+  getTestPrisma,
+  flushTestRedis,
+  getTestRedis,
+} from '../helpers/test-db.utils';
 
 describe('Admin E2E', () => {
   let app: INestApplication;

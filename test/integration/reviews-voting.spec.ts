@@ -107,9 +107,7 @@ describe('Reviews Voting (Integration)', () => {
     );
 
     // Vote all UP concurrently
-    await Promise.all(
-      voters.map((v) => voteAndRecount(v.id, review.id, 'UP')),
-    );
+    await Promise.all(voters.map((v) => voteAndRecount(v.id, review.id, 'UP')));
 
     // All 5 votes should exist in DB
     const voteCount = await prisma.helpfulVote.count({

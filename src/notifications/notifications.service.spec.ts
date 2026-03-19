@@ -22,7 +22,12 @@ describe('NotificationsService', () => {
 
   describe('createForUser()', () => {
     it('should create DB record, emit socket, and send push', async () => {
-      const notification = { id: 'n1', userId: 'u1', type: 'MENTION', title: 'Test' };
+      const notification = {
+        id: 'n1',
+        userId: 'u1',
+        type: 'MENTION',
+        title: 'Test',
+      };
       prisma.notification.create.mockResolvedValue(notification);
       prisma.notification.count.mockResolvedValue(3);
 
@@ -65,7 +70,10 @@ describe('NotificationsService', () => {
 
   describe('listForUser()', () => {
     it('should return last 25 notifications with unread count', async () => {
-      prisma.notification.findMany.mockResolvedValue([{ id: 'n1' }, { id: 'n2' }]);
+      prisma.notification.findMany.mockResolvedValue([
+        { id: 'n1' },
+        { id: 'n2' },
+      ]);
       prisma.notification.count.mockResolvedValue(1);
 
       const result = await service.listForUser('u1');

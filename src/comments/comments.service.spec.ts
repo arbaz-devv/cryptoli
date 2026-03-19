@@ -14,7 +14,9 @@ describe('CommentsService', () => {
   beforeEach(() => {
     prisma = createPrismaMock();
     socketMock = createSocketMock();
-    notificationsMock = { createForUser: jest.fn().mockResolvedValue(undefined) };
+    notificationsMock = {
+      createForUser: jest.fn().mockResolvedValue(undefined),
+    };
     service = new CommentsService(
       prisma as unknown as PrismaService,
       notificationsMock as any,
@@ -26,7 +28,9 @@ describe('CommentsService', () => {
     it('should create a new UP vote via $transaction recount', async () => {
       const txMock = {
         comment: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
           update: jest.fn(),
         },
         commentVote: {
@@ -36,7 +40,7 @@ describe('CommentsService', () => {
         },
       };
       txMock.commentVote.count
-        .mockResolvedValueOnce(1)  // UP
+        .mockResolvedValueOnce(1) // UP
         .mockResolvedValueOnce(0); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -49,13 +53,19 @@ describe('CommentsService', () => {
       expect(txMock.commentVote.create).toHaveBeenCalledWith({
         data: { userId: 'u1', commentId: 'cm1', voteType: 'UP' },
       });
-      expect(result).toEqual({ voteType: 'UP', helpfulCount: 1, downVoteCount: 0 });
+      expect(result).toEqual({
+        voteType: 'UP',
+        helpfulCount: 1,
+        downVoteCount: 0,
+      });
     });
 
     it('should toggle off same vote (UP→delete)', async () => {
       const txMock = {
         comment: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
           update: jest.fn(),
         },
         commentVote: {
@@ -69,14 +79,18 @@ describe('CommentsService', () => {
 
       const result = await service.vote('cm1', 'UP', 'u1');
 
-      expect(txMock.commentVote.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
+      expect(txMock.commentVote.delete).toHaveBeenCalledWith({
+        where: { id: 'v1' },
+      });
       expect(result.voteType).toBeNull();
     });
 
     it('should switch vote (UP→DOWN)', async () => {
       const txMock = {
         comment: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
           update: jest.fn(),
         },
         commentVote: {
@@ -86,7 +100,7 @@ describe('CommentsService', () => {
         },
       };
       txMock.commentVote.count
-        .mockResolvedValueOnce(0)  // UP
+        .mockResolvedValueOnce(0) // UP
         .mockResolvedValueOnce(1); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -97,7 +111,11 @@ describe('CommentsService', () => {
         where: { id: 'v1' },
         data: { voteType: 'DOWN' },
       });
-      expect(result).toEqual({ voteType: 'DOWN', helpfulCount: 0, downVoteCount: 1 });
+      expect(result).toEqual({
+        voteType: 'DOWN',
+        helpfulCount: 0,
+        downVoteCount: 1,
+      });
     });
 
     it('should reject invalid voteType', async () => {
@@ -112,13 +130,17 @@ describe('CommentsService', () => {
       };
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
-      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(NotFoundError);
+      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(
+        NotFoundError,
+      );
     });
 
     it('should send notification on new UP vote to different author', async () => {
       const txMock = {
         comment: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
           update: jest.fn(),
         },
         commentVote: {
@@ -148,7 +170,9 @@ describe('CommentsService', () => {
     it('should NOT send notification when voting on own comment', async () => {
       const txMock = {
         comment: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'cm1', authorId: 'u1' }),
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'u1' }),
           update: jest.fn(),
         },
         commentVote: {
@@ -195,9 +219,9 @@ describe('CommentsService', () => {
     });
 
     it('should enforce exactly one target (reviewId/postId/complaintId)', async () => {
-      await expect(
-        service.create({ content: 'test' }, 'u1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.create({ content: 'test' }, 'u1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should reject multiple targets', async () => {
@@ -214,7 +238,12 @@ describe('CommentsService', () => {
         id: 'cm1',
         content: 'Nice!',
         authorId: 'u1',
-        author: { id: 'u1', username: 'commenter', avatar: null, verified: false },
+        author: {
+          id: 'u1',
+          username: 'commenter',
+          avatar: null,
+          verified: false,
+        },
         _count: { reactions: 0, votes: 0, replies: 0 },
       });
       prisma.review.findUnique.mockResolvedValue({
@@ -271,7 +300,9 @@ describe('CommentsService', () => {
         { commentId: 'cm1', voteType: 'UP' },
       ]);
 
-      const result = await service.list('r1', undefined, undefined, { id: 'u1' });
+      const result = await service.list('r1', undefined, undefined, {
+        id: 'u1',
+      });
 
       expect((result.comments[0] as any).userVote).toBe('UP');
       expect((result.comments[0].replies[0] as any).userVote).toBeNull();

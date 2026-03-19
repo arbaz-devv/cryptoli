@@ -94,7 +94,11 @@ describe('AdminGuard', () => {
     it('should accept valid admin JWT', () => {
       delete process.env.ADMIN_API_KEY;
       const token = jwt.sign(
-        { type: ADMIN_JWT_TYPE, email: 'admin@test.com', sub: 'admin@test.com' },
+        {
+          type: ADMIN_JWT_TYPE,
+          email: 'admin@test.com',
+          sub: 'admin@test.com',
+        },
         JWT_SECRET,
         { expiresIn: '24h' },
       );
@@ -105,11 +109,9 @@ describe('AdminGuard', () => {
 
     it('should reject non-admin JWT (type is not admin)', () => {
       delete process.env.ADMIN_API_KEY;
-      const token = jwt.sign(
-        { type: 'user', userId: 'u1' },
-        JWT_SECRET,
-        { expiresIn: '1h' },
-      );
+      const token = jwt.sign({ type: 'user', userId: 'u1' }, JWT_SECRET, {
+        expiresIn: '1h',
+      });
 
       const req = mockRequest({ authorization: `Bearer ${token}` });
       expect(() => guard.canActivate(mockContext(req))).toThrow(

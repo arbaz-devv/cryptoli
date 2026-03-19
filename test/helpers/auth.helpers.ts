@@ -71,9 +71,7 @@ export function mockRequest(overrides: Record<string, any> = {}): any {
   };
 }
 
-export function mockExecutionContext(
-  request?: any,
-): ExecutionContext {
+export function mockExecutionContext(request?: any): ExecutionContext {
   const req = request ?? mockRequest();
   return {
     switchToHttp: () => ({

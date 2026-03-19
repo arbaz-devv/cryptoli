@@ -17,9 +17,15 @@ describe('SearchService', () => {
   });
 
   it('should search all entity types when type is "all"', async () => {
-    prisma.company.findMany.mockResolvedValue([{ id: 'c1', name: 'Bitcoin Exchange' }]);
-    prisma.review.findMany.mockResolvedValue([{ id: 'r1', title: 'Bitcoin Review' }]);
-    prisma.user.findMany.mockResolvedValue([{ id: 'u1', username: 'bitcoinfan' }]);
+    prisma.company.findMany.mockResolvedValue([
+      { id: 'c1', name: 'Bitcoin Exchange' },
+    ]);
+    prisma.review.findMany.mockResolvedValue([
+      { id: 'r1', title: 'Bitcoin Review' },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'u1', username: 'bitcoinfan' },
+    ]);
 
     const result = await service.search('bitcoin', 'all', 10);
 

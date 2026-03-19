@@ -34,7 +34,10 @@ describe('Users E2E', () => {
     await teardownTestApp(app);
   });
 
-  async function registerUser(): Promise<{ cookies: string[]; username: string }> {
+  async function registerUser(): Promise<{
+    cookies: string[];
+    username: string;
+  }> {
     userCounter++;
     const suffix = `${Date.now()}${userCounter}`;
     const email = `user${suffix}@test.com`;

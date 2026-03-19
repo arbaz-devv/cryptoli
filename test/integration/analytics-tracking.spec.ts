@@ -1,5 +1,9 @@
 import Redis from 'ioredis';
-import { getTestRedis, flushTestRedis, getTestRedisUrl } from '../helpers/test-db.utils';
+import {
+  getTestRedis,
+  flushTestRedis,
+  getTestRedisUrl,
+} from '../helpers/test-db.utils';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { RedisService } from '../../src/redis/redis.service';
 
@@ -93,15 +97,11 @@ describe('Analytics Tracking (Integration)', () => {
   it('should return aggregated stats matching tracked data', async () => {
     // Track 3 page views from different sessions
     for (let i = 0; i < 3; i++) {
-      await analyticsService.track(
-        '127.0.0.1',
-        'Mozilla/5.0 Chrome/120',
-        {
-          event: 'page_view',
-          path: '/home',
-          sessionId: `session-${i}`,
-        },
-      );
+      await analyticsService.track('127.0.0.1', 'Mozilla/5.0 Chrome/120', {
+        event: 'page_view',
+        path: '/home',
+        sessionId: `session-${i}`,
+      });
     }
 
     await waitForWrites();
@@ -122,25 +122,17 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should reflect active sessions in getRealtime()', async () => {
-    await analyticsService.track(
-      '127.0.0.1',
-      'Mozilla/5.0 Chrome/120',
-      {
-        event: 'page_view',
-        path: '/dashboard',
-        sessionId: 'realtime-session-1',
-      },
-    );
+    await analyticsService.track('127.0.0.1', 'Mozilla/5.0 Chrome/120', {
+      event: 'page_view',
+      path: '/dashboard',
+      sessionId: 'realtime-session-1',
+    });
 
-    await analyticsService.track(
-      '127.0.0.1',
-      'Mozilla/5.0 Firefox/115',
-      {
-        event: 'page_view',
-        path: '/settings',
-        sessionId: 'realtime-session-2',
-      },
-    );
+    await analyticsService.track('127.0.0.1', 'Mozilla/5.0 Firefox/115', {
+      event: 'page_view',
+      path: '/settings',
+      sessionId: 'realtime-session-2',
+    });
 
     await waitForWrites();
 
@@ -178,11 +170,7 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should track like events in Redis', async () => {
-    await analyticsService.track(
-      '127.0.0.1',
-      'Chrome',
-      { event: 'like' },
-    );
+    await analyticsService.track('127.0.0.1', 'Chrome', { event: 'like' });
 
     await waitForWrites();
 
@@ -191,16 +179,12 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should not store data when consent is false', async () => {
-    await analyticsService.track(
-      '127.0.0.1',
-      'Chrome',
-      {
-        event: 'page_view',
-        path: '/private',
-        sessionId: 'no-consent-session',
-        consent: false,
-      },
-    );
+    await analyticsService.track('127.0.0.1', 'Chrome', {
+      event: 'page_view',
+      path: '/private',
+      sessionId: 'no-consent-session',
+      consent: false,
+    });
 
     await waitForWrites();
 

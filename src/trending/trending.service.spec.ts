@@ -14,10 +14,24 @@ describe('TrendingService', () => {
   it('should return trendingNow and topRatedThisWeek', async () => {
     prisma.review.findMany
       .mockResolvedValueOnce([
-        { id: 'r1', title: 'Trending', content: 'x', overallScore: 8, helpfulCount: 50, createdAt: new Date() },
+        {
+          id: 'r1',
+          title: 'Trending',
+          content: 'x',
+          overallScore: 8,
+          helpfulCount: 50,
+          createdAt: new Date(),
+        },
       ])
       .mockResolvedValueOnce([
-        { id: 'r2', title: 'Top Rated', content: 'y', overallScore: 9.5, helpfulCount: 10, createdAt: new Date() },
+        {
+          id: 'r2',
+          title: 'Top Rated',
+          content: 'y',
+          overallScore: 9.5,
+          helpfulCount: 10,
+          createdAt: new Date(),
+        },
       ]);
 
     const result = await service.getTrending('week', 10);
@@ -37,7 +51,9 @@ describe('TrendingService', () => {
     // Second call (topRated) should have a date filter
     const topRatedCall = prisma.review.findMany.mock.calls[1][0];
     expect(topRatedCall.where.createdAt.gte).toBeDefined();
-    const daysAgo = (Date.now() - topRatedCall.where.createdAt.gte.getTime()) / (1000 * 60 * 60 * 24);
+    const daysAgo =
+      (Date.now() - topRatedCall.where.createdAt.gte.getTime()) /
+      (1000 * 60 * 60 * 24);
     expect(daysAgo).toBeCloseTo(30, 0);
   });
 
@@ -47,13 +63,21 @@ describe('TrendingService', () => {
     await service.getTrending('week', 5);
 
     const topRatedCall = prisma.review.findMany.mock.calls[1][0];
-    const daysAgo = (Date.now() - topRatedCall.where.createdAt.gte.getTime()) / (1000 * 60 * 60 * 24);
+    const daysAgo =
+      (Date.now() - topRatedCall.where.createdAt.gte.getTime()) /
+      (1000 * 60 * 60 * 24);
     expect(daysAgo).toBeCloseTo(7, 0);
   });
 
   it('should map review fields correctly', async () => {
     prisma.review.findMany.mockResolvedValue([
-      { id: 'r1', title: 'Test', content: 'Content', overallScore: 7, helpfulCount: 3 },
+      {
+        id: 'r1',
+        title: 'Test',
+        content: 'Content',
+        overallScore: 7,
+        helpfulCount: 3,
+      },
     ]);
 
     const result = await service.getTrending('week', 10);

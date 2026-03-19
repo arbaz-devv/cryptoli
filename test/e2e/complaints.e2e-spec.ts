@@ -220,7 +220,9 @@ describe('Complaints E2E', () => {
         .post(`/api/complaints/${complaintId}/reply`)
         .set('Origin', 'http://localhost:3000')
         .set('X-Admin-Key', 'test-admin-key')
-        .send({ content: 'We apologise for the delay and are looking into this.' });
+        .send({
+          content: 'We apologise for the delay and are looking into this.',
+        });
 
       expect(replyRes.status).toBe(201);
       expect(replyRes.body.id).toBeDefined();

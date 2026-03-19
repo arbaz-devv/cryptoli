@@ -212,7 +212,9 @@ describe('AdminService', () => {
       const result = await service.getReviews({ page: 1, limit: 10 });
 
       expect(result.reviews).toHaveLength(1);
-      expect((result.reviews[0] as any).excerpt.length).toBeLessThanOrEqual(124); // 120 + "..."
+      expect((result.reviews[0] as any).excerpt.length).toBeLessThanOrEqual(
+        124,
+      ); // 120 + "..."
       expect((result.reviews[0] as any).author).toBe('Alice');
       expect((result.reviews[0] as any).productName).toBe('ExchangeX');
       expect(result.pagination.total).toBe(1);
@@ -222,7 +224,11 @@ describe('AdminService', () => {
       prisma.review.findMany.mockResolvedValue([]);
       prisma.review.count.mockResolvedValue(0);
 
-      await service.getReviews({ page: 1, limit: 10, status: 'PENDING' as any });
+      await service.getReviews({
+        page: 1,
+        limit: 10,
+        status: 'PENDING' as any,
+      });
 
       const findCall = prisma.review.findMany.mock.calls[0][0];
       expect(findCall.where.status).toBe('PENDING');
@@ -294,9 +300,7 @@ describe('AdminService', () => {
         updatedAt: new Date(),
         _count: { comments: 1 },
         reactions: [{ type: 'like' }, { type: 'like' }, { type: 'fire' }],
-        helpfulVotes: [
-          { userId: 'u2', voteType: 'UP', createdAt: new Date() },
-        ],
+        helpfulVotes: [{ userId: 'u2', voteType: 'UP', createdAt: new Date() }],
         comments: [
           {
             id: 'c1',
@@ -322,13 +326,18 @@ describe('AdminService', () => {
 
     it('should throw NotFoundException for missing review', async () => {
       prisma.review.findUnique.mockResolvedValue(null);
-      await expect(service.getReview('missing')).rejects.toThrow(NotFoundException);
+      await expect(service.getReview('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('updateReviewStatus()', () => {
     it('should update status and return result', async () => {
-      prisma.review.findUnique.mockResolvedValue({ id: 'r1', status: 'PENDING' });
+      prisma.review.findUnique.mockResolvedValue({
+        id: 'r1',
+        status: 'PENDING',
+      });
       prisma.review.update.mockResolvedValue({ id: 'r1', status: 'APPROVED' });
 
       const result = await service.updateReviewStatus('r1', 'APPROVED' as any);
@@ -377,9 +386,7 @@ describe('AdminService', () => {
             _max: { createdAt: new Date('2026-03-15') },
           },
         ])
-        .mockResolvedValueOnce([
-          { productId: 'p1', _count: 2 },
-        ]);
+        .mockResolvedValueOnce([{ productId: 'p1', _count: 2 }]);
 
       // Use different limit to avoid cache hit from previous test (module-level cache)
       const result = await service.getRatings({ page: 1, limit: 20 });

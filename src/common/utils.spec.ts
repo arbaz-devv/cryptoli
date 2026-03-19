@@ -103,24 +103,34 @@ describe('Zod schemas', () => {
 
   describe('loginSchema', () => {
     it('should accept valid input', () => {
-      expect(loginSchema.safeParse({ email: 'a@b.com', password: 'x' }).success).toBe(true);
+      expect(
+        loginSchema.safeParse({ email: 'a@b.com', password: 'x' }).success,
+      ).toBe(true);
     });
 
     it('should reject empty password', () => {
-      expect(loginSchema.safeParse({ email: 'a@b.com', password: '' }).success).toBe(false);
+      expect(
+        loginSchema.safeParse({ email: 'a@b.com', password: '' }).success,
+      ).toBe(false);
     });
   });
 
   describe('changePasswordSchema', () => {
     it('should accept valid input', () => {
       expect(
-        changePasswordSchema.safeParse({ currentPassword: 'x', newPassword: '12345678' }).success,
+        changePasswordSchema.safeParse({
+          currentPassword: 'x',
+          newPassword: '12345678',
+        }).success,
       ).toBe(true);
     });
 
     it('should reject short new password', () => {
       expect(
-        changePasswordSchema.safeParse({ currentPassword: 'x', newPassword: '1234567' }).success,
+        changePasswordSchema.safeParse({
+          currentPassword: 'x',
+          newPassword: '1234567',
+        }).success,
       ).toBe(false);
     });
   });
@@ -132,7 +142,8 @@ describe('Zod schemas', () => {
 
     it('should accept valid username and bio', () => {
       expect(
-        updateProfileSchema.safeParse({ username: 'abc', bio: 'hello' }).success,
+        updateProfileSchema.safeParse({ username: 'abc', bio: 'hello' })
+          .success,
       ).toBe(true);
     });
 
@@ -156,37 +167,55 @@ describe('Zod schemas', () => {
     });
 
     it('should reject short title', () => {
-      expect(createReviewSchema.safeParse({ ...valid, title: 'Hi' }).success).toBe(false);
+      expect(
+        createReviewSchema.safeParse({ ...valid, title: 'Hi' }).success,
+      ).toBe(false);
     });
 
     it('should reject short content', () => {
-      expect(createReviewSchema.safeParse({ ...valid, content: 'short' }).success).toBe(false);
+      expect(
+        createReviewSchema.safeParse({ ...valid, content: 'short' }).success,
+      ).toBe(false);
     });
 
     it('should reject overallScore out of range', () => {
-      expect(createReviewSchema.safeParse({ ...valid, overallScore: 11 }).success).toBe(false);
-      expect(createReviewSchema.safeParse({ ...valid, overallScore: -1 }).success).toBe(false);
+      expect(
+        createReviewSchema.safeParse({ ...valid, overallScore: 11 }).success,
+      ).toBe(false);
+      expect(
+        createReviewSchema.safeParse({ ...valid, overallScore: -1 }).success,
+      ).toBe(false);
     });
   });
 
   describe('createCommentSchema', () => {
     it('should accept valid input', () => {
-      expect(createCommentSchema.safeParse({ content: 'hi', reviewId: 'r1' }).success).toBe(true);
+      expect(
+        createCommentSchema.safeParse({ content: 'hi', reviewId: 'r1' })
+          .success,
+      ).toBe(true);
     });
 
     it('should reject empty content', () => {
-      expect(createCommentSchema.safeParse({ content: '' }).success).toBe(false);
+      expect(createCommentSchema.safeParse({ content: '' }).success).toBe(
+        false,
+      );
     });
 
     it('should reject content over 1000 chars', () => {
-      expect(createCommentSchema.safeParse({ content: 'x'.repeat(1001) }).success).toBe(false);
+      expect(
+        createCommentSchema.safeParse({ content: 'x'.repeat(1001) }).success,
+      ).toBe(false);
     });
   });
 
   describe('createComplaintSchema', () => {
     it('should accept valid input', () => {
       expect(
-        createComplaintSchema.safeParse({ title: 'Bad', content: 'Details here' }).success,
+        createComplaintSchema.safeParse({
+          title: 'Bad',
+          content: 'Details here',
+        }).success,
       ).toBe(true);
     });
 
@@ -199,7 +228,9 @@ describe('Zod schemas', () => {
 
   describe('createReplySchema', () => {
     it('should accept valid input', () => {
-      expect(createReplySchema.safeParse({ content: 'reply' }).success).toBe(true);
+      expect(createReplySchema.safeParse({ content: 'reply' }).success).toBe(
+        true,
+      );
     });
 
     it('should reject empty content', () => {
@@ -207,7 +238,9 @@ describe('Zod schemas', () => {
     });
 
     it('should reject content over 5000 chars', () => {
-      expect(createReplySchema.safeParse({ content: 'x'.repeat(5001) }).success).toBe(false);
+      expect(
+        createReplySchema.safeParse({ content: 'x'.repeat(5001) }).success,
+      ).toBe(false);
     });
   });
 });

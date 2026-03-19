@@ -51,9 +51,7 @@ describe('AnalyticsService', () => {
       await service.track('1.2.3.4', '', { event: 'like' });
 
       const incrCalls = redisMock._clientMock.incr.mock.calls;
-      const likeCall = incrCalls.find((c: string[]) =>
-        c[0].includes(':like:'),
-      );
+      const likeCall = incrCalls.find((c: string[]) => c[0].includes(':like:'));
       expect(likeCall).toBeDefined();
     });
 

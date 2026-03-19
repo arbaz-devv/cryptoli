@@ -1,8 +1,13 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { setupTestApp, teardownTestApp } from '../helpers/setup-app';
-import { truncateAll, getTestPrisma, flushTestRedis, getTestRedis } from '../helpers/test-db.utils';
-import { createTestCompany, resetFactoryCounter } from '../helpers/factories';
+import {
+  truncateAll,
+  getTestPrisma,
+  flushTestRedis,
+  getTestRedis,
+} from '../helpers/test-db.utils';
+import { resetFactoryCounter } from '../helpers/factories';
 import { PrismaClient } from '@prisma/client';
 
 describe('Reviews E2E', () => {
@@ -43,9 +48,16 @@ describe('Reviews E2E', () => {
 
   const validReview = {
     title: 'Great Exchange Platform',
-    content: 'This is a detailed review with enough content to pass validation easily.',
+    content:
+      'This is a detailed review with enough content to pass validation easily.',
     overallScore: 8,
-    criteriaScores: { security: 9, easeOfUse: 8, support: 7, features: 8, value: 7 },
+    criteriaScores: {
+      security: 9,
+      easeOfUse: 8,
+      support: 7,
+      features: 8,
+      value: 7,
+    },
   };
 
   describe('POST /api/reviews', () => {
@@ -96,8 +108,7 @@ describe('Reviews E2E', () => {
         .set('Cookie', cookies)
         .send(validReview);
 
-      const res = await request(server)
-        .get('/api/reviews?page=1&limit=10');
+      const res = await request(server).get('/api/reviews?page=1&limit=10');
 
       expect(res.status).toBe(200);
       expect(res.body.reviews).toBeDefined();

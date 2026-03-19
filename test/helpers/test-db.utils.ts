@@ -6,7 +6,8 @@ let prisma: PrismaClient;
 export function getTestPrisma(): PrismaClient {
   if (!prisma) {
     // globalThis is set when running in-process; process.env is set by globalSetup for worker processes
-    const url = (globalThis as any).__TEST_DATABASE_URL__ || process.env.DATABASE_URL;
+    const url =
+      (globalThis as any).__TEST_DATABASE_URL__ || process.env.DATABASE_URL;
     if (!url) {
       throw new Error(
         'TEST_DATABASE_URL not set. Did globalSetup run? ' +

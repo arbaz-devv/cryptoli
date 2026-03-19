@@ -58,17 +58,26 @@ describe('Cascade Deletes (Integration)', () => {
     // All dependent records should be gone
     expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
     expect(await prisma.review.count({ where: { authorId: user.id } })).toBe(0);
-    expect(await prisma.comment.count({ where: { authorId: user.id } })).toBe(0);
-    expect(await prisma.follow.count({ where: { followerId: user.id } })).toBe(0);
-    expect(await prisma.notification.count({ where: { userId: user.id } })).toBe(0);
-    expect(await prisma.helpfulVote.count({ where: { userId: user.id } })).toBe(0);
+    expect(await prisma.comment.count({ where: { authorId: user.id } })).toBe(
+      0,
+    );
+    expect(await prisma.follow.count({ where: { followerId: user.id } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.notification.count({ where: { userId: user.id } }),
+    ).toBe(0);
+    expect(await prisma.helpfulVote.count({ where: { userId: user.id } })).toBe(
+      0,
+    );
   });
 
   it('should cascade Company delete to products, reviews, company follows, complaints', async () => {
     const user = await createTestUser(prisma);
     const company = await createTestCompany(prisma);
 
-    const product = await prisma.product.create({
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _product = await prisma.product.create({
       data: {
         name: 'Test Product',
         slug: 'test-product',
@@ -85,10 +94,18 @@ describe('Cascade Deletes (Integration)', () => {
 
     await prisma.company.delete({ where: { id: company.id } });
 
-    expect(await prisma.product.count({ where: { companyId: company.id } })).toBe(0);
-    expect(await prisma.review.count({ where: { companyId: company.id } })).toBe(0);
-    expect(await prisma.complaint.count({ where: { companyId: company.id } })).toBe(0);
-    expect(await prisma.companyFollow.count({ where: { companyId: company.id } })).toBe(0);
+    expect(
+      await prisma.product.count({ where: { companyId: company.id } }),
+    ).toBe(0);
+    expect(
+      await prisma.review.count({ where: { companyId: company.id } }),
+    ).toBe(0);
+    expect(
+      await prisma.complaint.count({ where: { companyId: company.id } }),
+    ).toBe(0);
+    expect(
+      await prisma.companyFollow.count({ where: { companyId: company.id } }),
+    ).toBe(0);
   });
 
   it('should cascade Review delete to comments, helpful votes, reactions', async () => {
@@ -106,9 +123,15 @@ describe('Cascade Deletes (Integration)', () => {
 
     await prisma.review.delete({ where: { id: review.id } });
 
-    expect(await prisma.comment.count({ where: { reviewId: review.id } })).toBe(0);
-    expect(await prisma.helpfulVote.count({ where: { reviewId: review.id } })).toBe(0);
-    expect(await prisma.reaction.count({ where: { reviewId: review.id } })).toBe(0);
+    expect(await prisma.comment.count({ where: { reviewId: review.id } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.helpfulVote.count({ where: { reviewId: review.id } }),
+    ).toBe(0);
+    expect(
+      await prisma.reaction.count({ where: { reviewId: review.id } }),
+    ).toBe(0);
   });
 
   it('should cascade Comment delete to child comments and comment votes', async () => {
@@ -124,9 +147,9 @@ describe('Cascade Deletes (Integration)', () => {
 
     await prisma.comment.delete({ where: { id: parent.id } });
 
-    expect(
-      await prisma.comment.count({ where: { parentId: parent.id } }),
-    ).toBe(0);
+    expect(await prisma.comment.count({ where: { parentId: parent.id } })).toBe(
+      0,
+    );
     expect(
       await prisma.commentVote.count({ where: { commentId: parent.id } }),
     ).toBe(0);

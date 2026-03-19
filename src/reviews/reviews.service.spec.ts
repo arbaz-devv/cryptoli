@@ -17,7 +17,9 @@ describe('ReviewsService', () => {
   beforeEach(async () => {
     prisma = createPrismaMock();
     socketService = createSocketMock();
-    notificationsMock = { createForUser: jest.fn().mockResolvedValue(undefined) };
+    notificationsMock = {
+      createForUser: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -171,7 +173,11 @@ describe('ReviewsService', () => {
     it('should create a new UP vote and recount', async () => {
       const txMock = {
         review: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'r1', title: 'Test', authorId: 'author1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
           update: jest.fn(),
         },
         user: {
@@ -184,7 +190,7 @@ describe('ReviewsService', () => {
         },
       };
       txMock.helpfulVote.count
-        .mockResolvedValueOnce(1)  // UP
+        .mockResolvedValueOnce(1) // UP
         .mockResolvedValueOnce(0); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -194,14 +200,22 @@ describe('ReviewsService', () => {
       expect(txMock.helpfulVote.create).toHaveBeenCalledWith({
         data: { userId: 'u1', reviewId: 'r1', voteType: 'UP' },
       });
-      expect(socketService.emitReviewVoteUpdated).toHaveBeenCalledWith('r1', 1, 0);
+      expect(socketService.emitReviewVoteUpdated).toHaveBeenCalledWith(
+        'r1',
+        1,
+        0,
+      );
       expect(result.voteType).toBe('UP');
     });
 
     it('should toggle off same vote (UP→delete)', async () => {
       const txMock = {
         review: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'r1', title: 'Test', authorId: 'author1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
           update: jest.fn(),
         },
         user: {
@@ -218,14 +232,20 @@ describe('ReviewsService', () => {
 
       const result = await service.vote('r1', 'UP', 'u1');
 
-      expect(txMock.helpfulVote.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
+      expect(txMock.helpfulVote.delete).toHaveBeenCalledWith({
+        where: { id: 'v1' },
+      });
       expect(result.voteType).toBeNull();
     });
 
     it('should switch vote (UP→DOWN)', async () => {
       const txMock = {
         review: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'r1', title: 'Test', authorId: 'author1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
           update: jest.fn(),
         },
         user: {
@@ -238,7 +258,7 @@ describe('ReviewsService', () => {
         },
       };
       txMock.helpfulVote.count
-        .mockResolvedValueOnce(0)  // UP
+        .mockResolvedValueOnce(0) // UP
         .mockResolvedValueOnce(1); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -264,13 +284,19 @@ describe('ReviewsService', () => {
       };
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
-      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(NotFoundError);
+      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(
+        NotFoundError,
+      );
     });
 
     it('should notify review author when different user votes', async () => {
       const txMock = {
         review: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'r1', title: 'Test', authorId: 'author1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
           update: jest.fn(),
         },
         user: {
@@ -301,7 +327,11 @@ describe('ReviewsService', () => {
     it('should NOT notify when voting on own review', async () => {
       const txMock = {
         review: {
-          findUnique: jest.fn().mockResolvedValue({ id: 'r1', title: 'Test', authorId: 'author1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
           update: jest.fn(),
         },
         user: {
@@ -340,7 +370,8 @@ describe('ReviewsService', () => {
       const result = await service.create(
         {
           title: 'Great Exchange',
-          content: 'This is a detailed review with enough content for validation.',
+          content:
+            'This is a detailed review with enough content for validation.',
           overallScore: 7.5,
           criteriaScores: { security: 8, easeOfUse: 7 },
         },
@@ -389,7 +420,15 @@ describe('ReviewsService', () => {
         { reviewId: 'r1', voteType: 'UP' },
       ]);
 
-      const result = await service.list(1, 10, undefined, undefined, undefined, 'APPROVED', { id: 'u1' });
+      const result = await service.list(
+        1,
+        10,
+        undefined,
+        undefined,
+        undefined,
+        'APPROVED',
+        { id: 'u1' },
+      );
 
       expect(result.reviews).toHaveLength(2);
       expect((result.reviews[0] as any).userVote).toBe('UP');
@@ -401,7 +440,15 @@ describe('ReviewsService', () => {
       prisma.review.findMany.mockResolvedValue([{ id: 'r1' }]);
       prisma.review.count.mockResolvedValue(1);
 
-      const result = await service.list(1, 10, undefined, undefined, undefined, 'APPROVED', null);
+      const result = await service.list(
+        1,
+        10,
+        undefined,
+        undefined,
+        undefined,
+        'APPROVED',
+        null,
+      );
 
       expect((result.reviews[0] as any).userVote).toBeNull();
     });

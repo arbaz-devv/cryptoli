@@ -80,9 +80,7 @@ export default async function globalSetup() {
 
   // 2d. Connections are localhost
   if (!isLocalhost(pg.getHost())) {
-    errors.push(
-      `PostgreSQL host is "${pg.getHost()}" — expected localhost`,
-    );
+    errors.push(`PostgreSQL host is "${pg.getHost()}" — expected localhost`);
   }
   if (!isLocalhost(redis.getHost())) {
     errors.push(`Redis host is "${redis.getHost()}" — expected localhost`);

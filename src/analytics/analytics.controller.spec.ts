@@ -20,7 +20,10 @@ describe('AnalyticsController', () => {
       getRealtime: jest.fn().mockResolvedValue({ activeNow: 5, byCountry: {} }),
     };
     mockPrisma = {
-      user: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+      user: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
     controller = new AnalyticsController(
       mockAnalyticsService as any,
@@ -36,7 +39,10 @@ describe('AnalyticsController', () => {
         ip: '1.2.3.4',
       };
 
-      const result = controller.track(mockReq as any, { event: 'page_view' } as any);
+      const result = controller.track(
+        mockReq as any,
+        { event: 'page_view' } as any,
+      );
 
       expect(result).toEqual({ ok: true });
       expect(mockAnalyticsService.track).toHaveBeenCalled();

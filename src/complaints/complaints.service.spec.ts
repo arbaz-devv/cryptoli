@@ -27,12 +27,10 @@ describe('ComplaintsService', () => {
         },
       };
       txMock.complaintVote.count
-        .mockResolvedValueOnce(1)  // UP
+        .mockResolvedValueOnce(1) // UP
         .mockResolvedValueOnce(0); // DOWN
 
-      prisma.$transaction.mockImplementation(
-        async (fn: any) => fn(txMock),
-      );
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
       const result = await service.vote('c1', 'UP', 'u1');
 
@@ -43,7 +41,11 @@ describe('ComplaintsService', () => {
         where: { id: 'c1' },
         data: { helpfulCount: 1, downVoteCount: 0 },
       });
-      expect(result).toEqual({ voteType: 'UP', helpfulCount: 1, downVoteCount: 0 });
+      expect(result).toEqual({
+        voteType: 'UP',
+        helpfulCount: 1,
+        downVoteCount: 0,
+      });
     });
 
     it('should toggle off when same vote exists (UP→delete)', async () => {
@@ -63,7 +65,9 @@ describe('ComplaintsService', () => {
 
       const result = await service.vote('c1', 'UP', 'u1');
 
-      expect(txMock.complaintVote.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
+      expect(txMock.complaintVote.delete).toHaveBeenCalledWith({
+        where: { id: 'v1' },
+      });
       expect(result.voteType).toBeNull();
     });
 
@@ -80,7 +84,7 @@ describe('ComplaintsService', () => {
         },
       };
       txMock.complaintVote.count
-        .mockResolvedValueOnce(0)  // UP
+        .mockResolvedValueOnce(0) // UP
         .mockResolvedValueOnce(1); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
@@ -91,7 +95,11 @@ describe('ComplaintsService', () => {
         where: { id: 'v1' },
         data: { voteType: 'DOWN' },
       });
-      expect(result).toEqual({ voteType: 'DOWN', helpfulCount: 0, downVoteCount: 1 });
+      expect(result).toEqual({
+        voteType: 'DOWN',
+        helpfulCount: 0,
+        downVoteCount: 1,
+      });
     });
 
     it('should reject invalid voteType', async () => {
@@ -106,7 +114,9 @@ describe('ComplaintsService', () => {
       };
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
-      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(NotFoundError);
+      await expect(service.vote('bad', 'UP', 'u1')).rejects.toThrow(
+        NotFoundError,
+      );
     });
   });
 
@@ -134,9 +144,7 @@ describe('ComplaintsService', () => {
     });
 
     it('should reject invalid body via Zod', async () => {
-      await expect(
-        service.create({ title: '' }, 'u1'),
-      ).rejects.toThrow();
+      await expect(service.create({ title: '' }, 'u1')).rejects.toThrow();
     });
   });
 
@@ -184,7 +192,14 @@ describe('ComplaintsService', () => {
         { complaintId: 'c1', voteType: 'UP' },
       ]);
 
-      const result = await service.list(1, 10, undefined, undefined, undefined, { id: 'u1' });
+      const result = await service.list(
+        1,
+        10,
+        undefined,
+        undefined,
+        undefined,
+        { id: 'u1' },
+      );
 
       expect(result.complaints).toHaveLength(2);
       expect((result.complaints[0] as any).userVote).toBe('UP');
@@ -254,7 +269,10 @@ describe('ComplaintsService', () => {
         company: { id: 'comp1' },
       });
       prisma.company.findUnique.mockResolvedValue({ id: 'comp1' });
-      prisma.complaintReply.create.mockResolvedValue({ id: 'r1', content: 'text' });
+      prisma.complaintReply.create.mockResolvedValue({
+        id: 'r1',
+        content: 'text',
+      });
 
       await service.reply('c1', 'text');
 

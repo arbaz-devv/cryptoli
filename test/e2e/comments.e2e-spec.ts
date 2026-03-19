@@ -1,7 +1,12 @@
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { setupTestApp, teardownTestApp } from '../helpers/setup-app';
-import { truncateAll, getTestPrisma, flushTestRedis, getTestRedis } from '../helpers/test-db.utils';
+import {
+  truncateAll,
+  getTestPrisma,
+  flushTestRedis,
+  getTestRedis,
+} from '../helpers/test-db.utils';
 import { resetFactoryCounter } from '../helpers/factories';
 import { PrismaClient } from '@prisma/client';
 
@@ -44,9 +49,16 @@ describe('Comments E2E', () => {
 
   const validReview = {
     title: 'Great Exchange Platform',
-    content: 'This is a detailed review with enough content to pass validation easily.',
+    content:
+      'This is a detailed review with enough content to pass validation easily.',
     overallScore: 8,
-    criteriaScores: { security: 9, easeOfUse: 8, support: 7, features: 8, value: 7 },
+    criteriaScores: {
+      security: 9,
+      easeOfUse: 8,
+      support: 7,
+      features: 8,
+      value: 7,
+    },
   };
 
   async function createReview(cookies: string[]): Promise<string> {
@@ -102,8 +114,9 @@ describe('Comments E2E', () => {
       expect(replyRes.body.content).toBe('Reply to parent.');
 
       // Fetch the parent comment and verify the reply is nested under it
-      const getRes = await request(server)
-        .get(`/api/comments/${parentId}?reviewId=${reviewId}`);
+      const getRes = await request(server).get(
+        `/api/comments/${parentId}?reviewId=${reviewId}`,
+      );
 
       expect(getRes.status).toBe(200);
       expect(getRes.body.id).toBe(parentId);
@@ -169,8 +182,9 @@ describe('Comments E2E', () => {
         .set('Cookie', cookies)
         .send({ content: 'Second comment.', reviewId });
 
-      const res = await request(server)
-        .get(`/api/comments?reviewId=${reviewId}`);
+      const res = await request(server).get(
+        `/api/comments?reviewId=${reviewId}`,
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.comments).toBeDefined();
@@ -182,8 +196,9 @@ describe('Comments E2E', () => {
       const cookies = await registerAndGetCookies();
       const reviewId = await createReview(cookies);
 
-      const res = await request(server)
-        .get(`/api/comments?reviewId=${reviewId}`);
+      const res = await request(server).get(
+        `/api/comments?reviewId=${reviewId}`,
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.comments).toBeDefined();
@@ -205,8 +220,9 @@ describe('Comments E2E', () => {
       expect(parentRes.status).toBe(201);
       const parentId = parentRes.body.id as string;
 
-      const getRes = await request(server)
-        .get(`/api/comments/${parentId}?reviewId=${reviewId}`);
+      const getRes = await request(server).get(
+        `/api/comments/${parentId}?reviewId=${reviewId}`,
+      );
 
       expect(getRes.status).toBe(200);
       expect(getRes.body.id).toBe(parentId);

@@ -79,20 +79,20 @@ describe('AdminAuthService', () => {
     });
 
     it('should throw UnauthorizedException for wrong password', async () => {
-      await expect(
-        service.login(ADMIN_EMAIL, 'wrongpassword'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.login(ADMIN_EMAIL, 'wrongpassword')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw UnauthorizedException when login not configured', async () => {
       service = createService({ adminEmail: undefined });
 
-      await expect(
-        service.login(ADMIN_EMAIL, ADMIN_PASSWORD),
-      ).rejects.toThrow(UnauthorizedException);
-      await expect(
-        service.login(ADMIN_EMAIL, ADMIN_PASSWORD),
-      ).rejects.toThrow('Admin login is not configured');
+      await expect(service.login(ADMIN_EMAIL, ADMIN_PASSWORD)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(service.login(ADMIN_EMAIL, ADMIN_PASSWORD)).rejects.toThrow(
+        'Admin login is not configured',
+      );
     });
 
     it('should be case-insensitive for email comparison', async () => {

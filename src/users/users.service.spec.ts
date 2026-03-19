@@ -45,10 +45,18 @@ describe('UsersService', () => {
       redisMock._clientMock.get.mockResolvedValue(
         JSON.stringify({
           user: { id: 'u1', username: 'cached' },
-          stats: { followersCount: 10, followingCount: 5, postsCount: 3, complaintsCount: 1 },
+          stats: {
+            followersCount: 10,
+            followingCount: 5,
+            postsCount: 3,
+            complaintsCount: 1,
+          },
         }),
       );
-      service = new UsersService(prisma as unknown as PrismaService, redisMock as any);
+      service = new UsersService(
+        prisma as unknown as PrismaService,
+        redisMock as any,
+      );
       prisma.follow.findFirst.mockResolvedValue(null);
 
       const result = await service.getPublicProfile(null, 'cached');
@@ -60,7 +68,10 @@ describe('UsersService', () => {
     it('should fall back to DB when Redis errors', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.get.mockRejectedValue(new Error('Redis down'));
-      service = new UsersService(prisma as unknown as PrismaService, redisMock as any);
+      service = new UsersService(
+        prisma as unknown as PrismaService,
+        redisMock as any,
+      );
 
       prisma.user.findUnique.mockResolvedValue({
         id: 'u1',
@@ -82,9 +93,9 @@ describe('UsersService', () => {
     it('should throw NotFoundException for missing user', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.getPublicProfile(null, 'missing'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getPublicProfile(null, 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should check viewer follow status when viewerId provided', async () => {
@@ -177,19 +188,18 @@ describe('UsersService', () => {
     });
 
     it('should return all false when no viewerId', async () => {
-      const result = await service.getFollowStatusBulk(null, ['user1', 'user2']);
+      const result = await service.getFollowStatusBulk(null, [
+        'user1',
+        'user2',
+      ]);
 
       expect(result.following.user1).toBe(false);
       expect(result.following.user2).toBe(false);
     });
 
     it('should exclude self from follow checks', async () => {
-      prisma.user.findMany.mockResolvedValue([
-        { id: 'u2', username: 'user2' },
-      ]);
-      prisma.follow.findMany.mockResolvedValue([
-        { followingId: 'u2' },
-      ]);
+      prisma.user.findMany.mockResolvedValue([{ id: 'u2', username: 'user2' }]);
+      prisma.follow.findMany.mockResolvedValue([{ followingId: 'u2' }]);
 
       const result = await service.getFollowStatusBulk('viewer1', ['user2']);
 

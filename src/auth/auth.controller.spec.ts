@@ -130,7 +130,11 @@ describe('AuthController', () => {
     it('should reject invalid email via Zod validation', async () => {
       await expect(
         controller.register(
-          { email: 'not-an-email', username: 'testuser', password: 'password123' },
+          {
+            email: 'not-an-email',
+            username: 'testuser',
+            password: 'password123',
+          },
           mockRes,
         ),
       ).rejects.toThrow(BadRequestException);

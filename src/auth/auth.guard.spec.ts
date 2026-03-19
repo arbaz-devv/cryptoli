@@ -42,9 +42,7 @@ describe('AuthGuard', () => {
 
     const ctx = mockExecutionContext(mockRequest());
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
     await expect(guard.canActivate(ctx)).rejects.toThrow(
       'Authentication required',
     );
@@ -56,20 +54,18 @@ describe('AuthGuard', () => {
 
     const ctx = mockExecutionContext(mockRequest());
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
   it('should throw UnauthorizedException when DB session is missing', async () => {
-    authService.getSessionTokenFromRequest.mockReturnValue('valid-jwt-but-no-db-session');
+    authService.getSessionTokenFromRequest.mockReturnValue(
+      'valid-jwt-but-no-db-session',
+    );
     authService.getSessionFromToken.mockResolvedValue(null);
 
     const ctx = mockExecutionContext(mockRequest());
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
   it('should extract token from request via authService', async () => {

@@ -286,7 +286,11 @@ describe('AuthService — getSessionFromToken edge cases', () => {
   let service: AuthService;
   let prisma: {
     user: { findFirst: jest.Mock; findUnique: jest.Mock };
-    session: { create: jest.Mock; findUnique: jest.Mock; deleteMany: jest.Mock };
+    session: {
+      create: jest.Mock;
+      findUnique: jest.Mock;
+      deleteMany: jest.Mock;
+    };
   };
 
   beforeEach(() => {
@@ -389,7 +393,10 @@ describe('AuthService — getSessionTokenFromRequest', () => {
 
   it('should prefer Bearer header over cookie', () => {
     const req = {
-      headers: { authorization: 'Bearer header-token', cookie: 'session=cookie-token' },
+      headers: {
+        authorization: 'Bearer header-token',
+        cookie: 'session=cookie-token',
+      },
       cookies: { session: 'cookie-token' },
     } as any;
 

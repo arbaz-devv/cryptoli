@@ -47,8 +47,7 @@ export async function createTestReview(
   return prisma.review.create({
     data: {
       title: `Test Review ${counter}`,
-      content:
-        'This is a test review with enough content to pass validation.',
+      content: 'This is a test review with enough content to pass validation.',
       authorId,
       overallScore: 7.5,
       criteriaScores: {

@@ -17,13 +17,25 @@ describe('FeedService', () => {
       prisma.complaint.count.mockResolvedValue(1);
       prisma.review.findMany
         .mockResolvedValueOnce([
-          { id: 'r1', title: 'Review 1', createdAt: new Date('2026-03-19T12:00:00Z') },
-          { id: 'r2', title: 'Review 2', createdAt: new Date('2026-03-19T10:00:00Z') },
+          {
+            id: 'r1',
+            title: 'Review 1',
+            createdAt: new Date('2026-03-19T12:00:00Z'),
+          },
+          {
+            id: 'r2',
+            title: 'Review 2',
+            createdAt: new Date('2026-03-19T10:00:00Z'),
+          },
         ])
         .mockResolvedValue([]);
       prisma.complaint.findMany
         .mockResolvedValueOnce([
-          { id: 'c1', title: 'Complaint 1', createdAt: new Date('2026-03-19T11:00:00Z') },
+          {
+            id: 'c1',
+            title: 'Complaint 1',
+            createdAt: new Date('2026-03-19T11:00:00Z'),
+          },
         ])
         .mockResolvedValue([]);
 
