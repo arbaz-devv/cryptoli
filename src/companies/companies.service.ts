@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 
@@ -45,7 +45,7 @@ export class CompaniesService {
     };
   }
 
-  async getBySlug(slug: string, viewerId?: string | null) {
+  async getBySlug(slug: string) {
     const company = await this.prisma.company.findUnique({
       where: { slug },
       include: {
@@ -72,51 +72,6 @@ export class CompaniesService {
         ? reviews.reduce((sum, r) => sum + r.overallScore, 0) / reviews.length
         : 0;
 
-    let isFollowing = false;
-    if (viewerId) {
-      const follow = await this.prisma.companyFollow.findFirst({
-        where: { userId: viewerId, companyId: company.id },
-        select: { id: true },
-      });
-      isFollowing = Boolean(follow);
-    }
-
-    return { ...company, averageScore, viewerState: { isFollowing } };
-  }
-
-  async followCompany(userId: string, slug: string) {
-    const company = await this.prisma.company.findUnique({
-      where: { slug },
-      select: { id: true },
-    });
-    if (!company) {
-      throw new NotFoundError('Company not found');
-    }
-
-    try {
-      await this.prisma.companyFollow.create({
-        data: { userId, companyId: company.id },
-      });
-    } catch {
-      // unique constraint — already following: treat as success
-    }
-
-    return { following: true };
-  }
-
-  async unfollowCompany(userId: string, slug: string) {
-    const company = await this.prisma.company.findUnique({
-      where: { slug },
-      select: { id: true },
-    });
-    if (!company) {
-      throw new NotFoundError('Company not found');
-    }
-
-    await this.prisma.companyFollow.deleteMany({
-      where: { userId, companyId: company.id },
-    });
-
-    return { following: false };
+    return { ...company, averageScore };
   }
 }

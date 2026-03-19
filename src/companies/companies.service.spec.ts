@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
@@ -61,8 +60,7 @@ describe('CompaniesService', () => {
 
       const result = await service.getBySlug('exchange');
 
-      expect(result.averageScore).toBe(7);
-      expect(result.viewerState).toEqual({ isFollowing: false });
+      expect(result.averageScore).toBe(7); // (8 + 6) / 2
     });
 
     it('should return averageScore 0 when no reviews', async () => {
@@ -82,98 +80,6 @@ describe('CompaniesService', () => {
       prisma.company.findUnique.mockResolvedValue(null);
 
       await expect(service.getBySlug('missing')).rejects.toThrow(NotFoundError);
-    });
-
-    it('should return isFollowing true when viewer follows the company', async () => {
-      prisma.company.findUnique.mockResolvedValue({
-        id: 'c1',
-        name: 'Exchange',
-        slug: 'exchange',
-      });
-      prisma.review.findMany.mockResolvedValue([]);
-      prisma.companyFollow.findFirst.mockResolvedValue({ id: 'cf1' });
-
-      const result = await service.getBySlug('exchange', 'user1');
-
-      expect(result.viewerState).toEqual({ isFollowing: true });
-    });
-
-    it('should return isFollowing false when viewer does not follow', async () => {
-      prisma.company.findUnique.mockResolvedValue({
-        id: 'c1',
-        name: 'Exchange',
-        slug: 'exchange',
-      });
-      prisma.review.findMany.mockResolvedValue([]);
-      prisma.companyFollow.findFirst.mockResolvedValue(null);
-
-      const result = await service.getBySlug('exchange', 'user1');
-
-      expect(result.viewerState).toEqual({ isFollowing: false });
-    });
-  });
-
-  describe('followCompany()', () => {
-    it('should create a company follow', async () => {
-      prisma.company.findUnique.mockResolvedValue({ id: 'c1' });
-      prisma.companyFollow.create.mockResolvedValue({ id: 'cf1' });
-
-      const result = await service.followCompany('user1', 'exchange');
-
-      expect(result).toEqual({ following: true });
-      expect(prisma.companyFollow.create).toHaveBeenCalledWith({
-        data: { userId: 'user1', companyId: 'c1' },
-      });
-    });
-
-    it('should treat duplicate follow as success', async () => {
-      prisma.company.findUnique.mockResolvedValue({ id: 'c1' });
-      prisma.companyFollow.create.mockRejectedValue(
-        new Error('Unique constraint'),
-      );
-
-      const result = await service.followCompany('user1', 'exchange');
-
-      expect(result).toEqual({ following: true });
-    });
-
-    it('should throw NotFoundError for missing company', async () => {
-      prisma.company.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.followCompany('user1', 'missing'),
-      ).rejects.toThrow(NotFoundError);
-    });
-  });
-
-  describe('unfollowCompany()', () => {
-    it('should delete the company follow', async () => {
-      prisma.company.findUnique.mockResolvedValue({ id: 'c1' });
-      prisma.companyFollow.deleteMany.mockResolvedValue({ count: 1 });
-
-      const result = await service.unfollowCompany('user1', 'exchange');
-
-      expect(result).toEqual({ following: false });
-      expect(prisma.companyFollow.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'user1', companyId: 'c1' },
-      });
-    });
-
-    it('should succeed even when not following', async () => {
-      prisma.company.findUnique.mockResolvedValue({ id: 'c1' });
-      prisma.companyFollow.deleteMany.mockResolvedValue({ count: 0 });
-
-      const result = await service.unfollowCompany('user1', 'exchange');
-
-      expect(result).toEqual({ following: false });
-    });
-
-    it('should throw NotFoundError for missing company', async () => {
-      prisma.company.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.unfollowCompany('user1', 'missing'),
-      ).rejects.toThrow(NotFoundError);
     });
   });
 });

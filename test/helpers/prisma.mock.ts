@@ -148,7 +148,6 @@ export function createPrismaMock(overrides: Record<string, any> = {}) {
       findMany: jest.fn(),
       create: jest.fn(),
       delete: jest.fn(),
-      deleteMany: jest.fn(),
       count: jest.fn(),
     },
     pushSubscription: {
