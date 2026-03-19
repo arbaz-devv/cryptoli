@@ -110,13 +110,3 @@ export type CreateReviewDto = z.infer<typeof createReviewSchema>;
 export type CreateCommentDto = z.infer<typeof createCommentSchema>;
 export type CreateComplaintDto = z.infer<typeof createComplaintSchema>;
 export type CreateReplyDto = z.infer<typeof createReplySchema>;
-
-export const createReactionSchema = z.object({
-  type: z.enum(['LIKE', 'DISLIKE', 'LOVE', 'HELPFUL']),
-  reviewId: z.string().optional(),
-  postId: z.string().optional(),
-  commentId: z.string().optional(),
-  complaintId: z.string().optional(),
-});
-
-export type CreateReactionDto = z.infer<typeof createReactionSchema>;

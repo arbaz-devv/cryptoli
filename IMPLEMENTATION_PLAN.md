@@ -1,6 +1,6 @@
 # Implementation Plan: Cryptoli Backend
 
-> **Created:** 2026-03-19 | **Current:** 358 unit tests, 17 integration, 78 e2e = 453 total
+> **Created:** 2026-03-19 | **Current:** 343 unit tests, 17 integration, 78 e2e = 438 total
 > **Spec:** See `specs/testing-strategy.md` for test conventions; `specs/README.md` for feature specs
 
 ---
@@ -10,7 +10,7 @@
 > Schema models exist for these features but service/controller logic is missing.
 
 - [x] **10.1 — Company follows** ✅ `POST/DELETE /api/companies/:slug/follow`, viewerState on getBySlug, 8 new unit tests
-- [x] **10.2 — Reactions CRUD** ✅ ReactionsModule with `POST /api/reactions` (toggle) and `DELETE /api/reactions/:id`, Zod validation, 15 unit tests. Polymorphic across Review/Post/Comment/Complaint. Toggle semantics: same type = remove, new type = create.
+- [ ] **10.2 — Reactions CRUD** — Schema has Reaction model (LIKE/DISLIKE/LOVE/HELPFUL), polymorphic across Review/Post/Comment/Complaint. Read-side (_count) exists in services. Need: ReactionsModule with create/delete endpoints, toggle logic, unit tests.
 - [ ] **10.3 — Reports** — Schema has Report model with nullable FKs. Need: ReportsModule with create endpoint (authenticated), admin list/update-status. Report count denormalization.
 - [ ] **10.4 — Posts CRUD** — Schema has Post model (authorId, content, media, comments, reactions). Need: PostsModule with full CRUD, feed integration, unit tests.
 - [ ] **10.5 — Products endpoints** — Schema has Product model linked from Review/Complaint. Need: products list under company, product detail by slug.
@@ -44,4 +44,4 @@
 
 All test infrastructure, unit tests, integration tests, e2e tests, and CI pipeline are complete. See git history for details.
 
-**Actual totals:** 358 unit tests + 17 integration tests + 78 e2e tests = **453 tests**
+**Actual totals:** 343 unit tests + 17 integration tests + 78 e2e tests = **438 tests**
