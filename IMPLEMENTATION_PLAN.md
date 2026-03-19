@@ -26,57 +26,18 @@
 
 ---
 
-## Phase 1: Security-Critical Unit Tests (P0)
+## Phase 1: Security-Critical Unit Tests (P0) ✅
 > Auth, guards, session management — highest risk if broken. All mocked (Tier 1).
 
-- [ ] **1.1 — `src/auth/auth.guard.spec.ts`** *(NEW — 27% lines)*
-  - canActivate: returns true + sets `req.user` when session valid
-  - canActivate: throws UnauthorizedException when no token
-  - canActivate: throws UnauthorizedException when token expired/invalid
-  - canActivate: throws UnauthorizedException when DB session missing
-  - Token extraction: Bearer header > cookie > raw cookie header priority
+- [x] **1.1 — `src/auth/auth.guard.spec.ts`** ✅ 5 tests
+- [x] **1.2 — `src/auth/optional-auth.guard.spec.ts`** ✅ 5 tests
+- [x] **1.3 — Expand `src/auth/auth.service.spec.ts`** ✅ expanded from 12→30 tests
+- [x] **1.4 — `src/auth/auth.controller.spec.ts`** ✅ 18 tests
+- [x] **1.5 — Expand `src/admin/admin.guard.spec.ts`** ✅ expanded from 4→11 tests (JWT auth tests added)
+- [x] **1.6 — `src/admin/admin-auth.service.spec.ts`** ✅ 8 tests
+- [x] **1.7 — `src/common/http-exception.filter.spec.ts`** ✅ 8 tests
 
-- [ ] **1.2 — `src/auth/optional-auth.guard.spec.ts`** *(NEW — 33% lines)*
-  - Always returns true (never blocks)
-  - Sets `req.user` to SessionUser when session valid
-  - Sets `req.user` to `null` (not `undefined`) when no session
-
-- [ ] **1.3 — Expand `src/auth/auth.service.spec.ts`** *(existing — 29.67% lines)*
-  - `createUser`: hashes password, returns profile without passwordHash
-  - `hashPassword` / `comparePassword`: bcrypt round-trip
-  - `createSession`: JWT payload contains `{ userId, jti }`, 7-day expiry
-  - `getSessionFromToken`: rejects expired JWT, rejects valid JWT with deleted DB session
-  - `getSessionTokenFromRequest`: Bearer > cookie > raw header priority chain
-  - `updateProfile`: trims bio, converts empty to null
-  - `generateUsernameSuggestions`: returns available candidates
-
-- [ ] **1.4 — `src/auth/auth.controller.spec.ts`** *(NEW — 0%)*
-  - POST /register: Zod validation (email, username 3-30, password min 8)
-  - POST /register: creates user + session, sets cookie
-  - POST /register: rejects duplicate email/username
-  - POST /login: validates credentials, sets cookie
-  - POST /login: rejects wrong password (no enumeration)
-  - POST /logout: clears session from DB + cookie
-  - GET /me: returns user when authenticated, null when not
-  - PATCH /me: updates profile, handles P2002 uniqueness
-  - POST /change-password: verifies old password, rotates session
-  - Rate limiting metadata: 5/60s on login and register
-
-- [ ] **1.5 — Expand `src/admin/admin.guard.spec.ts`** *(existing — 66.66% lines)*
-  - JWT-based admin auth: valid admin JWT accepted
-  - JWT-based admin auth: non-admin JWT rejected, expired JWT rejected
-  - Missing/undefined/whitespace `ADMIN_API_KEY` behavior
-
-- [ ] **1.6 — `src/admin/admin-auth.service.spec.ts`** *(NEW — 27% indirect)*
-  - `isLoginEnabled`: true when both email + hash configured, false when either missing
-  - `login`: returns JWT with `type: 'admin'` claim, 24h expiry
-  - `login`: throws UnauthorizedException for wrong email/password/unconfigured
-
-- [ ] **1.7 — `src/common/http-exception.filter.spec.ts`** *(NEW — 0%)*
-  - HttpException: extracts status + message
-  - HttpException with errors array: passes through
-  - Non-HttpException: delegates to `handleError()`, returns sanitized 500
-  - Response shape: `{ error }` or `{ error, errors }`
+> **Status:** 121 tests, 15 spec files (up from 45 tests, 10 spec files)
 
 ---
 
