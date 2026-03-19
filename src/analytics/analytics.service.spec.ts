@@ -378,11 +378,8 @@ describe('AnalyticsService', () => {
   });
 
   describe('approximateDurationPercentile()', () => {
-    const approx = (
-      hist: Record<string, number>,
-      total: number,
-      pct: number,
-    ) => (service as any).approximateDurationPercentile(hist, total, pct);
+    const approx = (hist: Record<string, number>, total: number, pct: number) =>
+      (service as any).approximateDurationPercentile(hist, total, pct);
 
     it('should return 0 when totalCount is 0', () => {
       expect(approx({}, 0, 0.5)).toBe(0);

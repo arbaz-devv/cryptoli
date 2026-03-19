@@ -272,7 +272,12 @@ describe('CommentsService', () => {
         authorId: 'replier',
         reviewId: 'r1',
         parentId: 'parent-cm',
-        author: { id: 'replier', username: 'replier_user', avatar: null, verified: false },
+        author: {
+          id: 'replier',
+          username: 'replier_user',
+          avatar: null,
+          verified: false,
+        },
         _count: { reactions: 0, votes: 0, replies: 0 },
       });
       // First findUnique call: fetch parent's authorId
@@ -299,7 +304,9 @@ describe('CommentsService', () => {
           userId: 'parent-author',
           type: 'NEW_COMMENT',
           title: 'New reply to your comment',
-          message: expect.stringContaining('replied to your comment on "My Review"'),
+          message: expect.stringContaining(
+            'replied to your comment on "My Review"',
+          ),
         }),
       );
     });
@@ -311,7 +318,12 @@ describe('CommentsService', () => {
         authorId: 'replier',
         reviewId: 'r1',
         parentId: 'mid-comment',
-        author: { id: 'replier', username: 'deep_replier', avatar: null, verified: false },
+        author: {
+          id: 'replier',
+          username: 'deep_replier',
+          avatar: null,
+          verified: false,
+        },
         _count: { reactions: 0, votes: 0, replies: 0 },
       });
       // Parent is itself a reply (has a parentId)
@@ -347,7 +359,12 @@ describe('CommentsService', () => {
         authorId: 'self-user',
         reviewId: 'r1',
         parentId: 'own-cm',
-        author: { id: 'self-user', username: 'self_user', avatar: null, verified: false },
+        author: {
+          id: 'self-user',
+          username: 'self_user',
+          avatar: null,
+          verified: false,
+        },
         _count: { reactions: 0, votes: 0, replies: 0 },
       });
       prisma.comment.findUnique.mockResolvedValue({ authorId: 'self-user' });

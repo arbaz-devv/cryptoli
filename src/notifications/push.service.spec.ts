@@ -85,8 +85,22 @@ describe('PushService', () => {
       service.onModuleInit();
 
       const subs = [
-        { id: 's1', userId: 'u1', endpoint: 'https://push.example.com/sub1', p256dh: 'k1', auth: 'a1', createdAt: new Date() },
-        { id: 's2', userId: 'u1', endpoint: 'https://push.example.com/sub2', p256dh: 'k2', auth: 'a2', createdAt: new Date() },
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/sub1',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
+        {
+          id: 's2',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/sub2',
+          p256dh: 'k2',
+          auth: 'a2',
+          createdAt: new Date(),
+        },
       ];
       prisma.pushSubscription.findMany.mockResolvedValue(subs);
       (webPush.sendNotification as jest.Mock).mockResolvedValue({});
@@ -105,11 +119,20 @@ describe('PushService', () => {
       service.onModuleInit();
 
       const subs = [
-        { id: 's1', userId: 'u1', endpoint: 'https://push.example.com/stale', p256dh: 'k1', auth: 'a1', createdAt: new Date() },
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/stale',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
       ];
       prisma.pushSubscription.findMany.mockResolvedValue(subs);
       prisma.pushSubscription.deleteMany.mockResolvedValue({ count: 1 });
-      (webPush.sendNotification as jest.Mock).mockRejectedValue({ statusCode: 410 });
+      (webPush.sendNotification as jest.Mock).mockRejectedValue({
+        statusCode: 410,
+      });
 
       await service.sendToUser('u1', { title: 'Test', body: 'Gone' });
 
@@ -127,11 +150,20 @@ describe('PushService', () => {
       service.onModuleInit();
 
       const subs = [
-        { id: 's1', userId: 'u1', endpoint: 'https://push.example.com/gone', p256dh: 'k1', auth: 'a1', createdAt: new Date() },
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/gone',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
       ];
       prisma.pushSubscription.findMany.mockResolvedValue(subs);
       prisma.pushSubscription.deleteMany.mockResolvedValue({ count: 1 });
-      (webPush.sendNotification as jest.Mock).mockRejectedValue({ statusCode: 404 });
+      (webPush.sendNotification as jest.Mock).mockRejectedValue({
+        statusCode: 404,
+      });
 
       await service.sendToUser('u1', { title: 'Test', body: 'Not found' });
 
