@@ -444,7 +444,7 @@
 - `main.ts` — covered by e2e indirectly
 - `api.controller.ts` / `data.service.ts` — dead code
 
-**Actual totals:** 378 unit + 38 integration + 78 e2e = **494 tests** (378 run via `npm test`)
+**Actual totals:** 382 unit + 38 integration + 78 e2e = **498 tests** (382 run via `npm test`)
 
 ---
 
@@ -456,7 +456,7 @@
 - [x] **Fix lint errors in test files** — 556 problems (354 errors, 202 warnings), primarily `@typescript-eslint` strict-mode violations in test/e2e and test/helpers.
 - [x] **Deepen analytics service tests (6.1)** — expanded from 16 to 49 tests. All private methods now tested: `normalizePath`, `sanitizeLabel`, `resolveCountry`, `normalizeIp`, `durationBucket`, `referrerLabel`, `bucketLongTail`, `parseFunnelMap`, `approximateDurationPercentile`.
 - [x] **Deepen analytics controller tests (6.2)** — expanded from 13 to 23 tests. Added: `x-forwarded-for` with public IP selection, RFC 7239 `Forwarded:` header parsing, `x-real-ip`, `true-client-ip`, `fastly-client-ip`, private IP filtering, CDN country headers (`x-vercel-ip-country`, `cloudfront-viewer-country`), invalid country hint rejection.
-- [ ] **Complete push.service tests (3.3)** — missing 3/6: VAPID-configured init, send-to-all-subscriptions, stale subscription cleanup on 410/404. Requires mocking `web-push` module.
+- [x] **Complete push.service tests (3.3)** — expanded from 3 to 7 tests. Added: VAPID-configured init, send-to-all-subscriptions, stale subscription cleanup on 410 and 404. Uses `jest.mock('web-push')`.
 - [ ] **Add admin-auth.controller login flow test (5.3)** — current tests only verify throttle metadata. Need: login delegation, config endpoint behavior.
 - [ ] **Add admin.service cache TTL test (5.1)** — cache hit within TTL, eviction after TTL untested.
 - [ ] **Add comments.service parentId reply notification test (2.3)** — the threaded reply notification path is untested.
