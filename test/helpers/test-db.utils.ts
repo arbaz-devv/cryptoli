@@ -4,7 +4,8 @@ let prisma: PrismaClient;
 
 export function getTestPrisma(): PrismaClient {
   if (!prisma) {
-    const url = (globalThis as any).__TEST_DATABASE_URL__;
+    // globalThis is set when running in-process; process.env is set by globalSetup for worker processes
+    const url = (globalThis as any).__TEST_DATABASE_URL__ || process.env.DATABASE_URL;
     if (!url) {
       throw new Error(
         'TEST_DATABASE_URL not set. Did globalSetup run? ' +
@@ -22,7 +23,7 @@ export function getTestPrisma(): PrismaClient {
 }
 
 export function getTestRedisUrl(): string {
-  const url = (globalThis as any).__TEST_REDIS_URL__;
+  const url = (globalThis as any).__TEST_REDIS_URL__ || process.env.REDIS_URL;
   if (!url) {
     throw new Error('TEST_REDIS_URL not set. Did globalSetup run?');
   }
@@ -43,32 +44,14 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-// Truncate order respects FK constraints (children before parents)
-const TABLES = [
-  'CommentVote',
-  'ComplaintVote',
-  'HelpfulVote',
-  'Reaction',
-  'Media',
-  'ComplaintReply',
-  'Report',
-  'PushSubscription',
-  'Notification',
-  'Session',
-  'Comment',
-  'Review',
-  'Post',
-  'Complaint',
-  'CompanyFollow',
-  'Follow',
-  'Product',
-  'Company',
-  'User',
-];
-
+// Truncate all user-created tables dynamically (avoids hardcoding table names)
 export async function truncateAll(client?: PrismaClient) {
   const db = client ?? getTestPrisma();
-  for (const table of TABLES) {
-    await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
-  }
+  const tables = await db.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    AND tablename NOT LIKE '_prisma%'
+  `;
+  if (tables.length === 0) return;
+  const tableNames = tables.map((t) => `"${t.tablename}"`).join(', ');
+  await db.$executeRawUnsafe(`TRUNCATE TABLE ${tableNames} CASCADE`);
 }
