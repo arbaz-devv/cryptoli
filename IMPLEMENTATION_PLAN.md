@@ -52,38 +52,22 @@
 
 ---
 
-## Phase 3: Core Business Logic Unit Tests (P2)
+## Phase 3: Core Business Logic Unit Tests (P2) ✅
 > Complex services. All mocked (Tier 1).
 
-- [ ] **3.1 — `src/users/users.service.spec.ts`** *(NEW — 0%)*
-  - `getPublicProfile()`: cache hit/miss, Redis failure fallback, viewerState never cached
-  - `followUser()`: creates Follow, self-follow rejection, duplicate idempotent, cache invalidation
-  - `unfollowUser()`: deletes Follow, self-unfollow rejection, cache invalidation
-  - `getFollowStatusBulk()`: deduplication, cap at 50, excludes self
+- [x] **3.1 — `src/users/users.service.spec.ts`** ✅ 12 tests
+- [x] **3.2 — `src/notifications/notifications.service.spec.ts`** ✅ 5 tests
+- [x] **3.3 — `src/notifications/push.service.spec.ts`** ✅ 3 tests
+- [x] **3.4 — `src/feed/feed.service.spec.ts`** ✅ 4 tests
+- [x] **3.5 — `src/search/search.service.spec.ts`** ✅ 6 tests
+- [x] **3.6 — `src/trending/trending.service.spec.ts`** ✅ 4 tests
+- [x] **3.7 — `src/companies/companies.service.spec.ts`** ✅ 6 tests
 
-- [ ] **3.2 — `src/notifications/notifications.service.spec.ts`** *(NEW — 19% lines)*
-  - `createForUser()`: DB record + socket emit + push (push error swallowed)
-  - `listForUser()`: last 25 + unreadCount
-  - `markRead()`: ownership check, socket emit
-  - `markAllRead()`: bulk update + socket emit
-
-- [ ] **3.3 — `src/notifications/push.service.spec.ts`** *(NEW — 18% lines)*
-  - `onModuleInit()`: VAPID configured/not-configured
-  - `registerSubscription()`: upserts by endpoint
-  - `sendToUser()`: no-op when VAPID absent, sends to all, auto-deletes stale on 410/404
-
-- [ ] **3.4 — `src/feed/feed.service.spec.ts`** *(NEW — 0%)*
-  - `getFeed()`: merges reviews + complaints by createdAt desc, APPROVED filter, type discriminator, pagination, empty results
-
-- [ ] **3.5 — `src/search/search.service.spec.ts`** *(NEW — 0%)*
-  - `search()`: empty query, per-entity search, type filter, limit
-
-- [ ] **3.6 — `src/trending/trending.service.spec.ts`** *(NEW — 0%)*
-  - `getTrending()`: period handling, ordering, field mapping
-
-- [ ] **3.7 — `src/companies/companies.service.spec.ts`** *(NEW — 0%)*
-  - `list()`: pagination, category/search filters
-  - `getBySlug()`: averageScore, NotFoundError
+> **Status:** 210 tests, 24 spec files (up from 167 tests, 17 spec files)
+> **Learnings:**
+> - Feed service uses chunked merge-sort; mocks must use `mockResolvedValueOnce` then return `[]` for subsequent calls to avoid infinite loop
+> - `follow.deleteMany` was missing from prisma mock — added it
+> - Users service requires RedisService mock (via `createRedisMock`) in addition to Prisma mock
 
 ---
 
