@@ -1,4 +1,17 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import type { SessionUser } from '../auth/auth.service';
 import { CompaniesService } from './companies.service';
 
 const COMPANIES_LIST_LIMIT_MAX = 50;
@@ -26,7 +39,30 @@ export class CompaniesController {
   }
 
   @Get(':slug')
-  getBySlug(@Param('slug') slug: string) {
-    return this.companiesService.getBySlug(slug);
+  @UseGuards(OptionalAuthGuard)
+  getBySlug(
+    @Param('slug') slug: string,
+    @Req() req?: Request & { user?: SessionUser | null },
+  ) {
+    const viewerId = req?.user?.id ?? null;
+    return this.companiesService.getBySlug(slug, viewerId);
+  }
+
+  @Post(':slug/follow')
+  @UseGuards(AuthGuard)
+  follow(
+    @Param('slug') slug: string,
+    @Req() req: Request & { user: SessionUser },
+  ) {
+    return this.companiesService.followCompany(req.user.id, slug);
+  }
+
+  @Delete(':slug/follow')
+  @UseGuards(AuthGuard)
+  unfollow(
+    @Param('slug') slug: string,
+    @Req() req: Request & { user: SessionUser },
+  ) {
+    return this.companiesService.unfollowCompany(req.user.id, slug);
   }
 }
