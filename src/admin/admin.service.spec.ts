@@ -399,4 +399,35 @@ describe('AdminService', () => {
       expect((result.ratings[0] as any).trend).toBe('up');
     });
   });
+
+  describe('cache behavior', () => {
+    it('should return cached stats within TTL (30s)', async () => {
+      prisma.user.count.mockResolvedValue(100);
+      prisma.$queryRaw.mockResolvedValue([{ count: BigInt(42) }]);
+      prisma.review.count.mockResolvedValue(50);
+      prisma.product.count.mockResolvedValue(10);
+      prisma.complaint.count.mockResolvedValue(7);
+
+      // First call populates cache
+      await service.getStats();
+      const callCount = prisma.user.count.mock.calls.length;
+
+      // Second call should hit cache — no new DB calls
+      await service.getStats();
+      expect(prisma.user.count.mock.calls.length).toBe(callCount);
+    });
+
+    it('should return cached getUsers result within TTL', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
+
+      // Use a unique param set to avoid cross-test cache hits
+      const params = { page: 99, limit: 1 };
+      await service.getUsers(params);
+      const callCount = prisma.user.findMany.mock.calls.length;
+
+      await service.getUsers(params);
+      expect(prisma.user.findMany.mock.calls.length).toBe(callCount);
+    });
+  });
 });

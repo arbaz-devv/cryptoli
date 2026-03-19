@@ -264,6 +264,115 @@ describe('CommentsService', () => {
       );
     });
 
+    it('should notify parent comment author when replying (parentId set)', async () => {
+      // Reply to someone else's comment on a review
+      prisma.comment.create.mockResolvedValue({
+        id: 'reply1',
+        content: 'I agree!',
+        authorId: 'replier',
+        reviewId: 'r1',
+        parentId: 'parent-cm',
+        author: { id: 'replier', username: 'replier_user', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      // First findUnique call: fetch parent's authorId
+      // Second findUnique call: check if parent itself is a reply (parentId: null → top-level)
+      prisma.comment.findUnique
+        .mockResolvedValueOnce({ authorId: 'parent-author' }) // parent comment author
+        .mockResolvedValueOnce({ parentId: null }); // parent is a top-level comment (not a reply)
+      prisma.review.findUnique.mockResolvedValue({
+        id: 'r1',
+        title: 'My Review',
+        authorId: 'review-author',
+        author: { username: 'reviewer' },
+      });
+      prisma.comment.count.mockResolvedValue(3);
+
+      await service.create(
+        { content: 'I agree!', reviewId: 'r1', parentId: 'parent-cm' },
+        'replier',
+      );
+
+      // Should notify the parent comment author (not the review author here — that's a separate call)
+      expect(notificationsMock.createForUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'parent-author',
+          type: 'NEW_COMMENT',
+          title: 'New reply to your comment',
+          message: expect.stringContaining('replied to your comment on "My Review"'),
+        }),
+      );
+    });
+
+    it('should send "replied to your reply" message for nested replies', async () => {
+      prisma.comment.create.mockResolvedValue({
+        id: 'nested-reply',
+        content: 'Nested!',
+        authorId: 'replier',
+        reviewId: 'r1',
+        parentId: 'mid-comment',
+        author: { id: 'replier', username: 'deep_replier', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      // Parent is itself a reply (has a parentId)
+      prisma.comment.findUnique
+        .mockResolvedValueOnce({ authorId: 'mid-author' }) // parent's author
+        .mockResolvedValueOnce({ parentId: 'grandparent-id' }); // parent is a reply (isReplyToReply=true)
+      prisma.review.findUnique.mockResolvedValue({
+        id: 'r1',
+        title: 'Some Review',
+        authorId: 'review-author',
+        author: { username: 'reviewer' },
+      });
+      prisma.comment.count.mockResolvedValue(5);
+
+      await service.create(
+        { content: 'Nested!', reviewId: 'r1', parentId: 'mid-comment' },
+        'replier',
+      );
+
+      expect(notificationsMock.createForUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'mid-author',
+          type: 'NEW_COMMENT',
+          message: expect.stringContaining('replied to your reply'),
+        }),
+      );
+    });
+
+    it('should NOT notify parent author when replying to own comment', async () => {
+      prisma.comment.create.mockResolvedValue({
+        id: 'self-reply',
+        content: 'Followup',
+        authorId: 'self-user',
+        reviewId: 'r1',
+        parentId: 'own-cm',
+        author: { id: 'self-user', username: 'self_user', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      prisma.comment.findUnique.mockResolvedValue({ authorId: 'self-user' });
+      prisma.review.findUnique.mockResolvedValue({
+        id: 'r1',
+        title: 'Test',
+        authorId: 'other-author',
+        author: { username: 'other' },
+      });
+      prisma.comment.count.mockResolvedValue(2);
+
+      await service.create(
+        { content: 'Followup', reviewId: 'r1', parentId: 'own-cm' },
+        'self-user',
+      );
+
+      // Parent reply notification should NOT fire (self-reply)
+      // But review author notification SHOULD fire (different author)
+      const calls = notificationsMock.createForUser.mock.calls;
+      const parentNotification = calls.find(
+        (c: any) => c[0]?.title === 'New reply to your comment',
+      );
+      expect(parentNotification).toBeUndefined();
+    });
+
     it('should NOT notify review author when commenting on own review', async () => {
       prisma.comment.create.mockResolvedValue({
         id: 'cm1',
