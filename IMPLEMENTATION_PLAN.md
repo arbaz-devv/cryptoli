@@ -444,7 +444,7 @@
 - `main.ts` — covered by e2e indirectly
 - `api.controller.ts` / `data.service.ts` — dead code
 
-**Actual totals:** 335 unit + 38 integration + 78 e2e = **451 tests** (335 run via `npm test`)
+**Actual totals:** 368 unit + 38 integration + 78 e2e = **484 tests** (368 run via `npm test`)
 
 ---
 
@@ -454,7 +454,7 @@
 
 - [x] **Fix 27 typecheck errors in test files** — `npx tsc --noEmit` shows errors in admin.service.spec, reviews/comments/complaints.service.spec (userVote type), and e2e tests (type assertions). Production code is clean.
 - [x] **Fix lint errors in test files** — 556 problems (354 errors, 202 warnings), primarily `@typescript-eslint` strict-mode violations in test/e2e and test/helpers.
-- [ ] **Deepen analytics service tests (6.1)** — only 3/25+ Redis key patterns verified. Private methods untested: `normalizePath`, `sanitizeLabel`, `resolveCountry`, `normalizeIp`, `durationBucket`, `referrerLabel`, `bucketLongTail`, `parseFunnelMap`, `approximateDurationPercentile`.
+- [x] **Deepen analytics service tests (6.1)** — expanded from 16 to 49 tests. All private methods now tested: `normalizePath`, `sanitizeLabel`, `resolveCountry`, `normalizeIp`, `durationBucket`, `referrerLabel`, `bucketLongTail`, `parseFunnelMap`, `approximateDurationPercentile`.
 - [ ] **Deepen analytics controller tests (6.2)** — IP extraction only covers `socket.remoteAddress` + `cf-connecting-ip`. Missing: `x-forwarded-for`, RFC 7239, `x-real-ip`, private IP filtering, other CDN country headers.
 - [ ] **Complete push.service tests (3.3)** — missing 3/6: VAPID-configured init, send-to-all-subscriptions, stale subscription cleanup on 410/404. Requires mocking `web-push` module.
 - [ ] **Add admin-auth.controller login flow test (5.3)** — current tests only verify throttle metadata. Need: login delegation, config endpoint behavior.
