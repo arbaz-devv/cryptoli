@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import Redis from 'ioredis';
 
 let prisma: PrismaClient;
 
@@ -42,6 +43,20 @@ function isLocalhostUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+let redisClient: Redis | null = null;
+
+export function getTestRedis(): Redis {
+  if (!redisClient) {
+    redisClient = new Redis(getTestRedisUrl());
+  }
+  return redisClient;
+}
+
+export async function flushTestRedis() {
+  const redis = getTestRedis();
+  await redis.flushall();
 }
 
 // Truncate all user-created tables dynamically (avoids hardcoding table names)
