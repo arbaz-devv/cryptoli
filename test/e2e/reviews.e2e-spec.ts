@@ -38,7 +38,7 @@ describe('Reviews E2E', () => {
         username: `user${Date.now()}`,
         password: 'password123',
       });
-    return res.headers['set-cookie'] as string[];
+    return res.headers['set-cookie'] as unknown as string[];
   }
 
   const validReview = {

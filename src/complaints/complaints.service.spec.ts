@@ -187,8 +187,8 @@ describe('ComplaintsService', () => {
       const result = await service.list(1, 10, undefined, undefined, undefined, { id: 'u1' });
 
       expect(result.complaints).toHaveLength(2);
-      expect(result.complaints[0].userVote).toBe('UP');
-      expect(result.complaints[1].userVote).toBeNull();
+      expect((result.complaints[0] as any).userVote).toBe('UP');
+      expect((result.complaints[1] as any).userVote).toBeNull();
       expect(result.pagination.total).toBe(2);
     });
 
@@ -198,7 +198,7 @@ describe('ComplaintsService', () => {
 
       const result = await service.list(1, 10);
 
-      expect(result.complaints[0].userVote).toBeNull();
+      expect((result.complaints[0] as any).userVote).toBeNull();
     });
   });
 

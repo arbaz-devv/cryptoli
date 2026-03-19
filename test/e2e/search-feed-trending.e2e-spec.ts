@@ -41,7 +41,7 @@ describe('Search, Feed, and Trending E2E', () => {
         username: `user${unique}`,
         password: 'password123',
       });
-    return res.headers['set-cookie'] as string[];
+    return res.headers['set-cookie'] as unknown as string[];
   }
 
   const validReview = {

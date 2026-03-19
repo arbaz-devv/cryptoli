@@ -273,8 +273,8 @@ describe('CommentsService', () => {
 
       const result = await service.list('r1', undefined, undefined, { id: 'u1' });
 
-      expect(result.comments[0].userVote).toBe('UP');
-      expect(result.comments[0].replies[0].userVote).toBeNull();
+      expect((result.comments[0] as any).userVote).toBe('UP');
+      expect((result.comments[0].replies[0] as any).userVote).toBeNull();
     });
 
     it('should return null userVote when no user', async () => {
@@ -289,7 +289,7 @@ describe('CommentsService', () => {
 
       const result = await service.list('r1');
 
-      expect(result.comments[0].userVote).toBeNull();
+      expect((result.comments[0] as any).userVote).toBeNull();
     });
   });
 

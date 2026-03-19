@@ -55,9 +55,9 @@ describe('AdminService', () => {
       const result = await service.getUsers({ page: 1, limit: 10 });
 
       expect(result.users).toHaveLength(1);
-      expect(result.users[0].name).toBe('Alice');
-      expect(result.users[0].role).toBe('user');
-      expect(result.users[0].reviewCount).toBe(3);
+      expect((result.users[0] as any).name).toBe('Alice');
+      expect((result.users[0] as any).role).toBe('user');
+      expect((result.users[0] as any).reviewCount).toBe(3);
       expect(result.pagination.total).toBe(1);
     });
 
@@ -181,8 +181,8 @@ describe('AdminService', () => {
 
       const result = await service.getUserDetail('1', false);
 
-      expect(result.metrics.commentsCount).toBe(5);
-      expect(result.metrics.votesCount).toBe(6); // 3+2+1
+      expect(result.metrics!.commentsCount).toBe(5);
+      expect(result.metrics!.votesCount).toBe(6); // 3+2+1
       expect(result.activitySeries).toHaveLength(7);
     });
   });
@@ -212,9 +212,9 @@ describe('AdminService', () => {
       const result = await service.getReviews({ page: 1, limit: 10 });
 
       expect(result.reviews).toHaveLength(1);
-      expect(result.reviews[0].excerpt.length).toBeLessThanOrEqual(124); // 120 + "..."
-      expect(result.reviews[0].author).toBe('Alice');
-      expect(result.reviews[0].productName).toBe('ExchangeX');
+      expect((result.reviews[0] as any).excerpt.length).toBeLessThanOrEqual(124); // 120 + "..."
+      expect((result.reviews[0] as any).author).toBe('Alice');
+      expect((result.reviews[0] as any).productName).toBe('ExchangeX');
       expect(result.pagination.total).toBe(1);
     });
 
@@ -385,11 +385,11 @@ describe('AdminService', () => {
       const result = await service.getRatings({ page: 1, limit: 20 });
 
       expect(result.ratings).toHaveLength(1);
-      expect(result.ratings[0].productName).toBe('Product A');
-      expect(result.ratings[0].score).toBe(8.5);
-      expect(result.ratings[0].submittedBy).toBe('CompanyX');
-      expect(result.ratings[0].status).toBe('published');
-      expect(result.ratings[0].trend).toBe('up');
+      expect((result.ratings[0] as any).productName).toBe('Product A');
+      expect((result.ratings[0] as any).score).toBe(8.5);
+      expect((result.ratings[0] as any).submittedBy).toBe('CompanyX');
+      expect((result.ratings[0] as any).status).toBe('published');
+      expect((result.ratings[0] as any).trend).toBe('up');
     });
   });
 });

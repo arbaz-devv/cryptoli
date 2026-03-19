@@ -392,8 +392,8 @@ describe('ReviewsService', () => {
       const result = await service.list(1, 10, undefined, undefined, undefined, 'APPROVED', { id: 'u1' });
 
       expect(result.reviews).toHaveLength(2);
-      expect(result.reviews[0].userVote).toBe('UP');
-      expect(result.reviews[1].userVote).toBeNull();
+      expect((result.reviews[0] as any).userVote).toBe('UP');
+      expect((result.reviews[1] as any).userVote).toBeNull();
       expect(result.pagination.total).toBe(2);
     });
 
@@ -403,7 +403,7 @@ describe('ReviewsService', () => {
 
       const result = await service.list(1, 10, undefined, undefined, undefined, 'APPROVED', null);
 
-      expect(result.reviews[0].userVote).toBeNull();
+      expect((result.reviews[0] as any).userVote).toBeNull();
     });
   });
 });

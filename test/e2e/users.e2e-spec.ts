@@ -46,7 +46,7 @@ describe('Users E2E', () => {
       .send({ email, username, password: 'password123' });
 
     expect(res.status).toBe(201);
-    const cookies = res.headers['set-cookie'] as string[];
+    const cookies = res.headers['set-cookie'] as unknown as string[];
     return { cookies, username };
   }
 
