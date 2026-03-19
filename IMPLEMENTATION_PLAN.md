@@ -300,7 +300,7 @@
   - Concurrent votes from different users → counts still accurate (no drift)
   - @@unique(userId, reviewId) rejects duplicate via direct Prisma (bypassing service toggle)
 
-- [ ] **7.3 — `test/integration/complaints-voting.spec.ts`**
+- [x] **7.3 — `test/integration/complaints-voting.spec.ts`** — 8 tests
   - Same patterns as reviews-voting but on ComplaintVote
   - Reply creates ComplaintReply record
   - Reply transitions complaint status OPEN → IN_PROGRESS
@@ -438,7 +438,7 @@
 - `main.ts` — covered by e2e indirectly
 - `api.controller.ts` / `data.service.ts` — dead code
 
-**Actual totals:** 335 unit + 17 integration + 78 e2e = **430 tests** (335 run via `npm test`)
+**Actual totals:** 335 unit + 25 integration + 78 e2e = **438 tests** (335 run via `npm test`)
 
 ---
 
