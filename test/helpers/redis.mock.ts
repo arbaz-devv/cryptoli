@@ -5,7 +5,7 @@
 export function createRedisMock(ready = false) {
   const clientMock = {
     get: jest.fn(),
-    set: jest.fn(),
+    set: jest.fn().mockResolvedValue('OK'),
     del: jest.fn(),
     setex: jest.fn(),
     incr: jest.fn(),
@@ -28,8 +28,12 @@ export function createRedisMock(ready = false) {
     hget: jest.fn(),
     hgetall: jest.fn().mockResolvedValue({}),
     hincrby: jest.fn(),
+    pfadd: jest.fn(),
+    pfcount: jest.fn().mockResolvedValue(0),
+    incrby: jest.fn(),
     zadd: jest.fn(),
     zrangebyscore: jest.fn().mockResolvedValue([]),
+    zremrangebyscore: jest.fn(),
     zcard: jest.fn().mockResolvedValue(0),
     eval: jest.fn(),
   };

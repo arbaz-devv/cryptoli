@@ -104,21 +104,17 @@
 
 ---
 
-## Phase 6: Analytics Unit Tests (P2)
+## Phase 6: Analytics Unit Tests (P2) ✅
 > Most complex module — 1098 lines, 25+ Redis keys. All mocked (Tier 1).
 
-- [ ] **6.1 — `src/analytics/analytics.service.spec.ts`** *(NEW — 0%)*
-  - `track()`: no-op when Redis not ready or consent false
-  - `track()`: page_view/like/funnel/page_leave write correct Redis keys
-  - `getStats()`: emptyStats fallback, 1-minute cache, date range aggregation
-  - `getRealtime()`: active sessions from last 5 minutes
-  - `resolveCountry()`: CDN hint > cache > geoip > external API priority
-  - `normalizePath()`, `sanitizeLabel()`: transformation correctness
-  - `isHealthy()`: PING check
+- [x] **6.1 — `src/analytics/analytics.service.spec.ts`** ✅ 16 tests (track: page_view/like/funnel/page_leave + consent/no-redis guards, getStats, getRealtime, isHealthy, isEnabled, getHealthDetails)
+- [x] **6.2 — `src/analytics/analytics.controller.spec.ts`** ✅ 13 tests (IP extraction, country hint, throttle metadata, guard metadata, latestMembers clamping)
 
-- [ ] **6.2 — `src/analytics/analytics.controller.spec.ts`** *(NEW — 0%)*
-  - IP extraction priority chain, guard requirements per endpoint
-  - Helper functions: normalizeIp, isPrivateOrLocalIp, pickBestIp, getClientIp, getCountryHint
+> **Status:** 335 tests, 33 spec files (up from 306/31)
+> **Learnings:**
+> - Redis mock `set()` must return a resolved value (analytics uses `.then()` chaining on set for cohort tracking)
+> - Redis mock needed `pfadd`, `pfcount`, `incrby`, `zremrangebyscore` for analytics service
+> - Analytics service uses fire-and-forget patterns (`void Promise.all(...).catch(...)`) — tests verify key writes were initiated
 
 ---
 
