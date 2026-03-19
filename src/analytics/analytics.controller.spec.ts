@@ -86,6 +86,148 @@ describe('AnalyticsController', () => {
       const shortLimit = Reflect.getMetadata('THROTTLER:LIMITshort', track);
       expect(shortLimit).toBe(300);
     });
+
+    it('should prefer x-real-ip over x-forwarded-for', () => {
+      const mockReq = {
+        headers: {
+          'x-real-ip': '9.9.9.9',
+          'x-forwarded-for': '10.0.0.1, 8.8.8.8',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('9.9.9.9');
+    });
+
+    it('should extract best public IP from x-forwarded-for chain', () => {
+      const mockReq = {
+        headers: {
+          // Private IP first, then public — should pick the public one
+          'x-forwarded-for': '10.0.0.1, 203.0.113.50, 192.168.1.1',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('203.0.113.50');
+    });
+
+    it('should parse RFC 7239 Forwarded header', () => {
+      const mockReq = {
+        headers: {
+          forwarded: 'for=203.0.113.10;proto=https, for="[2001:db8::1]"',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      // Should pick 203.0.113.10 (first public IP from Forwarded header)
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('203.0.113.10');
+    });
+
+    it('should fallback to socket.remoteAddress when no proxy headers', () => {
+      const mockReq = {
+        headers: { 'user-agent': '' },
+        socket: { remoteAddress: '5.6.7.8' },
+        ip: '5.6.7.8',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('5.6.7.8');
+    });
+
+    it('should skip "unknown" entries in x-forwarded-for', () => {
+      const mockReq = {
+        headers: {
+          'x-forwarded-for': 'unknown, 203.0.113.99',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('203.0.113.99');
+    });
+
+    it('should extract country hint from x-vercel-ip-country', () => {
+      const mockReq = {
+        headers: {
+          'x-vercel-ip-country': 'FR',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '1.2.3.4' },
+        ip: '1.2.3.4',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][3]).toBe('FR');
+    });
+
+    it('should extract country hint from cloudfront-viewer-country', () => {
+      const mockReq = {
+        headers: {
+          'cloudfront-viewer-country': 'JP',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '1.2.3.4' },
+        ip: '1.2.3.4',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][3]).toBe('JP');
+    });
+
+    it('should ignore invalid country hint (non-2-letter)', () => {
+      const mockReq = {
+        headers: {
+          'cf-ipcountry': 'XX1',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '1.2.3.4' },
+        ip: '1.2.3.4',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][3]).toBeUndefined();
+    });
+
+    it('should handle true-client-ip header', () => {
+      const mockReq = {
+        headers: {
+          'true-client-ip': '100.200.100.200',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe(
+        '100.200.100.200',
+      );
+    });
+
+    it('should handle fastly-client-ip header', () => {
+      const mockReq = {
+        headers: {
+          'fastly-client-ip': '50.60.70.80',
+          'user-agent': '',
+        },
+        socket: { remoteAddress: '127.0.0.1' },
+        ip: '127.0.0.1',
+      };
+
+      controller.track(mockReq as any, {} as any);
+      expect(mockAnalyticsService.track.mock.calls[0][0]).toBe('50.60.70.80');
+    });
   });
 
   describe('stats()', () => {
