@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
@@ -216,9 +216,11 @@ export class AuthService {
   }
 
   async createSession(userId: string): Promise<string> {
-    const token = jwt.sign({ userId }, this.config.jwtSecret, {
-      expiresIn: '7d',
-    });
+    const token = jwt.sign(
+      { userId, jti: randomUUID() },
+      this.config.jwtSecret,
+      { expiresIn: '7d' },
+    );
     await this.prisma.session.create({
       data: {
         userId,
