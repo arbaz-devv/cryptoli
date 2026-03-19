@@ -29,6 +29,7 @@ export function createPrismaMock(overrides: Record<string, any> = {}) {
       update: jest.fn(),
       delete: jest.fn(),
       count: jest.fn(),
+      groupBy: jest.fn(),
     },
     comment: {
       findUnique: jest.fn(),

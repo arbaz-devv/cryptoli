@@ -89,17 +89,18 @@
 
 ---
 
-## Phase 5: Admin Module Unit Tests (P3)
+## Phase 5: Admin Module Unit Tests (P3) ✅
 > Admin business logic. All mocked (Tier 1).
 
-- [ ] **5.1 — Expand `src/admin/admin.service.spec.ts`** *(existing — 9.87% lines)*
-  - `getStats()`, `getUsers()`, `getUserDetail(lazy/full)`, `getReview(lazy/full)`, `getReviews()`, `updateReviewStatus()`, `getRatings()`, cache TTL behavior
+- [x] **5.1 — Expand `src/admin/admin.service.spec.ts`** ✅ expanded from 2→19 tests (getStats, getUsers, getUserDetail lazy/full, getReviews, getReview lazy/full, updateReviewStatus, getRatings)
+- [x] **5.2 — `src/admin/admin.controller.spec.ts`** ✅ 8 tests (AdminGuard metadata, pagination clamping, delegation)
+- [x] **5.3 — `src/admin/admin-auth.controller.spec.ts`** ✅ 2 tests (existing — throttle metadata)
 
-- [ ] **5.2 — `src/admin/admin.controller.spec.ts`** *(NEW — 0%)*
-  - AdminGuard on all endpoints, pagination clamping, delegation to service
-
-- [ ] **5.3 — Expand `src/admin/admin-auth.controller.spec.ts`** *(existing)*
-  - Login flow (valid/invalid credentials), config endpoint
+> **Status:** 306 tests, 31 spec files (up from 279/30)
+> **Learnings:**
+> - Admin caches are module-level (not per-instance), so tests sharing the same cache key hit stale data — use different params or order carefully
+> - `review.groupBy` was missing from prisma mock — added it
+> - Admin service uses `$queryRaw` with BigInt return for session counts — mock must return `[{ count: BigInt(n) }]`
 
 ---
 
