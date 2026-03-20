@@ -23,7 +23,10 @@ in [specs/README.md](specs/README.md).
 | Build     | `npm run build`                      |
 | Test      | `npm run test`                       |
 | Test one  | `npx jest path/to/file.spec.ts`      |
+| Test cov  | `npm run test:cov`                   |
+| Test intg | `npm run test:integration`           |
 | Test e2e  | `npm run test:e2e`                   |
+| Test all  | `npm run test:all`                   |
 | Typecheck | `npx tsc --noEmit`                   |
 | Lint      | `npm run lint`                       |
 | Format    | `npm run format`                     |
@@ -34,8 +37,9 @@ in [specs/README.md](specs/README.md).
 
 **Always:** Run tests before marking a task done. Search the codebase before
 creating new code. Run `prisma migrate dev` then `prisma generate` after any
-schema change. Write or update tests for code you create or modify. Register
-new feature modules in `app.module.ts` imports.
+schema change. Write or update tests at all applicable tiers for code you
+create or modify (see Testing section below). Register new feature modules
+in `app.module.ts` imports.
 
 **Ask first:** Changes to specs/ documents. Dependency major version bumps.
 New packages or modules. Cascade-delete additions (User cascades to 14+ tables).
@@ -116,8 +120,40 @@ UsersService, call `invalidateProfileCache(username)`.
 | Voting, reactions, helpful marks       | `specs/voting-system.md`        |
 | Socket.IO, real-time events            | `specs/socket-architecture.md`  |
 | Scrip orchestration                    | `specs/scrip-protocol.md`       |
+| Testing, coverage, isolation           | `specs/testing-strategy.md`     |
 
 Full index with summaries: [specs/README.md](specs/README.md)
+
+## Testing
+
+**Three-tier test architecture.** Every feature or modification must include
+tests at all applicable tiers. Read `specs/testing-strategy.md` for full
+conventions, patterns, and isolation guarantees.
+
+| Tier | Location | What it tests | When required |
+|------|----------|--------------|---------------|
+| **Unit** | `src/**/*.spec.ts` (co-located) | Business logic with mocked deps | Every service, guard, pipe, filter, utility |
+| **Integration** | `test/integration/*.spec.ts` | Real DB queries, transactions, constraints | Voting/recount, cascades, session lifecycle, follows |
+| **E2E** | `test/e2e/*.e2e-spec.ts` | Full HTTP stack via supertest | Every new API endpoint or route change |
+
+**When implementing a new feature, you must:**
+1. Write unit tests for the service (mock Prisma, Redis, Socket via `test/helpers/`)
+2. Write integration tests if the feature involves transactions, constraints, or cascades (use real PostgreSQL via TestContainers)
+3. Write or update e2e tests for any new or changed HTTP endpoints
+4. Run `npm run test:all` (unit + integration + e2e) before marking done
+5. Verify `npm run test:cov` passes the coverage thresholds
+
+**Shared test infrastructure** — use the helpers in `test/helpers/`:
+- `prisma.mock.ts` — Prisma mock factory (all 19 models)
+- `redis.mock.ts` — Redis mock with ready/not-ready toggle
+- `socket.mock.ts` — Socket mock with all 7 emit methods
+- `auth.helpers.ts` — session user factory, JWT helpers, mock request/context
+- `factories.ts` — test data factories for integration/e2e (createTestUser, etc.)
+- `setup-app.ts` — e2e app bootstrap replicating main.ts middleware
+
+**Test isolation** — integration and e2e tests use TestContainers (disposable
+PostgreSQL + Redis). Tests must never connect to real services. See
+`specs/testing-strategy.md` → "Isolation Guarantees" for the full safety model.
 
 ## Git
 

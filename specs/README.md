@@ -21,6 +21,12 @@ NestJS 11 backend for a cryptocurrency/fintech review platform.
 |------|------|---------|
 | [socket-architecture.md](./socket-architecture.md) | [src/socket/](../src/socket/) | Socket.IO rooms, event catalog, globalThis pattern |
 
+## Testing
+
+| Spec | Code | Purpose |
+|------|------|---------|
+| [testing-strategy.md](./testing-strategy.md) | [src/**/*.spec.ts](../src/), [test/](../test/) | Test conventions, mocking patterns, coverage targets, priority tiers |
+
 ## Agent Protocol
 
 | Spec | Code | Purpose |
