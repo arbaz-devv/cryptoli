@@ -1,3 +1,5 @@
+ULTIMATE GOAL: @ralph/GOAL.md
+
 0a. Study `specs/*` with up to 500 parallel Sonnet subagents to learn the application specifications.
 0b. Study @AGENTS.md to understand commands, boundaries, testing tiers, and conventions.
 0c. Study @ralph/IMPLEMENTATION_PLAN.md to determine the next highest-priority unchecked item.
