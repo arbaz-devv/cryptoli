@@ -60,6 +60,17 @@ export async function flushTestRedis() {
   await redis.flushall();
 }
 
+export async function disconnectTestClients() {
+  if (redisClient) {
+    await redisClient.quit();
+    redisClient = null;
+  }
+  if (prisma) {
+    await prisma.$disconnect();
+    prisma = undefined as any;
+  }
+}
+
 // Truncate all user-created tables dynamically (avoids hardcoding table names)
 export async function truncateAll(client?: PrismaClient) {
   const db = client ?? getTestPrisma();
