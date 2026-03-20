@@ -274,7 +274,9 @@ let prisma: PrismaClient;
 
 export function getTestPrisma(): PrismaClient {
   if (!prisma) {
-    const url = (globalThis as any).__TEST_DATABASE_URL__;
+    // globalThis is set when running in-process; process.env is set by globalSetup for worker processes
+    const url =
+      (globalThis as any).__TEST_DATABASE_URL__ || process.env.DATABASE_URL;
     if (!url) {
       throw new Error(
         'TEST_DATABASE_URL not set. Did globalSetup run? ' +
@@ -293,7 +295,7 @@ export function getTestPrisma(): PrismaClient {
 }
 
 export function getTestRedisUrl(): string {
-  const url = (globalThis as any).__TEST_REDIS_URL__;
+  const url = (globalThis as any).__TEST_REDIS_URL__ || process.env.REDIS_URL;
   if (!url) {
     throw new Error('TEST_REDIS_URL not set. Did globalSetup run?');
   }
@@ -312,19 +314,16 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-// Truncate order respects FK constraints (children before parents)
-const TABLES = [
-  'CommentVote', 'ComplaintVote', 'HelpfulVote', 'Reaction',
-  'Media', 'ComplaintReply', 'Report', 'PushSubscription',
-  'Notification', 'Session', 'Comment', 'Review', 'Post',
-  'Complaint', 'CompanyFollow', 'Follow', 'Product', 'Company', 'User',
-];
-
+// Truncate all user-created tables dynamically (avoids hardcoding table names)
 export async function truncateAll(client?: PrismaClient) {
   const db = client ?? getTestPrisma();
-  for (const table of TABLES) {
-    await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
-  }
+  const tables = await db.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    AND tablename NOT LIKE '_prisma%'
+  `;
+  if (tables.length === 0) return;
+  const tableNames = tables.map((t) => `"${t.tablename}"`).join(', ');
+  await db.$executeRawUnsafe(`TRUNCATE TABLE ${tableNames} CASCADE`);
 }
 ```
 
@@ -428,6 +427,32 @@ When adding a new external service to the codebase:
 
 ---
 
+## Known Gotchas
+
+Hard-won lessons from building the test suite. Each caused real debugging time.
+
+### Integration tests must run serially (`maxWorkers: 1`)
+
+`truncateAll()` issues `TRUNCATE TABLE ... CASCADE`, which acquires exclusive locks. With parallel Jest workers, two test files truncating simultaneously deadlock each other. The integration config sets `maxWorkers: 1`; the e2e script uses `--runInBand` on the CLI. Do not remove either setting.
+
+### `forceExit: true` is required for integration and e2e configs
+
+The `getTestRedis()` singleton in `test-db.utils.ts` creates an ioredis client with a keepalive timer that holds the Node event loop open. Even after `globalTeardown` calls `disconnectTestClients()`, the module-level singleton can remain cached by the Jest worker. Without `forceExit: true`, the test suite hangs indefinitely after all tests pass — with no error output.
+
+### ThrottlerGuard persists rate-limit state in Redis
+
+`ThrottlerModule` is registered globally with Redis-backed storage. Rate-limit counters (e.g., `throttle:login:127.0.0.1`) survive across test cases within a suite. Without `flushTestRedis()` in `beforeEach`, tests that hit the same endpoint repeatedly will receive unexpected 429 responses. The spec examples show `truncateAll()` in `beforeEach` for DB cleanup — Redis cleanup is equally important but easy to forget.
+
+### Profile cache requires explicit Redis flush before count assertions
+
+`UsersService.getPublicProfile()` has a 90-second Redis cache. Although `followUser()`/`unfollowUser()` call `invalidateProfileCache()`, e2e tests that assert on `followersCount` after mutations need an explicit `flushTestRedis()` before the read. The invalidation works on the server side but the test's read-after-write timing can hit the stale cached value. This pattern appears 5+ times in `users.e2e-spec.ts`.
+
+### Fire-and-forget `track()` requires a delay before asserting Redis keys
+
+`AnalyticsService.track()` uses `void Promise.all(promises)` — the `void` discards the promise, so `await track(...)` returns before Redis writes complete. Integration tests use a `waitForWrites()` helper: a 200ms `setTimeout` followed by `redis.ping()` (which forces the ioredis command queue to flush). Without this, assertions on Redis keys immediately after `track()` see `null`.
+
+---
+
 ## File Placement
 
 ```
@@ -445,7 +470,7 @@ test/
     factories.ts                     ← createTestUser(), createTestReview(), etc.
     test-db.setup.ts                 ← TestContainers globalSetup (start PG + Redis)
     test-db.teardown.ts              ← TestContainers globalTeardown (stop containers)
-    test-db.utils.ts                 ← truncateAllTables(), getPrisma()
+    test-db.utils.ts                 ← truncateAll(), getTestPrisma()
     setup-app.ts                     ← E2E app bootstrap replicating main.ts middleware
   integration/
     reviews-voting.spec.ts           ← Tier 2: real DB
