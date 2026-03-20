@@ -1,16 +1,15 @@
 import nock from 'nock';
+import { disconnectTestClients } from './test-db.utils';
 
 export default async function globalTeardown() {
   nock.cleanAll();
   nock.enableNetConnect();
 
   // Disconnect singleton clients to prevent open handles
-  // (import dynamically to avoid side effects if globalSetup didn't run)
   try {
-    const { disconnectTestClients } = await import('./test-db.utils');
     await disconnectTestClients();
   } catch {
-    // Ignore — globalSetup may not have created clients
+    // Ignore — clients may not have been created
   }
 
   await (globalThis as any).__TEST_PG_CONTAINER__?.stop();
