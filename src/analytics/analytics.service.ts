@@ -497,13 +497,43 @@ export class AnalyticsService {
           if (reply === 'OK' && this.redis) {
             this.redis
               .sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId)
-              .catch(() => {});
+              .catch((error: unknown) => {
+                this.redisService.setLastError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed writing cohort sadd',
+                );
+                console.error(
+                  'Analytics write error (cohort sadd):',
+                  this.redisService.getLastError(),
+                );
+              });
             this.redis
               .expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl)
-              .catch(() => {});
+              .catch((error: unknown) => {
+                this.redisService.setLastError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed writing cohort expire',
+                );
+                console.error(
+                  'Analytics write error (cohort expire):',
+                  this.redisService.getLastError(),
+                );
+              });
           }
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          this.redisService.setLastError(
+            error instanceof Error
+              ? error.message
+              : 'Failed writing cohort first_visit',
+          );
+          console.error(
+            'Analytics write error (cohort first_visit):',
+            this.redisService.getLastError(),
+          );
+        });
       if (
         body.timezone &&
         typeof body.timezone === 'string' &&
@@ -614,11 +644,31 @@ export class AnalyticsService {
               .then((count) => {
                 if (count === '1' && this.redis) {
                   void this.incr(`${KEY_PREFIX}:bounces:${day}`).catch(
-                    () => {},
+                    (error: unknown) => {
+                      this.redisService.setLastError(
+                        error instanceof Error
+                          ? error.message
+                          : 'Failed writing bounce incr',
+                      );
+                      console.error(
+                        'Analytics write error (bounce incr):',
+                        this.redisService.getLastError(),
+                      );
+                    },
                   );
                 }
               })
-              .catch(() => {});
+              .catch((error: unknown) => {
+                this.redisService.setLastError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed reading session pages for bounce',
+                );
+                console.error(
+                  'Analytics write error (bounce hget):',
+                  this.redisService.getLastError(),
+                );
+              });
           }
         }
       }

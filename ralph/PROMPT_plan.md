@@ -7,6 +7,6 @@
 
 IMPORTANT: Plan only. Do NOT implement anything. Do NOT assume functionality is missing; confirm with code search first.
 
-ULTIMATE GOAL: We want to achieve [project-specific goal]. Consider missing elements and plan accordingly. If an element is missing, search first to confirm it doesn't exist, then if needed author the specification at specs/FILENAME.md. If you create a new element then document the plan to implement it in @ralph/IMPLEMENTATION_PLAN.md using a subagent.
+ULTIMATE GOAL: @ralph/GOAL.md — Consider missing elements and plan accordingly. If an element is missing, search first to confirm it doesn't exist, then if needed author the specification at specs/FILENAME.md. If you create a new element then document the plan to implement it in @ralph/IMPLEMENTATION_PLAN.md using a subagent.
 
 IMPLEMENTATION_PLAN.md CONSTRAINT: You may structure and organize this file as needed during planning, but once items exist you may ONLY: (1) check off items `[ ]` -> `[x]`, (2) append learnings under `> **Learnings:**` blocks, (3) add items to the "Remaining Gaps" section at the bottom. Do NOT delete existing task descriptions during build iterations.
