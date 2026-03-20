@@ -6,15 +6,38 @@ import { hashSync } from 'bcryptjs';
 import Redis from 'ioredis';
 import nock from 'nock';
 
+async function startWithRetry<T>(
+  factory: () => Promise<T>,
+  label: string,
+  retries = 3,
+): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await factory();
+    } catch (err: any) {
+      const isRetryable = err?.message?.includes('EPIPE') || err?.code === 'EPIPE';
+      if (isRetryable && attempt < retries) {
+        console.warn(`[TestSetup] ${label} attempt ${attempt} failed with EPIPE, retrying...`);
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`[TestSetup] ${label} failed after ${retries} attempts`);
+}
+
 export default async function globalSetup() {
   // ── Phase 1: Provision ──────────────────────────────────────────
-  const pg = await new PostgreSqlContainer('postgres:16-alpine')
-    .withDatabase('cryptoli_test')
-    .start();
+  const pg = await startWithRetry(
+    () => new PostgreSqlContainer('postgres:16-alpine').withDatabase('cryptoli_test').start(),
+    'PostgreSQL container',
+  );
 
-  const redis = await new GenericContainer('redis:7-alpine')
-    .withExposedPorts(6379)
-    .start();
+  const redis = await startWithRetry(
+    () => new GenericContainer('redis:7-alpine').withExposedPorts(6379).start(),
+    'Redis container',
+  );
 
   const databaseUrl = pg.getConnectionUri();
   execSync('npx prisma migrate deploy', {
