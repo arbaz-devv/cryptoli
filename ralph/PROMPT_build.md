@@ -17,13 +17,26 @@ The only files you should be creating or modifying are:
 - `package.json` (only scripts, dependencies required by the item)
 - `ralph/IMPLEMENTATION_PLAN.md` (progress updates only — checkoff + learnings)
 
+SIBLING REPOS: When the current plan item requires changes to frontend projects, you may also modify:
+- `/home/scrip/Code/cryptoi-admin/` (Next.js admin dashboard)
+  - Source: `app/`, `lib/`, `components/`
+  - Tests: `cd /home/scrip/Code/cryptoi-admin && npm run test`
+  - Key contract files: `lib/admin-api.ts`, `lib/types.ts`
+  - Git: `git -C /home/scrip/Code/cryptoi-admin add/commit/push`
+- `/home/scrip/Code/cryptoli-frontend/` (Next.js public frontend)
+  - Source: `app/`, `features/`, `lib/`, `shared/`
+  - Tests: `cd /home/scrip/Code/cryptoli-frontend && npm run test`
+  - Key contract files: `lib/types.ts`, `lib/api/core.ts`, `features/*/api/client.ts`
+  - Git: `git -C /home/scrip/Code/cryptoli-frontend add/commit/push`
+Only modify sibling repos when the current plan item explicitly requires it.
+
 1. Follow @ralph/IMPLEMENTATION_PLAN.md and pick the next unchecked `[ ]` item in phase order. Before making changes, read the relevant source files and specs to understand the existing patterns. Search the codebase using Sonnet subagents — don't assume not implemented. You may use up to 500 parallel Sonnet subagents for searches/reads and only 1 Sonnet subagent for build/tests. Use Opus subagents when complex reasoning is needed (debugging, architectural decisions). Ultrathink.
 2. Implement the item per the acceptance criteria. Write tests at every applicable tier (see AGENTS.md Testing section):
    - Unit tests for every new service/guard/pipe/utility (`src/**/*.spec.ts`)
    - Integration tests if the change involves transactions, constraints, or cascades (`test/integration/`)
    - E2E tests for any new or changed HTTP endpoints (`test/e2e/`)
    - Use existing test helpers from `test/helpers/` — do NOT create ad-hoc mocks
-3. Run tests: `npm run test:all` (unit + integration + e2e). All existing tests must continue to pass. If tests unrelated to your work fail, resolve them as part of the increment.
+3. Run tests: `npm run test:all` (unit + integration + e2e). All existing tests must continue to pass. If tests unrelated to your work fail, resolve them as part of the increment. If sibling repos were modified, also run their tests: `cd /home/scrip/Code/cryptoi-admin && npm run test` and `cd /home/scrip/Code/cryptoli-frontend && npm run test`.
 4. When tests pass, update @ralph/IMPLEMENTATION_PLAN.md (check off `[x]` the completed item and append learnings), then stage specific files with `git add <file>` (do NOT use `git add -A`), then `git commit` with a message like `feat(scope): description`. After the commit, `git push`.
 
 99999. Important: When authoring documentation or tests, capture the why — what invariant does this test protect? Not just "it works" but "it prevents X regression".

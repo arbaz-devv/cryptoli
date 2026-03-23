@@ -60,6 +60,12 @@ Execute the instructions above."
         git push -u origin "$CURRENT_BRANCH"
     }
 
+    # Push sibling repos if they have new commits
+    git -C /home/scrip/Code/cryptoi-admin diff --quiet HEAD 2>/dev/null || \
+        git -C /home/scrip/Code/cryptoi-admin push origin "$(git -C /home/scrip/Code/cryptoi-admin branch --show-current)" 2>/dev/null
+    git -C /home/scrip/Code/cryptoli-frontend diff --quiet HEAD 2>/dev/null || \
+        git -C /home/scrip/Code/cryptoli-frontend push origin "$(git -C /home/scrip/Code/cryptoli-frontend branch --show-current)" 2>/dev/null
+
     ITERATION=$((ITERATION + 1))
     echo -e "\n\n======================== LOOP $ITERATION ========================\n"
 done
