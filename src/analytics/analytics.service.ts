@@ -1,4 +1,14 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
+import { AnalyticsBufferService } from './analytics-buffer.service';
+import type { BufferedEvent } from './analytics-buffer.service';
+import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import * as geoip from 'geoip-lite';
@@ -121,7 +131,12 @@ const RETENTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
   private retentionTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    @Optional()
+    @Inject(forwardRef(() => AnalyticsBufferService))
+    private readonly bufferService?: AnalyticsBufferService,
+  ) {}
 
   onModuleInit(): void {
     this.retentionTimer = setInterval(() => {
@@ -356,6 +371,17 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private hashIp(ip: string): string | undefined {
+    if (!ip) return undefined;
+    return createHash('sha256').update(ip).digest('hex');
+  }
+
+  private pushToBuffer(event: BufferedEvent): void {
+    if (this.bufferService) {
+      this.bufferService.push(event);
+    }
+  }
+
   private referrerLabel(referrer?: string): string {
     if (!referrer || !referrer.trim()) return 'direct';
     try {
@@ -488,6 +514,22 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
           this.redisService.getLastError(),
         );
       });
+      this.pushToBuffer({
+        eventType: 'page_view',
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        timezone: body.timezone,
+        path,
+        referrer,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        createdAt: now,
+      });
       return;
     }
 
@@ -505,6 +547,16 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
           'Analytics write error (like):',
           this.redisService.getLastError(),
         );
+      });
+      this.pushToBuffer({
+        eventType: 'like',
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        createdAt: now,
       });
       return;
     }
@@ -536,6 +588,20 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
           'Analytics write error (funnel):',
           this.redisService.getLastError(),
         );
+      });
+      this.pushToBuffer({
+        eventType: event,
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        path,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        createdAt: now,
       });
       return;
     }
@@ -569,6 +635,18 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
               'Analytics write error (duration):',
               this.redisService.getLastError(),
             );
+          });
+          this.pushToBuffer({
+            eventType: 'page_leave',
+            sessionId,
+            ipHash: this.hashIp(ip),
+            country: countryCode,
+            device,
+            browser,
+            os,
+            path,
+            durationSeconds: durationSec,
+            createdAt: now,
           });
           // Bounce: single pageview + left within 30s — two-step, not pipelined (not idempotent)
           if (durationSec < 30) {

@@ -159,7 +159,9 @@
 
 ### 2E: Buffer Integration into track()
 
-- [ ] **2.16** Inject `AnalyticsBufferService` into `AnalyticsService`. After the Redis pipeline in `track()`, call `bufferService.push()` with the event payload (eventType, sessionId, userId, ipHash, country, device, browser, os, path, referrer, utm_*, durationSeconds, properties, createdAt). See ANALYTICS.md "Write Path: Frontend Event" data flow.
+- [x] **2.16** Inject `AnalyticsBufferService` into `AnalyticsService`. After the Redis pipeline in `track()`, call `bufferService.push()` with the event payload (eventType, sessionId, userId, ipHash, country, device, browser, os, path, referrer, utm_*, durationSeconds, properties, createdAt). See ANALYTICS.md "Write Path: Frontend Event" data flow.
+
+> **Learnings:** Used `@Optional() @Inject(forwardRef(() => AnalyticsBufferService))` to avoid breaking existing tests that create `AnalyticsService` with only `RedisService`. Added `hashIp()` (SHA-256, no salt — deterministic for correlation per spec) and `pushToBuffer()` private helper. Push calls added after all 4 pipeline branches: page_view, like, funnel events, page_leave. The `pushToBuffer` no-ops when bufferService is undefined (optional injection). All 472 unit tests pass, typecheck clean.
 
 ### 2F: AnalyticsRollupService
 
