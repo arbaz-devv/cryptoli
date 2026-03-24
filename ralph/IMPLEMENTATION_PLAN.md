@@ -53,7 +53,9 @@
 
 > Extend Session + User models, add AnalyticsEvent and DailySummary tables, fix CORS headers, update test infrastructure. All changes in `~/Code/cryptoli`.
 
-- [ ] **1.1** Extend Session model in `prisma/schema.prisma` (currently at line 236): add 9 new nullable fields — `ip` (VarChar(45)), `ipHash` (Char(64)), `userAgent` (VarChar(512)), `device` (VarChar(16)), `browser` (VarChar(64)), `os` (VarChar(64)), `country` (Char(2)), `timezone` (VarChar(64)), `trigger` (VarChar(20)). Add `@@index([createdAt])`. See ANALYTICS.md "Session Model (Extended)" for exact Prisma syntax.
+- [x] **1.1** Extend Session model in `prisma/schema.prisma` (currently at line 236): add 9 new nullable fields — `ip` (VarChar(45)), `ipHash` (Char(64)), `userAgent` (VarChar(512)), `device` (VarChar(16)), `browser` (VarChar(64)), `os` (VarChar(64)), `country` (Char(2)), `timezone` (VarChar(64)), `trigger` (VarChar(20)). Add `@@index([createdAt])`. See ANALYTICS.md "Session Model (Extended)" for exact Prisma syntax.
+
+> **Learnings:** The ANALYTICS.md spec also shows `@@index([userId])` on Session, but the plan item only specifies `@@index([createdAt])`. Added only what the plan item lists. The Session model moved from line 236 to line 236 (unchanged position). Schema validates cleanly. Migration deferred to item 1.5 per plan structure.
 
 - [ ] **1.2** Extend User model in `prisma/schema.prisma` (currently at line 71): add `registrationIp` (String? @map("registration_ip") @db.VarChar(45)) and `registrationCountry` (String? @map("registration_country") @db.Char(2)) after the `subscription` field.
 

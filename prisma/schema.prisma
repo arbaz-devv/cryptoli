@@ -240,6 +240,19 @@ model Session {
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  // Request context captured at login/register/password-change
+  ip        String?  @db.VarChar(45)
+  ipHash    String?  @db.Char(64)
+  userAgent String?  @db.VarChar(512)
+  device    String?  @db.VarChar(16)
+  browser   String?  @db.VarChar(64)
+  os        String?  @db.VarChar(64)
+  country   String?  @db.Char(2)
+  timezone  String?  @db.VarChar(64)
+  trigger   String?  @db.VarChar(20)
+
+  @@index([createdAt])
 }
 
 model Notification {
