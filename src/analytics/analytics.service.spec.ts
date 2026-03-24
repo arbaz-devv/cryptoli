@@ -242,6 +242,44 @@ describe('AnalyticsService', () => {
     });
   });
 
+  describe('getRollupHealth()', () => {
+    it('should return stale when no Redis', async () => {
+      const result = await service.getRollupHealth();
+      expect(result).toEqual({ lastSuccessDate: null, stale: true });
+    });
+
+    it('should return stale when key absent', async () => {
+      redisMock = createRedisMock(true);
+      redisMock._clientMock.get.mockResolvedValue(null);
+      service = new AnalyticsService(redisMock as any);
+      const result = await service.getRollupHealth();
+      expect(result).toEqual({ lastSuccessDate: null, stale: true });
+    });
+
+    it('should return not stale for recent rollup', async () => {
+      redisMock = createRedisMock(true);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const day = yesterday.toISOString().slice(0, 10);
+      redisMock._clientMock.get.mockResolvedValue(day);
+      service = new AnalyticsService(redisMock as any);
+      const result = await service.getRollupHealth();
+      expect(result).toEqual({ lastSuccessDate: day, stale: false });
+    });
+
+    it('should return stale for rollup older than 48 hours', async () => {
+      redisMock = createRedisMock(true);
+      const old = new Date();
+      old.setDate(old.getDate() - 3);
+      const day = old.toISOString().slice(0, 10);
+      redisMock._clientMock.get.mockResolvedValue(day);
+      service = new AnalyticsService(redisMock as any);
+      const result = await service.getRollupHealth();
+      expect(result.lastSuccessDate).toBe(day);
+      expect(result.stale).toBe(true);
+    });
+  });
+
   // --- Private method tests (accessed via `as any`) ---
   // These protect against regressions in normalization logic that
   // silently corrupts analytics keys or produces wrong aggregations.

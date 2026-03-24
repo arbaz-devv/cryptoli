@@ -315,7 +315,9 @@
 
 ### 3C: Backend — Rollup Health Monitoring
 
-- [ ] **3.11** Extend `GET /api/analytics/health` (or add if absent) with rollup status: read `analytics:rollup:last_success` from Redis, return `{ rollup: { lastSuccessDate, stale } }` with 48-hour staleness threshold.
+- [x] **3.11** Extend `GET /api/analytics/health` (or add if absent) with rollup status: read `analytics:rollup:last_success` from Redis, return `{ rollup: { lastSuccessDate, stale } }` with 48-hour staleness threshold.
+
+> **Learnings:** The health endpoint already existed in `analytics.controller.ts` (no guard, publicly accessible). Added `getRollupHealth()` to `AnalyticsService` which reads the `analytics:rollup:last_success` Redis key (set by `AnalyticsRollupService.checkAndRollup()`) and computes staleness by comparing the stored date against a 48-hour threshold. The date is stored as `YYYY-MM-DD` string, so staleness is computed by parsing as midnight UTC. The controller now uses `Promise.all` to run `isHealthy()` and `getRollupHealth()` concurrently. 4 new service unit tests (no Redis, absent key, recent rollup, stale rollup) + 1 new controller test (stale rollup response). Updated e2e test to assert `rollup` field presence and types. All 731 tests pass (593 unit + 57 integration + 81 e2e).
 
 ### 3D: Backend — Tests
 

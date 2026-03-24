@@ -127,6 +127,9 @@ describe('Analytics E2E', () => {
       expect(typeof res.body.enabled).toBe('boolean');
       expect(typeof res.body.configured).toBe('boolean');
       expect(typeof res.body.connected).toBe('boolean');
+      expect(res.body).toHaveProperty('rollup');
+      expect(res.body.rollup).toHaveProperty('lastSuccessDate');
+      expect(typeof res.body.rollup.stale).toBe('boolean');
     });
   });
 

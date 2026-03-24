@@ -76,11 +76,16 @@ export class AnalyticsController {
     configured: boolean;
     connected: boolean;
     lastError: string | null;
+    rollup: { lastSuccessDate: string | null; stale: boolean };
   }> {
-    const enabled = await this.analyticsService.isHealthy();
+    const [enabled, rollup] = await Promise.all([
+      this.analyticsService.isHealthy(),
+      this.analyticsService.getRollupHealth(),
+    ]);
     return {
       enabled,
       ...this.analyticsService.getHealthDetails(),
+      rollup,
     };
   }
 
