@@ -335,15 +335,25 @@
 
 ### 3E: Admin Dashboard (`~/Code/cryptoi-admin`)
 
-- [ ] **3.15** Update `lib/admin-api.ts` in cryptoi-admin: add `AdminUserSession` interface (with all session fields including country), add `fetchUserSessions(userId, page, limit)` function, add `country` and `registrationCountry` to `AdminUserDetail.user` type.
+- [x] **3.15** Update `lib/admin-api.ts` in cryptoi-admin: add `AdminUserSession` interface (with all session fields including country), add `fetchUserSessions(userId, page, limit)` function, add `country` and `registrationCountry` to `AdminUserDetail.user` type.
 
-- [ ] **3.16** Update `app/dashboard/users/[id]/page.tsx` in cryptoi-admin: add "View all sessions →" link in the technical details section, below existing fields.
+> **Learnings:** `AdminUserSession` has 11 fields matching the backend response shape from `getUserSessions` — all enrichment fields are optional (undefined when DB value is null) except `id`, `createdAt`, and `expiresAt`. `fetchUserSessions` follows the existing `fetchAdminUsers` pattern with a `FetchUserSessionsOptions` type. `country` and `registrationCountry` added as `string | null` to match the backend's nullable response. All 17 admin tests pass unchanged.
 
-- [ ] **3.17** Create `app/dashboard/users/[id]/sessions/page.tsx` in cryptoi-admin: server component — session history table with columns: IP (hash), Device, Browser, OS, Country, Timezone, Trigger, Login Date, Expires. Paginated.
+- [x] **3.16** Update `app/dashboard/users/[id]/page.tsx` in cryptoi-admin: add "View all sessions →" link in the technical details section, below existing fields.
 
-- [ ] **3.18** Create `app/dashboard/users/[id]/sessions/ExportSessionsButtons.tsx` in cryptoi-admin: `"use client"` component with CSV/JSON download buttons using `window.open(url)` to BFF proxy route.
+> **Learnings:** Added the link after the user agent display, before the closing `</div>` of the technical details section. Uses the existing `Link` component (already imported) and `admin-primary` color classes consistent with the page's design system. Links to `/dashboard/users/${user.id}/sessions` which will be created in item 3.17.
 
-- [ ] **3.19** Create BFF proxy routes in cryptoi-admin: `app/api/admin/users/[id]/sessions/route.ts` and `app/api/admin/users/[id]/sessions/export/route.ts` — forward requests to backend API with admin credentials.
+- [x] **3.17** Create `app/dashboard/users/[id]/sessions/page.tsx` in cryptoi-admin: server component — session history table with columns: IP (hash), Device, Browser, OS, Country, Timezone, Trigger, Login Date, Expires. Paginated.
+
+> **Learnings:** Server component that calls `fetchUserSessions` directly (server-side, no BFF proxy needed for SSR). Uses the same design patterns as the user detail page — `animate-slide-up`, `border-admin`, `bg-admin-card`, `text-admin-*` classes. Pagination uses query params (`?page=N&limit=N`) with `Link` components. The `formatDate` helper uses `toLocaleString` for human-readable dates. `params` and `searchParams` are `Promise` types per Next.js 15 convention.
+
+- [x] **3.18** Create `app/dashboard/users/[id]/sessions/ExportSessionsButtons.tsx` in cryptoi-admin: `"use client"` component with CSV/JSON download buttons using `window.open(url)` to BFF proxy route.
+
+> **Learnings:** Simple `"use client"` component with two buttons. Uses `window.open` to open BFF proxy URLs (`/api/admin/users/${userId}/sessions/export?format=csv|json`) in a new tab for download. Integrated into the sessions page header next to the session count. Buttons use the same styling as the pagination controls for visual consistency.
+
+- [x] **3.19** Create BFF proxy routes in cryptoi-admin: `app/api/admin/users/[id]/sessions/route.ts` and `app/api/admin/users/[id]/sessions/export/route.ts` — forward requests to backend API with admin credentials.
+
+> **Learnings:** The sessions list route uses `withAdminRoute` + `fetchUserSessions` following the standard BFF pattern from `reviews/[id]/route.ts`. The export route bypasses `withAdminRoute` because it needs to forward raw binary/text responses (CSV files) rather than JSON — uses native `fetch` to the backend and streams the response body through with `Content-Type`, `Content-Disposition`, and `Cache-Control: no-store` headers. Auth validation is duplicated from `withAdminRoute` (token check, revocation check, session touch) since the wrapper can't be reused for non-JSON responses.
 
 ## Phase 4: Frontend Changes (`~/Code/cryptoli-frontend`)
 
