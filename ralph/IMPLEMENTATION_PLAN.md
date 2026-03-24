@@ -113,7 +113,9 @@
 
 ### 2B: AnalyticsInterceptor + Context
 
-- [ ] **2.6** Create `src/analytics/analytics-context.ts`: define `AnalyticsContext` interface (`ip`, `userAgent`, `country?`, `userId?`).
+- [x] **2.6** Create `src/analytics/analytics-context.ts`: define `AnalyticsContext` interface (`ip`, `userAgent`, `country?`, `userId?`).
+
+> **Learnings:** Simple interface-only file. No tests needed — it's a type definition with no runtime behavior. Typecheck passes.
 
 - [ ] **2.7** Create `src/analytics/analytics.interceptor.ts`: per-controller NestInterceptor that populates `req.analyticsCtx = { clientIp, countryHint, userAgent }` using ip-utils. Controllers opt in via `@UseInterceptors(AnalyticsInterceptor)`.
 
