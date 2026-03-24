@@ -375,78 +375,71 @@ export class AnalyticsService {
     const utmCampaign = this.sanitizeLabel(body.utm_campaign, 'none');
     const hour = String(now.getHours());
     const weekday = String(now.getDay()); // 0-6
+    const ttl = TTL_DAYS * 24 * 60 * 60;
 
     if (body.event === 'page_view' || !body.event) {
       const nowMs = now.getTime();
       const member = `${sessionId}:${countryCode}`;
-      const promises: Promise<void>[] = [
-        this.incr(`${KEY_PREFIX}:pageviews:${day}`),
-        this.pfadd(`${KEY_PREFIX}:hll:uniques:${day}`, sessionId),
-        this.pfadd(`${KEY_PREFIX}:hll:sessions:${day}`, sessionId),
-        this.hincrby(`${KEY_PREFIX}:country:${day}`, countryCode, 1),
-        this.hincrby(`${KEY_PREFIX}:device:${day}`, device, 1),
-        this.hincrby(`${KEY_PREFIX}:browser:${day}`, browser, 1),
-        this.hincrby(`${KEY_PREFIX}:os:${day}`, os, 1),
-        this.hincrby(`${KEY_PREFIX}:referrer:${day}`, referrer, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_source:${day}`, utmSource, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_medium:${day}`, utmMedium, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_campaign:${day}`, utmCampaign, 1),
-        this.hincrby(`${KEY_PREFIX}:hour:${day}`, hour, 1),
-        this.hincrby(`${KEY_PREFIX}:weekday:${day}`, weekday, 1),
-        this.hincrby(`${KEY_PREFIX}:path:${day}`, path, 1),
-        this.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1),
-        this.addRecentSession(nowMs, member),
-      ];
       const cohortTtl = 35 * 24 * 60 * 60;
-      this.redis
-        .set(
-          `${KEY_PREFIX}:first_visit:${sessionId}`,
-          day,
-          'EX',
-          cohortTtl,
-          'NX',
-        )
-        .then((reply) => {
-          if (reply === 'OK' && this.redis) {
-            this.redis
-              .sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId)
-              .catch((error: unknown) => {
-                this.redisService.setLastError(
-                  error instanceof Error
-                    ? error.message
-                    : 'Failed writing cohort sadd',
-                );
-                console.error(
-                  'Analytics write error (cohort sadd):',
-                  this.redisService.getLastError(),
-                );
-              });
-            this.redis
-              .expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl)
-              .catch((error: unknown) => {
-                this.redisService.setLastError(
-                  error instanceof Error
-                    ? error.message
-                    : 'Failed writing cohort expire',
-                );
-                console.error(
-                  'Analytics write error (cohort expire):',
-                  this.redisService.getLastError(),
-                );
-              });
-          }
-        })
-        .catch((error: unknown) => {
-          this.redisService.setLastError(
-            error instanceof Error
-              ? error.message
-              : 'Failed writing cohort first_visit',
-          );
-          console.error(
-            'Analytics write error (cohort first_visit):',
-            this.redisService.getLastError(),
-          );
-        });
+      const recentTtl = Math.ceil(RECENT_WINDOW_MS / 1000) + 60;
+
+      const pipe = this.redis.pipeline();
+
+      // Core pageview metrics
+      pipe.incr(`${KEY_PREFIX}:pageviews:${day}`);
+      pipe.expire(`${KEY_PREFIX}:pageviews:${day}`, ttl);
+      pipe.pfadd(`${KEY_PREFIX}:hll:uniques:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:hll:uniques:${day}`, ttl);
+      pipe.pfadd(`${KEY_PREFIX}:hll:sessions:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:hll:sessions:${day}`, ttl);
+
+      // Dimensional breakdowns
+      pipe.hincrby(`${KEY_PREFIX}:country:${day}`, countryCode, 1);
+      pipe.expire(`${KEY_PREFIX}:country:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:device:${day}`, device, 1);
+      pipe.expire(`${KEY_PREFIX}:device:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:browser:${day}`, browser, 1);
+      pipe.expire(`${KEY_PREFIX}:browser:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:os:${day}`, os, 1);
+      pipe.expire(`${KEY_PREFIX}:os:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:referrer:${day}`, referrer, 1);
+      pipe.expire(`${KEY_PREFIX}:referrer:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_source:${day}`, utmSource, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_source:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_medium:${day}`, utmMedium, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_medium:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_campaign:${day}`, utmCampaign, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_campaign:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:hour:${day}`, hour, 1);
+      pipe.expire(`${KEY_PREFIX}:hour:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:weekday:${day}`, weekday, 1);
+      pipe.expire(`${KEY_PREFIX}:weekday:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:path:${day}`, path, 1);
+      pipe.expire(`${KEY_PREFIX}:path:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1);
+      pipe.expire(`${KEY_PREFIX}:session_pages:${day}`, ttl);
+
+      // Recent sessions sorted set
+      pipe.zadd(KEY_RECENT_SESSIONS, nowMs, member);
+      pipe.zremrangebyscore(
+        KEY_RECENT_SESSIONS,
+        '-inf',
+        nowMs - RECENT_WINDOW_MS,
+      );
+      pipe.expire(KEY_RECENT_SESSIONS, recentTtl);
+
+      // Cohort tracking — SADD is unconditional (idempotent)
+      pipe.set(
+        `${KEY_PREFIX}:first_visit:${sessionId}`,
+        day,
+        'EX',
+        cohortTtl,
+        'NX',
+      );
+      pipe.sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl);
+
+      // Timezone-adjusted hour
       if (
         body.timezone &&
         typeof body.timezone === 'string' &&
@@ -464,14 +457,14 @@ export class AnalyticsService {
           const localHour = hourPart
             ? String(parseInt(hourPart.value, 10) % 24)
             : hour;
-          promises.push(
-            this.hincrby(`${KEY_PREFIX}:hour_tz:${day}`, localHour, 1),
-          );
+          pipe.hincrby(`${KEY_PREFIX}:hour_tz:${day}`, localHour, 1);
+          pipe.expire(`${KEY_PREFIX}:hour_tz:${day}`, ttl);
         } catch {
           // invalid timezone, skip
         }
       }
-      void Promise.all(promises).catch((error: unknown) => {
+
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -486,7 +479,10 @@ export class AnalyticsService {
     }
 
     if (body.event === LIKE_EVENT) {
-      void this.incr(`${KEY_PREFIX}:like:${day}`).catch((error: unknown) => {
+      const pipe = this.redis.pipeline();
+      pipe.incr(`${KEY_PREFIX}:like:${day}`);
+      pipe.expire(`${KEY_PREFIX}:like:${day}`, ttl);
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -502,15 +498,22 @@ export class AnalyticsService {
 
     if (body.event && FUNNEL_EVENTS.includes(body.event as FunnelEvent)) {
       const event = body.event as FunnelEvent;
-      void Promise.all([
-        this.hincrby(`${KEY_PREFIX}:funnel:event:${day}`, event, 1),
-        this.hincrby(
-          `${KEY_PREFIX}:funnel:source:${day}`,
-          `${utmSource}|${event}`,
-          1,
-        ),
-        this.hincrby(`${KEY_PREFIX}:funnel:path:${day}`, `${path}|${event}`, 1),
-      ]).catch((error: unknown) => {
+      const pipe = this.redis.pipeline();
+      pipe.hincrby(`${KEY_PREFIX}:funnel:event:${day}`, event, 1);
+      pipe.expire(`${KEY_PREFIX}:funnel:event:${day}`, ttl);
+      pipe.hincrby(
+        `${KEY_PREFIX}:funnel:source:${day}`,
+        `${utmSource}|${event}`,
+        1,
+      );
+      pipe.expire(`${KEY_PREFIX}:funnel:source:${day}`, ttl);
+      pipe.hincrby(
+        `${KEY_PREFIX}:funnel:path:${day}`,
+        `${path}|${event}`,
+        1,
+      );
+      pipe.expire(`${KEY_PREFIX}:funnel:path:${day}`, ttl);
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -532,15 +535,18 @@ export class AnalyticsService {
         if (durationSec >= 0 && durationSec <= 86400) {
           // max 24h
           const durationBucket = this.durationBucket(durationSec);
-          void Promise.all([
-            this.hincrby(
-              `${KEY_PREFIX}:duration_hist:${day}`,
-              durationBucket,
-              1,
-            ),
-            this.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec),
-            this.incr(`${KEY_PREFIX}:duration_count:${day}`),
-          ]).catch((error: unknown) => {
+          const pipe = this.redis.pipeline();
+          pipe.hincrby(
+            `${KEY_PREFIX}:duration_hist:${day}`,
+            durationBucket,
+            1,
+          );
+          pipe.expire(`${KEY_PREFIX}:duration_hist:${day}`, ttl);
+          pipe.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec);
+          pipe.expire(`${KEY_PREFIX}:duration_sum:${day}`, ttl);
+          pipe.incr(`${KEY_PREFIX}:duration_count:${day}`);
+          pipe.expire(`${KEY_PREFIX}:duration_count:${day}`, ttl);
+          void pipe.exec().catch((error: unknown) => {
             this.redisService.setLastError(
               error instanceof Error
                 ? error.message
@@ -551,7 +557,7 @@ export class AnalyticsService {
               this.redisService.getLastError(),
             );
           });
-          // Bounce: single pageview + left within 30s
+          // Bounce: single pageview + left within 30s — two-step, not pipelined (not idempotent)
           if (durationSec < 30) {
             this.hget(`${KEY_PREFIX}:session_pages:${day}`, sessionId)
               .then((count) => {

@@ -44,7 +44,7 @@ describe('AnalyticsService', () => {
         'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         { event: 'page_view', consent: true },
       );
-      expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
+      expect(redisMock._clientMock.pipeline).not.toHaveBeenCalled();
     });
 
     it('should no-op when userAgent is a bot (bingbot)', async () => {
@@ -55,7 +55,7 @@ describe('AnalyticsService', () => {
         'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
         { event: 'page_view', consent: true },
       );
-      expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
+      expect(redisMock._clientMock.pipeline).not.toHaveBeenCalled();
     });
 
     it('should still track when userAgent is empty (not a bot)', async () => {
@@ -65,7 +65,7 @@ describe('AnalyticsService', () => {
         event: 'page_view',
         consent: true,
       });
-      expect(redisMock._clientMock.incr).toHaveBeenCalled();
+      expect(redisMock._clientMock.pipeline).toHaveBeenCalled();
     });
 
     it('should write page_view keys when Redis is ready', async () => {
@@ -79,12 +79,15 @@ describe('AnalyticsService', () => {
         consent: true,
       });
 
-      // incr is called for pageviews key
-      expect(redisMock._clientMock.incr).toHaveBeenCalled();
-      // pfadd is called for HLL uniques
-      expect(redisMock._clientMock.pfadd).toHaveBeenCalled();
-      // hincrby is called for dimension hashes
-      expect(redisMock._clientMock.hincrby).toHaveBeenCalled();
+      // Pipeline is used for all commands
+      expect(redisMock._clientMock.pipeline).toHaveBeenCalled();
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const cmds = pipe.commands.map((c: any) => c.cmd);
+      expect(cmds).toContain('incr');
+      expect(cmds).toContain('pfadd');
+      expect(cmds).toContain('hincrby');
+      expect(cmds).toContain('sadd'); // cohort SADD is unconditional
+      expect(pipe.exec).toHaveBeenCalled();
     });
 
     it('should write like key for like event', async () => {
@@ -93,9 +96,12 @@ describe('AnalyticsService', () => {
 
       await service.track('1.2.3.4', '', { event: 'like', consent: true });
 
-      const incrCalls = redisMock._clientMock.incr.mock.calls;
-      const likeCall = incrCalls.find((c: string[]) => c[0].includes(':like:'));
-      expect(likeCall).toBeDefined();
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const incrCmds = pipe.commands.filter((c: any) => c.cmd === 'incr');
+      const likeCmd = incrCmds.find((c: any) =>
+        c.args[0].includes(':like:'),
+      );
+      expect(likeCmd).toBeDefined();
     });
 
     it('should write funnel keys for signup_started', async () => {
@@ -107,12 +113,15 @@ describe('AnalyticsService', () => {
         consent: true,
       });
 
-      const hincrCalls = redisMock._clientMock.hincrby.mock.calls;
-      const funnelCall = hincrCalls.find((c: any[]) =>
-        c[0].includes(':funnel:event:'),
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const hincrCmds = pipe.commands.filter(
+        (c: any) => c.cmd === 'hincrby',
       );
-      expect(funnelCall).toBeDefined();
-      expect(funnelCall[1]).toBe('signup_started');
+      const funnelCmd = hincrCmds.find((c: any) =>
+        c.args[0].includes(':funnel:event:'),
+      );
+      expect(funnelCmd).toBeDefined();
+      expect(funnelCmd.args[1]).toBe('signup_started');
     });
 
     it('should write duration keys for page_leave', async () => {
@@ -129,12 +138,15 @@ describe('AnalyticsService', () => {
         consent: true,
       });
 
-      const hincrCalls = redisMock._clientMock.hincrby.mock.calls;
-      const durationCall = hincrCalls.find((c: any[]) =>
-        c[0].includes(':duration_hist:'),
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const hincrCmds = pipe.commands.filter(
+        (c: any) => c.cmd === 'hincrby',
       );
-      expect(durationCall).toBeDefined();
-      expect(durationCall[1]).toBe('10_29'); // 15s falls in 10-29 bucket
+      const durationCmd = hincrCmds.find((c: any) =>
+        c.args[0].includes(':duration_hist:'),
+      );
+      expect(durationCmd).toBeDefined();
+      expect(durationCmd.args[1]).toBe('10_29'); // 15s falls in 10-29 bucket
     });
   });
 

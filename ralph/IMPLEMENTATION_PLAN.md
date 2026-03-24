@@ -145,7 +145,9 @@
 
 ### 2D: Redis Pipeline Conversion
 
-- [ ] **2.13** Convert `track()` in `src/analytics/analytics.service.ts` from individual `await` calls to `redis.pipeline()` — single round-trip for all commands per event branch. Make cohort `SADD` unconditional (idempotent, removes `.then()` chain). Keep bounce detection as two-step (HGET then conditional INCR — not idempotent). See ANALYTICS.md "Fix 1" for details.
+- [x] **2.13** Convert `track()` in `src/analytics/analytics.service.ts` from individual `await` calls to `redis.pipeline()` — single round-trip for all commands per event branch. Make cohort `SADD` unconditional (idempotent, removes `.then()` chain). Keep bounce detection as two-step (HGET then conditional INCR — not idempotent). See ANALYTICS.md "Fix 1" for details.
+
+> **Learnings:** Four pipeline branches: page_view (~40 commands), like (2), funnel (6), page_leave/duration (6). The page_view pipeline includes EXPIRE after each data command, cohort SET NX + unconditional SADD + EXPIRE, and recent session ZADD/ZREMRANGEBYSCORE/EXPIRE. Bounce detection remains two-step (hget helper → conditional incr helper) since it's not idempotent. The existing helper methods (incr, hincrby, etc.) are kept because `getStats()` and bounce detection still use them individually. Updated 7 unit tests from checking `redisMock._clientMock.incr` to checking `pipeline().commands[]`. All 595 tests pass (472 unit + 42 integration + 81 e2e).
 
 - [ ] **2.14** Convert Redis key scaling fixes: collapse `first_visit` keys from per-session (`SET analytics:first_visit:{sessionId}`) to per-day hashes (`HSETNX analytics:first_visit:{day} {sessionId} 1`). See ANALYTICS.md "Fix 3".
 
