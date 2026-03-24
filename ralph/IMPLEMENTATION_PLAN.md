@@ -219,7 +219,9 @@
 
 ### 2I: Server-Side Event Tracking
 
-- [ ] **2.29** Add `analyticsCtx?: AnalyticsContext` optional trailing parameter to: `ReviewsService.create()`, `ReviewsService.vote()`, `ReviewsService.helpful()`. After existing DB writes and socket emissions, call `analyticsService.track()` with server-side event type (`review_created`, `vote_cast`). Import `AnalyticsModule` in `ReviewsModule`. Update `ReviewsController` to pass `req.analyticsCtx` to service methods.
+- [x] **2.29** Add `analyticsCtx?: AnalyticsContext` optional trailing parameter to: `ReviewsService.create()`, `ReviewsService.vote()`, `ReviewsService.helpful()`. After existing DB writes and socket emissions, call `analyticsService.track()` with server-side event type (`review_created`, `vote_cast`). Import `AnalyticsModule` in `ReviewsModule`. Update `ReviewsController` to pass `req.analyticsCtx` to service methods.
+
+> **Learnings:** Extended `TrackPayload` with `ServerSideEvent` union type (11 event types for items 2.29–2.34) plus `userId` and `properties` optional fields. Added a catch-all branch at the end of `track()` that pushes unrecognized events to the PG buffer only (no Redis counters) — server-side events don't need real-time Redis aggregation. `AnalyticsService` injected with `@Optional()` to keep existing tests working without the analytics provider. Server-side events pass `consent: true` since they operate under legitimate interest basis (server-initiated, not user-consent-gated). The `helpful()` method tracks as `vote_cast` (same as `vote()`) since it's functionally a vote operation. 4 new unit tests: review_created tracking, vote_cast from vote(), vote_cast from helpful(), and no-track when analyticsCtx absent. All 663 tests pass (528 unit + 54 integration + 81 e2e).
 
 - [ ] **2.30** Add `analyticsCtx?: AnalyticsContext` to: `CommentsService.create()`, `CommentsService.vote()`. Track `comment_created`, `vote_cast`. Import `AnalyticsModule` in `CommentsModule`. Update `CommentsController` to pass `req.analyticsCtx`.
 

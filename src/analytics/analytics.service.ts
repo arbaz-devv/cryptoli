@@ -40,12 +40,27 @@ const DURATION_BUCKETS: Array<{ max: number; label: string }> = [
   { max: Number.POSITIVE_INFINITY, label: '1800_plus' },
 ];
 
+/** Server-side event types emitted by feature modules (not from the frontend). */
+export type ServerSideEvent =
+  | 'review_created'
+  | 'vote_cast'
+  | 'comment_created'
+  | 'complaint_created'
+  | 'user_follow'
+  | 'user_unfollow'
+  | 'search_performed'
+  | 'user_login'
+  | 'user_register'
+  | 'user_logout'
+  | 'password_change';
+
 export interface TrackPayload {
   path?: string;
   device?: string; // userAgent
   timezone?: string;
-  event?: 'page_view' | 'page_leave' | FunnelEvent | 'like';
+  event?: 'page_view' | 'page_leave' | FunnelEvent | 'like' | ServerSideEvent;
   sessionId?: string;
+  userId?: string;
   enteredAt?: string; // ISO date
   leftAt?: string; // ISO date
   referrer?: string;
@@ -54,6 +69,8 @@ export interface TrackPayload {
   utm_campaign?: string;
   /** When false, do not store (user declined cookies). When true or omitted, store. */
   consent?: boolean;
+  /** Arbitrary properties for server-side events (stored in PG only). */
+  properties?: Record<string, unknown>;
 }
 
 export interface TimeSeriesPoint {
@@ -711,6 +728,25 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
           }
         }
       }
+      return;
+    }
+
+    // Catch-all: server-side events (review_created, vote_cast, etc.)
+    // No Redis counters — PG buffer only.
+    if (body.event) {
+      this.pushToBuffer({
+        eventType: body.event,
+        sessionId,
+        userId: body.userId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        path,
+        properties: body.properties,
+        createdAt: now,
+      });
     }
   }
 
