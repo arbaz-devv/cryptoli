@@ -375,7 +375,9 @@
 
 > **Learnings:** The `useSidebarAuthForm` hook already imports `trackAnalyticsEvent` (for `signup_completed`), so no new import was needed. Added `trackAnalyticsEvent("signup_started")` at the top of the `if (isSignup)` branch in `handleSubmit` — this fires when the user submits the signup form, paralleling the Header.tsx button click intent. The event fires before validation so it captures intent even if the form has errors. All 9 frontend tests pass unchanged.
 
-- [ ] **4.5** Update consent banner text in `messages/en.json` (+ all locales) in cryptoli-frontend: disclose full scope — IP, location, device/browser info, timezone, session duration, referral source, UTM campaign parameters, funnel events, account linking.
+- [x] **4.5** Update consent banner text in `messages/en.json` (+ all locales) in cryptoli-frontend: disclose full scope — IP, location, device/browser info, timezone, session duration, referral source, UTM campaign parameters, funnel events, account linking.
+
+> **Learnings:** Spanish (`es.json`) and French (`fr.json`) were missing the entire `cookieConsent`, `footer.privacy`, and `footer.title` sections — added them alongside the updated message text. The `message` key ends with a natural lead-in to the privacy link ("By accepting you agree to our" / localized equivalent) since the component appends the privacy link inline. All 5 locales (en, de, nl, es, fr) now have identical data disclosure scope in the banner. No component changes needed — only i18n string updates. All 9 frontend tests pass unchanged.
 
 - [ ] **4.6** Update privacy page in cryptoli-frontend (`app/[locale]/privacy/page.tsx` + `messages/en.json`): add 6 undisclosed analytics items (timezone, sessionId/localStorage, referrer, UTM params, funnel events, raw UA string). Add new section for server-side activity logging (separate from analytics consent, legitimate interest basis). Update cookies section to mention `analytics_consent_v2` and auth cookie forwarding.
 
