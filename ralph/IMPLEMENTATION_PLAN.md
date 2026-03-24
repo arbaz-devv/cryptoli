@@ -153,7 +153,9 @@
 
 > **Learnings:** Simple replacement: `SET analytics:first_visit:{sessionId} {day} EX NX` → `HSETNX analytics:first_visit:{day} {sessionId} 1` + `EXPIRE`. The first_visit key is write-only — never read by the service (retention is computed from cohort sets). This reduces key count from O(sessions) to O(days). No test changes needed — no tests referenced the first_visit key pattern directly.
 
-- [ ] **2.15** Pre-compute retention in background: add `setInterval` job to compute cohort retention and store as `SET analytics:retention:{day} '{"day1Pct":...,"day7Pct":...,"day30Pct":...}'`. Remove `SMEMBERS` calls from `getStats()`. See ANALYTICS.md "Fix 2".
+- [x] **2.15** Pre-compute retention in background: add `setInterval` job to compute cohort retention and store as `SET analytics:retention:{day} '{"day1Pct":...,"day7Pct":...,"day30Pct":...}'`. Remove `SMEMBERS` calls from `getStats()`. See ANALYTICS.md "Fix 2".
+
+> **Learnings:** Added `OnModuleInit`/`OnModuleDestroy` to `AnalyticsService` for the retention timer (1-hour interval). `computeRetention()` iterates over 35 days, does SMEMBERS per-day (acceptable in background, not in request path), and stores `{day1Pct, day7Pct, day30Pct, cohortSize}` with 48h TTL. `getStats()` now reads pre-computed `analytics:retention:{day}` keys and computes a weighted average across cohort days (weighted by cohortSize for correctness). The `cohortDays` field in the response is preserved for backward compatibility. All 472 unit tests pass, typecheck clean.
 
 ### 2E: Buffer Integration into track()
 

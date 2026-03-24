@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import * as geoip from 'geoip-lite';
@@ -115,9 +115,26 @@ export const dynamic = 'force-dynamic';
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
 
+const RETENTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
 @Injectable()
-export class AnalyticsService {
+export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
+  private retentionTimer: NodeJS.Timeout | null = null;
+
   constructor(private readonly redisService: RedisService) {}
+
+  onModuleInit(): void {
+    this.retentionTimer = setInterval(() => {
+      void this.computeRetention();
+    }, RETENTION_INTERVAL_MS);
+  }
+
+  onModuleDestroy(): void {
+    if (this.retentionTimer) {
+      clearInterval(this.retentionTimer);
+      this.retentionTimer = null;
+    }
+  }
 
   private get redis(): Redis | null {
     return this.redisService.getClient();
@@ -590,6 +607,70 @@ export class AnalyticsService {
     }
   }
 
+  /**
+   * Pre-compute cohort retention for the last 35 days and store as
+   * SET analytics:retention:{day} JSON. Runs hourly via setInterval.
+   * Replaces the O(N*SMEMBERS) call that was in getStats().
+   */
+  private async computeRetention(): Promise<void> {
+    if (!this.redisService.isReady() || !this.redis) return;
+
+    const now = new Date();
+    const days: string[] = [];
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    for (const day of days) {
+      try {
+        const cohortMembers = await this.redis.smembers(
+          `${KEY_PREFIX}:cohort:${day}`,
+        );
+        if (cohortMembers.length === 0) continue;
+
+        const day1 = this.addDays(day, 1);
+        const day7 = this.addDays(day, 7);
+        const day30 = this.addDays(day, 30);
+        const [pages1, pages7, pages30] = await Promise.all([
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day1}`),
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day7}`),
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day30}`),
+        ]);
+        const set1 = new Set(Object.keys(pages1 || {}));
+        const set7 = new Set(Object.keys(pages7 || {}));
+        const set30 = new Set(Object.keys(pages30 || {}));
+
+        let returned1 = 0;
+        let returned7 = 0;
+        let returned30 = 0;
+        for (const sid of cohortMembers) {
+          if (set1.has(sid)) returned1 += 1;
+          if (set7.has(sid)) returned7 += 1;
+          if (set30.has(sid)) returned30 += 1;
+        }
+
+        const cohortSize = cohortMembers.length;
+        const result = {
+          day1Pct: Math.round((returned1 / cohortSize) * 1000) / 10,
+          day7Pct: Math.round((returned7 / cohortSize) * 1000) / 10,
+          day30Pct: Math.round((returned30 / cohortSize) * 1000) / 10,
+          cohortSize,
+        };
+
+        await this.redis.set(
+          `${KEY_PREFIX}:retention:${day}`,
+          JSON.stringify(result),
+          'EX',
+          48 * 60 * 60, // 48h TTL
+        );
+      } catch {
+        // non-fatal, continue with next day
+      }
+    }
+  }
+
   private bucketLongTail(
     source: Record<string, number>,
     limit: number,
@@ -820,42 +901,34 @@ export class AnalyticsService {
         });
       }
 
+      // Read pre-computed retention from background job (avoids SMEMBERS in hot path)
       try {
         let totalCohort = 0;
-        let totalReturned1 = 0;
-        let totalReturned7 = 0;
-        let totalReturned30 = 0;
+        let weightedDay1 = 0;
+        let weightedDay7 = 0;
+        let weightedDay30 = 0;
         let cohortDaysCount = 0;
         for (const day of days) {
-          const cohortMembers = await this.redis.smembers(
-            `${KEY_PREFIX}:cohort:${day}`,
-          );
-          const cohortSize = cohortMembers.length;
-          if (cohortSize === 0) continue;
+          const raw = await this.redis.get(`${KEY_PREFIX}:retention:${day}`);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw) as {
+            day1Pct: number;
+            day7Pct: number;
+            day30Pct: number;
+            cohortSize: number;
+          };
+          if (!parsed.cohortSize) continue;
           cohortDaysCount += 1;
-          totalCohort += cohortSize;
-          const day1 = this.addDays(day, 1);
-          const day7 = this.addDays(day, 7);
-          const day30 = this.addDays(day, 30);
-          const [pages1, pages7, pages30] = await Promise.all([
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day1}`),
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day7}`),
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day30}`),
-          ]);
-          const set1 = new Set(Object.keys(pages1 || {}));
-          const set7 = new Set(Object.keys(pages7 || {}));
-          const set30 = new Set(Object.keys(pages30 || {}));
-          for (const sid of cohortMembers) {
-            if (set1.has(sid)) totalReturned1 += 1;
-            if (set7.has(sid)) totalReturned7 += 1;
-            if (set30.has(sid)) totalReturned30 += 1;
-          }
+          totalCohort += parsed.cohortSize;
+          weightedDay1 += parsed.day1Pct * parsed.cohortSize;
+          weightedDay7 += parsed.day7Pct * parsed.cohortSize;
+          weightedDay30 += parsed.day30Pct * parsed.cohortSize;
         }
         if (totalCohort > 0 && cohortDaysCount > 0) {
           retention = {
-            day1Pct: Math.round((totalReturned1 / totalCohort) * 1000) / 10,
-            day7Pct: Math.round((totalReturned7 / totalCohort) * 1000) / 10,
-            day30Pct: Math.round((totalReturned30 / totalCohort) * 1000) / 10,
+            day1Pct: Math.round((weightedDay1 / totalCohort) * 10) / 10,
+            day7Pct: Math.round((weightedDay7 / totalCohort) * 10) / 10,
+            day30Pct: Math.round((weightedDay30 / totalCohort) * 10) / 10,
             cohortDays: cohortDaysCount,
           };
         }
