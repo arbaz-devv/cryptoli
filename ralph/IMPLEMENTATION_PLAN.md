@@ -103,7 +103,9 @@
 
 > **Learnings:** Removed all 7 inline functions (`firstHeader`, `normalizeIp`, `isPrivateOrLocalIp`, `pickBestIp`, `parseForwardedHeader`, `getClientIp`, `getCountryHint`) and the `isIP` import from `node:net`. Only `getClientIp` and `getCountryHint` needed to be imported from `ip-utils.ts` since they are the only two functions called directly in the controller — the others are internal to `ip-utils.ts`. Controller shrank from 245 to 140 lines. All 403 unit tests, 81 e2e tests pass. Typecheck clean.
 
-- [ ] **2.4** Update `src/analytics/analytics.service.ts`: remove private `normalizeIp` (line 291) and `isPrivateOrLocalIp` (line 312). Import from `ip-utils.ts`. Import `getDeviceAndBrowser` from `src/common/ua.ts`.
+- [x] **2.4** Update `src/analytics/analytics.service.ts`: remove private `normalizeIp` (line 291) and `isPrivateOrLocalIp` (line 312). Import from `ip-utils.ts`. Import `getDeviceAndBrowser` from `src/common/ua.ts`.
+
+> **Learnings:** Removed three private methods (`normalizeIp`, `isPrivateOrLocalIp`, `getDeviceAndBrowser`) and two imports (`isIP` from `node:net`, `UAParser` from `ua-parser-js`). Added imports from `./ip-utils` and `../common/ua`. Updated `resolveCountry()` and `track()` call sites from `this.method()` to bare function calls. The service spec had `normalizeIp` tests using `(service as any).normalizeIp()` — updated to call the imported standalone function directly. All 403 unit + 81 e2e tests pass. Typecheck clean.
 
 - [ ] **2.5** Create `src/analytics/ip-utils.spec.ts`: unit tests for all extracted IP utilities.
 

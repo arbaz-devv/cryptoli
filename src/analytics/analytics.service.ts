@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { isIP } from 'node:net';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import * as geoip from 'geoip-lite';
-import UAParser from 'ua-parser-js';
 import { isBot } from 'ua-parser-js/bot-detection';
+import { normalizeIp, isPrivateOrLocalIp } from './ip-utils';
+import { getDeviceAndBrowser } from '../common/ua';
 
 const KEY_PREFIX = 'analytics';
 const KEY_RECENT_SESSIONS = `${KEY_PREFIX}:recent_sessions`;
@@ -282,46 +282,6 @@ export class AnalyticsService {
    * 2) If unknown, optionally call external IP->country API
    * 3) Cache successful lookups in Redis to avoid repeated API calls
    */
-  private normalizeIp(rawIp: string): string {
-    const ip = (rawIp || '').trim();
-    if (!ip) return '';
-
-    // Bracketed IPv6 with optional port: [2001:db8::1]:443
-    const bracketed = ip.match(/^\[([^\]]+)\](?::\d+)?$/);
-    if (bracketed?.[1]) {
-      const candidate = bracketed[1].split('%')[0];
-      return isIP(candidate) ? candidate : '';
-    }
-
-    // IPv4 with port: 1.2.3.4:1234
-    const ipv4Port = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
-    if (ipv4Port?.[1]) {
-      return isIP(ipv4Port[1]) ? ipv4Port[1] : '';
-    }
-
-    const deMapped = ip.replace(/^::ffff:/i, '').split('%')[0];
-    return isIP(deMapped) ? deMapped : '';
-  }
-
-  private isPrivateOrLocalIp(ip: string): boolean {
-    if (!ip) return true;
-    if (ip === '::1') return true;
-
-    // Common private/local IPv4 ranges.
-    if (/^127\./.test(ip)) return true;
-    if (/^10\./.test(ip)) return true;
-    if (/^192\.168\./.test(ip)) return true;
-    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
-    if (/^169\.254\./.test(ip)) return true;
-
-    // Private/link-local/unique-local IPv6 ranges.
-    const v6 = ip.toLowerCase();
-    if (v6.startsWith('fc') || v6.startsWith('fd')) return true;
-    if (v6.startsWith('fe80:')) return true;
-
-    return false;
-  }
-
   private isValidCountryCode(code?: string): boolean {
     return /^[A-Z]{2}$/.test((code || '').trim().toUpperCase());
   }
@@ -333,8 +293,8 @@ export class AnalyticsService {
     const hint = (countryHint || '').trim().toUpperCase();
     if (this.isValidCountryCode(hint)) return hint;
 
-    const normalizedIp = this.normalizeIp(ip);
-    if (!normalizedIp || this.isPrivateOrLocalIp(normalizedIp))
+    const normalizedIp = normalizeIp(ip);
+    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp))
       return 'unknown';
 
     const cacheKey = `${KEY_PREFIX}:ip_country:${normalizedIp}`;
@@ -379,24 +339,6 @@ export class AnalyticsService {
     };
   }
 
-  private getDeviceAndBrowser(userAgent: string): {
-    device: string;
-    browser: string;
-    os: string;
-  } {
-    const parser = new UAParser.UAParser(userAgent || '');
-    const result = parser.getResult();
-    const d = (result.device?.type || 'desktop').toLowerCase();
-    const deviceType = d === 'mobile' || d === 'tablet' ? d : 'desktop';
-    return {
-      device: deviceType,
-      browser: (result.browser?.name || 'unknown')
-        .toLowerCase()
-        .replace(/\s+/g, '_'),
-      os: (result.os?.name || 'unknown').toLowerCase().replace(/\s+/g, '_'),
-    };
-  }
-
   private referrerLabel(referrer?: string): string {
     if (!referrer || !referrer.trim()) return 'direct';
     try {
@@ -422,7 +364,7 @@ export class AnalyticsService {
     const now = new Date();
     const day = this.dayKey(now);
     const countryCode = await this.resolveCountry(ip, countryHint);
-    const { device, browser, os } = this.getDeviceAndBrowser(
+    const { device, browser, os } = getDeviceAndBrowser(
       userAgent || body.device || '',
     );
     const path = this.normalizePath(body.path);

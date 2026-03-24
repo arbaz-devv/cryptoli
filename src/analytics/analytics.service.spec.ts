@@ -1,5 +1,6 @@
 import { AnalyticsService } from './analytics.service';
 import { createRedisMock } from '../../test/helpers/redis.mock';
+import { normalizeIp } from './ip-utils';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -308,7 +309,7 @@ describe('AnalyticsService', () => {
   });
 
   describe('normalizeIp()', () => {
-    const normalize = (ip: string) => (service as any).normalizeIp(ip);
+    const normalize = (ip: string) => normalizeIp(ip);
 
     it('should return empty string for empty input', () => {
       expect(normalize('')).toBe('');
