@@ -73,7 +73,9 @@
 
 > **Learnings:** Straightforward config change. `X-Analytics-Key` allows the frontend to send the analytics API key header through CORS preflight. `Content-Disposition` exposure is needed for the session export CSV download in Phase 3 (item 3.10). No dedicated CORS tests exist — the e2e test suite uses `setup-app.ts` which bootstraps differently from `main.ts`, so CORS config is effectively tested only in production bootstrap.
 
-- [ ] **1.7** Update `test/helpers/prisma.mock.ts`: add `analyticsEvent` and `analyticsDailySummary` model mocks (matching the pattern of the existing 19 model mocks). Add `$executeRaw: jest.fn()` to the top-level mock (needed by GDPR anonymization methods in Phase 2; `$executeRawUnsafe` is already mocked but `$executeRaw` is not).
+- [x] **1.7** Update `test/helpers/prisma.mock.ts`: add `analyticsEvent` and `analyticsDailySummary` model mocks (matching the pattern of the existing 19 model mocks). Add `$executeRaw: jest.fn()` to the top-level mock (needed by GDPR anonymization methods in Phase 2; `$executeRawUnsafe` is already mocked but `$executeRaw` is not).
+
+> **Learnings:** Added both model mocks with the full CRUD method set plus `createMany`, `deleteMany`, and `groupBy` — these are needed by AnalyticsBufferService (`createMany` for batch inserts), AnalyticsRollupService (`createMany` for rollup writes, `groupBy` for aggregation queries), and GDPR cleanup (`deleteMany`). The existing 19 models had varying method sets; the new analytics models follow the broadest pattern since they'll be used by multiple Phase 2 services. All 395 unit tests pass unchanged — the new mocks are additive only.
 
 - [ ] **1.8** Extend pipeline mock in `test/helpers/redis.mock.ts`: add chainable methods to the `pipeline()` return value — `incr`, `incrby`, `hincrby`, `pfadd`, `zadd`, `sadd`, `set`, `expire`, `zremrangebyscore`, `hset`, `hsetnx` — each returning `this` for chaining, plus a `commands` array for test assertions. Keep existing `exec` mock.
 
