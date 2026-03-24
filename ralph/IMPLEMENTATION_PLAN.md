@@ -363,7 +363,9 @@
 
 > **Learnings:** The jsdom test environment (vitest) does not provide `window.localStorage` or `window.sessionStorage` — they must be mocked via `Object.defineProperty` with a custom `createStorageMock()` factory. The `sendBeacon` removal was clean — only `sendTrack()` used it, called from 3 sites (2 page_leave events + 1 inline navigation leave). The `preferBeacon` third argument was removed from all call sites. `credentials: "include"` ensures auth cookies are forwarded cross-origin to the API. 5 new tests: fetch with credentials+keepalive, no sendBeacon usage, page_leave via fetch, consent skip, missing base URL skip. All 9 frontend tests pass.
 
-- [ ] **4.2** Update `CookieConsent.tsx` in cryptoli-frontend: rename `COOKIE_NAME` from `analytics_consent` to `analytics_consent_v2`. Forces re-consent for expanded scope. `getAnalyticsConsent()` auto-adapts.
+- [x] **4.2** Update `CookieConsent.tsx` in cryptoli-frontend: rename `COOKIE_NAME` from `analytics_consent` to `analytics_consent_v2`. Forces re-consent for expanded scope. `getAnalyticsConsent()` auto-adapts.
+
+> **Learnings:** Single-line change — `COOKIE_NAME` constant updated from `"analytics_consent"` to `"analytics_consent_v2"`. No other files reference the raw cookie name string; all consumers use `getAnalyticsConsent()` / `setAnalyticsConsent()` which read `COOKIE_NAME` dynamically. Existing users with the old `analytics_consent` cookie will see the consent banner again because `getAnalyticsConsent()` returns `null` when the v2 cookie doesn't exist. The old v1 cookie remains in the browser but is harmless (never read). All 9 frontend tests pass unchanged — `AnalyticsTracker.test.tsx` mocks `getAnalyticsConsent` so it's not affected by the cookie name change. No CookieConsent-specific test file exists (noted as a gap but out of scope for this item).
 
 - [ ] **4.3** Track `like` event in `ReviewCard.tsx` in cryptoli-frontend: call `trackAnalyticsEvent("like")` in `useVote` `onSuccess` when `voteType === "UP"`.
 
