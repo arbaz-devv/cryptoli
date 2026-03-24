@@ -139,7 +139,9 @@
 
 > **Learnings:** 13 tests covering all acceptance criteria. The overflow test requires mocking `flush()` to prevent threshold-triggered flushes from draining the buffer during fill. The splice-before-await test verifies `bufferLength === 0` synchronously after calling `flush()` but before awaiting the result. The `synchronous_commit` test uses `invocationCallOrder` to verify `$executeRaw` is called before `createMany`. All 472 unit tests pass.
 
-- [ ] **2.12** Create `test/integration/analytics-buffer.spec.ts`: integration test with real PostgreSQL (TestContainers) verifying `createMany` writes and `synchronous_commit = off`.
+- [x] **2.12** Create `test/integration/analytics-buffer.spec.ts`: integration test with real PostgreSQL (TestContainers) verifying `createMany` writes and `synchronous_commit = off`.
+
+> **Learnings:** 4 integration tests: full event write with all fields, batch write of 5 events, synchronous_commit acceptance, and minimal-fields event. The real PrismaClient is duck-typed as PrismaService since AnalyticsBufferService only calls `$executeRaw` and `analyticsEvent.createMany`. All 42 integration tests pass.
 
 ### 2D: Redis Pipeline Conversion
 
