@@ -371,7 +371,9 @@
 
 > **Learnings:** The `useVote` hook's `onSuccess` callback already passes `voteType` as the third argument (typed as `VoteType | null`), so no hook changes were needed. `trackAnalyticsEvent` is imported from `@/shared/components/analytics/AnalyticsTracker` and dispatches a `CustomEvent` that `AnalyticsTracker` picks up and sends to the backend. The `"like"` event type is already in the `FunnelEvent` union type. No ReviewCard-specific test file exists — the change is a single conditional function call in an existing callback, covered by the AnalyticsTracker integration tests. All 9 frontend tests pass unchanged.
 
-- [ ] **4.4** Track `signup_started` in `SidebarAuthCard.tsx` in cryptoli-frontend: currently only tracked from desktop header (`Header.tsx` inside `hidden lg:flex`).
+- [x] **4.4** Track `signup_started` in `SidebarAuthCard.tsx` in cryptoli-frontend: currently only tracked from desktop header (`Header.tsx` inside `hidden lg:flex`).
+
+> **Learnings:** The `useSidebarAuthForm` hook already imports `trackAnalyticsEvent` (for `signup_completed`), so no new import was needed. Added `trackAnalyticsEvent("signup_started")` at the top of the `if (isSignup)` branch in `handleSubmit` — this fires when the user submits the signup form, paralleling the Header.tsx button click intent. The event fires before validation so it captures intent even if the form has errors. All 9 frontend tests pass unchanged.
 
 - [ ] **4.5** Update consent banner text in `messages/en.json` (+ all locales) in cryptoli-frontend: disclose full scope — IP, location, device/browser info, timezone, session duration, referral source, UTM campaign parameters, funnel events, account linking.
 
