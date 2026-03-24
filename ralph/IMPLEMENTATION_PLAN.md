@@ -149,7 +149,9 @@
 
 > **Learnings:** Four pipeline branches: page_view (~40 commands), like (2), funnel (6), page_leave/duration (6). The page_view pipeline includes EXPIRE after each data command, cohort SET NX + unconditional SADD + EXPIRE, and recent session ZADD/ZREMRANGEBYSCORE/EXPIRE. Bounce detection remains two-step (hget helper → conditional incr helper) since it's not idempotent. The existing helper methods (incr, hincrby, etc.) are kept because `getStats()` and bounce detection still use them individually. Updated 7 unit tests from checking `redisMock._clientMock.incr` to checking `pipeline().commands[]`. All 595 tests pass (472 unit + 42 integration + 81 e2e).
 
-- [ ] **2.14** Convert Redis key scaling fixes: collapse `first_visit` keys from per-session (`SET analytics:first_visit:{sessionId}`) to per-day hashes (`HSETNX analytics:first_visit:{day} {sessionId} 1`). See ANALYTICS.md "Fix 3".
+- [x] **2.14** Convert Redis key scaling fixes: collapse `first_visit` keys from per-session (`SET analytics:first_visit:{sessionId}`) to per-day hashes (`HSETNX analytics:first_visit:{day} {sessionId} 1`). See ANALYTICS.md "Fix 3".
+
+> **Learnings:** Simple replacement: `SET analytics:first_visit:{sessionId} {day} EX NX` → `HSETNX analytics:first_visit:{day} {sessionId} 1` + `EXPIRE`. The first_visit key is write-only — never read by the service (retention is computed from cohort sets). This reduces key count from O(sessions) to O(days). No test changes needed — no tests referenced the first_visit key pattern directly.
 
 - [ ] **2.15** Pre-compute retention in background: add `setInterval` job to compute cohort retention and store as `SET analytics:retention:{day} '{"day1Pct":...,"day7Pct":...,"day30Pct":...}'`. Remove `SMEMBERS` calls from `getStats()`. See ANALYTICS.md "Fix 2".
 

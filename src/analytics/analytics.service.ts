@@ -428,14 +428,10 @@ export class AnalyticsService {
       );
       pipe.expire(KEY_RECENT_SESSIONS, recentTtl);
 
-      // Cohort tracking — SADD is unconditional (idempotent)
-      pipe.set(
-        `${KEY_PREFIX}:first_visit:${sessionId}`,
-        day,
-        'EX',
-        cohortTtl,
-        'NX',
-      );
+      // Cohort tracking — per-day hash instead of per-session key (Fix 3: key scaling)
+      pipe.hsetnx(`${KEY_PREFIX}:first_visit:${day}`, sessionId, '1');
+      pipe.expire(`${KEY_PREFIX}:first_visit:${day}`, cohortTtl);
+      // SADD is unconditional (idempotent)
       pipe.sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId);
       pipe.expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl);
 
