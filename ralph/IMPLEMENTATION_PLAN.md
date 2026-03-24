@@ -121,7 +121,9 @@
 
 > **Learnings:** The interceptor maps `getClientIp()` → `ip`, `getCountryHint()` → `country`, and `req.headers['user-agent']` → `userAgent` to match the `AnalyticsContext` interface from 2.6. The spec's field names (`clientIp`, `countryHint`) differ from the interface's (`ip`, `country`) — used the interface's names since that's what downstream consumers will reference. Cast `req` to `any` for the `analyticsCtx` property since Express's `Request` type doesn't include it.
 
-- [ ] **2.8** Create `src/analytics/analytics.interceptor.spec.ts`: unit tests for context extraction.
+- [x] **2.8** Create `src/analytics/analytics.interceptor.spec.ts`: unit tests for context extraction.
+
+> **Learnings:** 6 tests covering: IP extraction from CDN headers, country hint extraction, fallback to socket remoteAddress, absent user-agent handling, and pass-through of next.handle() result. Used async done callbacks with Observable subscribe since the interceptor returns an Observable. No shared mock helpers needed — the interceptor only requires a minimal ExecutionContext stub.
 
 - [ ] **2.9** Apply `@UseInterceptors(AnalyticsInterceptor)` to `AnalyticsController` and all feature controllers that emit server-side events: `ReviewsController`, `CommentsController`, `ComplaintsController`, `UsersController`, `SearchController`, `AuthController`.
 
