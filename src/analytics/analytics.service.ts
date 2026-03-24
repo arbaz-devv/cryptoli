@@ -179,10 +179,14 @@ export interface PgPartialStats {
 }
 
 const RETENTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const ANONYMIZE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (daily guard in Redis)
+const ANONYMIZE_RETENTION_DAYS = 90;
+const ANONYMIZE_BATCH_THRESHOLD = 200_000;
 
 @Injectable()
 export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
   private retentionTimer: NodeJS.Timeout | null = null;
+  private anonymizeTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly redisService: RedisService,
@@ -197,12 +201,19 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     this.retentionTimer = setInterval(() => {
       void this.computeRetention();
     }, RETENTION_INTERVAL_MS);
+    this.anonymizeTimer = setInterval(() => {
+      void this.anonymizeExpiredUsers();
+    }, ANONYMIZE_CHECK_INTERVAL_MS);
   }
 
   onModuleDestroy(): void {
     if (this.retentionTimer) {
       clearInterval(this.retentionTimer);
       this.retentionTimer = null;
+    }
+    if (this.anonymizeTimer) {
+      clearInterval(this.anonymizeTimer);
+      this.anonymizeTimer = null;
     }
   }
 
@@ -1458,6 +1469,88 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         this.redisService.getLastError(),
       );
       return false;
+    }
+  }
+
+  /**
+   * GDPR: Nullify userId on all analytics_events for a deleted user.
+   * Preparatory hook — called by user account deletion when implemented.
+   */
+  async anonymizeUserAnalytics(userId: string): Promise<number> {
+    if (!this.prisma) return 0;
+    const result = await this.prisma
+      .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id = ${userId}`;
+    return result;
+  }
+
+  /**
+   * GDPR 90-day retention: nullify userId on analytics_events older than 90 days.
+   * Runs on an hourly timer but uses Redis guards to ensure only one run per day.
+   */
+  async anonymizeExpiredUsers(): Promise<void> {
+    if (!this.prisma || !this.redisService.isReady()) return;
+    const redis = this.redis;
+    if (!redis) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const ranKey = `analytics:anonymize:ran:${today}`;
+    const runningKey = 'analytics:anonymize:running';
+
+    // Guard 1: already ran today?
+    const alreadyRan = await redis.get(ranKey);
+    if (alreadyRan) return;
+
+    // Guard 2: acquire running lock (2h TTL safety valve)
+    const acquired = await redis.set(runningKey, '1', 'EX', 7200, 'NX');
+    if (!acquired) return;
+
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - ANONYMIZE_RETENTION_DAYS);
+
+      // Count rows to decide batch vs single
+      const countResult: { count: bigint }[] = await this.prisma
+        .$queryRaw`SELECT COUNT(*) as count FROM analytics_events WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+      const rowCount = Number(countResult[0]?.count ?? 0);
+
+      if (rowCount === 0) {
+        await redis.set(ranKey, '1', 'EX', 86400);
+        return;
+      }
+
+      if (rowCount <= ANONYMIZE_BATCH_THRESHOLD) {
+        // Single UPDATE for steady-state
+        await this.prisma.$executeRaw`SET LOCAL synchronous_commit = off`;
+        await this.prisma
+          .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+      } else {
+        // Batch by calendar day for large backfills
+        const oldestResult: { min_date: Date | null }[] = await this.prisma
+          .$queryRaw`SELECT MIN(created_at) as min_date FROM analytics_events WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+        const oldestDate = oldestResult[0]?.min_date;
+        if (oldestDate) {
+          const dayStart = new Date(oldestDate);
+          dayStart.setHours(0, 0, 0, 0);
+
+          while (dayStart < cutoff) {
+            const dayEnd = new Date(dayStart);
+            dayEnd.setDate(dayEnd.getDate() + 1);
+
+            await this.prisma.$executeRaw`SET LOCAL synchronous_commit = off`;
+            await this.prisma
+              .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at >= ${dayStart} AND created_at < ${dayEnd}`;
+
+            dayStart.setDate(dayStart.getDate() + 1);
+          }
+        }
+      }
+
+      // Mark today as done
+      await redis.set(ranKey, '1', 'EX', 86400);
+    } catch (err) {
+      console.error('GDPR anonymization error:', err);
+    } finally {
+      await redis.del(runningKey);
     }
   }
 

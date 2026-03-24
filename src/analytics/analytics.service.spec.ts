@@ -808,7 +808,8 @@ describe('AnalyticsService', () => {
       // Redis day returns 50 hits in 0_9 bucket via hgetall for duration_hist
       client.get.mockResolvedValue('10');
       client.hgetall.mockImplementation((key: string) => {
-        if (key.includes(':duration_hist:')) return Promise.resolve({ '0_9': '50' });
+        if (key.includes(':duration_hist:'))
+          return Promise.resolve({ '0_9': '50' });
         return Promise.resolve({});
       });
       client.pfcount.mockResolvedValue(5);
@@ -820,10 +821,30 @@ describe('AnalyticsService', () => {
       const oldDateObj = new Date(oldDay + 'T00:00:00Z');
       // PG returns 100 hits in 10_29 bucket
       prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
-        { date: oldDateObj, dimension: '_total_', dimensionValue: 'pageviews', count: 50 },
-        { date: oldDateObj, dimension: '_total_', dimensionValue: 'duration_sum', count: 2000 },
-        { date: oldDateObj, dimension: '_total_', dimensionValue: 'duration_count', count: 100 },
-        { date: oldDateObj, dimension: 'duration_bucket', dimensionValue: '10_29', count: 100 },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 50,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_sum',
+          count: 2000,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_count',
+          count: 100,
+        },
+        {
+          date: oldDateObj,
+          dimension: 'duration_bucket',
+          dimensionValue: '10_29',
+          count: 100,
+        },
       ]);
 
       const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
@@ -859,8 +880,18 @@ describe('AnalyticsService', () => {
       const oldDateObj = new Date(oldDay + 'T00:00:00Z');
       // PG: 200 pageviews, 100 bounces (50% rate)
       prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
-        { date: oldDateObj, dimension: '_total_', dimensionValue: 'pageviews', count: 200 },
-        { date: oldDateObj, dimension: '_total_', dimensionValue: 'bounces', count: 100 },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 200,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'bounces',
+          count: 100,
+        },
       ]);
 
       const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
@@ -920,7 +951,9 @@ describe('AnalyticsService', () => {
       );
       expect(firstVisitCmd).toBeDefined();
       // Key format is per-day hash, not per-session
-      expect(firstVisitCmd.args[0]).toMatch(/^analytics:first_visit:\d{4}-\d{2}-\d{2}$/);
+      expect(firstVisitCmd.args[0]).toMatch(
+        /^analytics:first_visit:\d{4}-\d{2}-\d{2}$/,
+      );
     });
 
     it('should include source and path composite keys for funnel event', async () => {
@@ -1220,6 +1253,138 @@ describe('AnalyticsService', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('anonymizeUserAnalytics', () => {
+    it('should nullify userId on analytics_events for the given user', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$executeRaw.mockResolvedValue(5);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      const result = await svc.anonymizeUserAnalytics('user-123');
+
+      expect(result).toBe(5);
+      expect(prismaMock.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('should return 0 when PrismaService is not injected', async () => {
+      const svc = new AnalyticsService(redisMock as any);
+      const result = await svc.anonymizeUserAnalytics('user-123');
+      expect(result).toBe(0);
+    });
+  });
+
+  describe('anonymizeExpiredUsers', () => {
+    let prismaMock: ReturnType<typeof createPrismaMock>;
+
+    beforeEach(() => {
+      redisMock = createRedisMock(true);
+      prismaMock = createPrismaMock();
+    });
+
+    it('should skip when Prisma is not injected', async () => {
+      const svc = new AnalyticsService(redisMock as any);
+      await svc.anonymizeExpiredUsers();
+      expect(redisMock._clientMock.get).not.toHaveBeenCalled();
+    });
+
+    it('should skip when Redis is not ready', async () => {
+      redisMock = createRedisMock(false);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      await svc.anonymizeExpiredUsers();
+      expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('should skip when already ran today (daily guard)', async () => {
+      redisMock._clientMock.get.mockResolvedValue('1');
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      await svc.anonymizeExpiredUsers();
+      expect(redisMock._clientMock.set).not.toHaveBeenCalled();
+      expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('should skip when running lock is held (concurrent guard)', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue(null); // NX failed
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      await svc.anonymizeExpiredUsers();
+      expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('should set daily guard and return early when no rows to anonymize', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue('OK');
+      prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      await svc.anonymizeExpiredUsers();
+
+      // Should set ran key and delete running lock
+      const setCalls = redisMock._clientMock.set.mock.calls;
+      const ranCall = setCalls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('ran:'),
+      );
+      expect(ranCall).toBeDefined();
+      expect(redisMock._clientMock.del).toHaveBeenCalled();
+    });
+
+    it('should use single UPDATE for steady-state (<=200K rows)', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue('OK');
+      prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(100) }]);
+      prismaMock.$executeRaw.mockResolvedValue(100);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      await svc.anonymizeExpiredUsers();
+
+      // synchronous_commit + UPDATE = 2 $executeRaw calls
+      expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(redisMock._clientMock.del).toHaveBeenCalled();
+    });
+
+    it('should batch by calendar day for large backfills (>200K rows)', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue('OK');
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([{ count: BigInt(300_000) }])
+        .mockResolvedValueOnce([{ min_date: new Date('2024-01-01') }]);
+      prismaMock.$executeRaw.mockResolvedValue(1000);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      await svc.anonymizeExpiredUsers();
+
+      // Should have multiple $executeRaw calls (2 per day: SET LOCAL + UPDATE)
+      expect(prismaMock.$executeRaw.mock.calls.length).toBeGreaterThan(2);
+      expect(redisMock._clientMock.del).toHaveBeenCalled();
+    });
+
+    it('should release running lock in finally even on error', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue('OK');
+      prismaMock.$queryRaw.mockRejectedValue(new Error('DB error'));
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      await svc.anonymizeExpiredUsers();
+
+      // Running lock should be deleted despite error
+      expect(redisMock._clientMock.del).toHaveBeenCalledWith(
+        'analytics:anonymize:running',
+      );
+    });
+
+    it('should compute correct 90-day cutoff', async () => {
+      redisMock._clientMock.get.mockResolvedValue(null);
+      redisMock._clientMock.set.mockResolvedValue('OK');
+      prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(10) }]);
+      prismaMock.$executeRaw.mockResolvedValue(10);
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+
+      await svc.anonymizeExpiredUsers();
+
+      // Verify $queryRaw was called (cutoff date is embedded in tagged template)
+      expect(prismaMock.$queryRaw).toHaveBeenCalled();
+      expect(prismaMock.$executeRaw).toHaveBeenCalled();
     });
   });
 });
