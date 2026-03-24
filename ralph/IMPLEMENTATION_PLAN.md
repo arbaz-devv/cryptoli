@@ -367,7 +367,9 @@
 
 > **Learnings:** Single-line change — `COOKIE_NAME` constant updated from `"analytics_consent"` to `"analytics_consent_v2"`. No other files reference the raw cookie name string; all consumers use `getAnalyticsConsent()` / `setAnalyticsConsent()` which read `COOKIE_NAME` dynamically. Existing users with the old `analytics_consent` cookie will see the consent banner again because `getAnalyticsConsent()` returns `null` when the v2 cookie doesn't exist. The old v1 cookie remains in the browser but is harmless (never read). All 9 frontend tests pass unchanged — `AnalyticsTracker.test.tsx` mocks `getAnalyticsConsent` so it's not affected by the cookie name change. No CookieConsent-specific test file exists (noted as a gap but out of scope for this item).
 
-- [ ] **4.3** Track `like` event in `ReviewCard.tsx` in cryptoli-frontend: call `trackAnalyticsEvent("like")` in `useVote` `onSuccess` when `voteType === "UP"`.
+- [x] **4.3** Track `like` event in `ReviewCard.tsx` in cryptoli-frontend: call `trackAnalyticsEvent("like")` in `useVote` `onSuccess` when `voteType === "UP"`.
+
+> **Learnings:** The `useVote` hook's `onSuccess` callback already passes `voteType` as the third argument (typed as `VoteType | null`), so no hook changes were needed. `trackAnalyticsEvent` is imported from `@/shared/components/analytics/AnalyticsTracker` and dispatches a `CustomEvent` that `AnalyticsTracker` picks up and sends to the backend. The `"like"` event type is already in the `FunnelEvent` union type. No ReviewCard-specific test file exists — the change is a single conditional function call in an existing callback, covered by the AnalyticsTracker integration tests. All 9 frontend tests pass unchanged.
 
 - [ ] **4.4** Track `signup_started` in `SidebarAuthCard.tsx` in cryptoli-frontend: currently only tracked from desktop header (`Header.tsx` inside `hidden lg:flex`).
 
