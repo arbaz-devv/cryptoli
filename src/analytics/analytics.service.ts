@@ -11,6 +11,7 @@ import type { BufferedEvent } from './analytics-buffer.service';
 import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
+import { PrismaService } from '../prisma/prisma.service';
 import * as geoip from 'geoip-lite';
 import { isBot } from 'ua-parser-js/bot-detection';
 import { normalizeIp, isPrivateOrLocalIp } from './ip-utils';
@@ -125,6 +126,41 @@ export const dynamic = 'force-dynamic';
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
 
+/** Days older than this are read from PG (4-day buffer vs 32-day Redis TTL). */
+const PG_CUTOFF_DAYS = 28;
+
+/**
+ * Accumulator shape returned by readDayRangeFromPg().
+ * Mirrors the variables accumulated in the Redis day loop of getStats().
+ */
+export interface PgPartialStats {
+  totalPageviews: number;
+  totalBounces: number;
+  durationSum: number;
+  durationCount: number;
+  totalLikes: number;
+  /** Sum of per-day PFCOUNT snapshots (approximate, may overcount 3-20%). */
+  totalUniques: number;
+  totalSessions: number;
+  byCountry: Record<string, number>;
+  byDevice: Record<string, number>;
+  byBrowser: Record<string, number>;
+  byOs: Record<string, number>;
+  byReferrer: Record<string, number>;
+  byUtmSource: Record<string, number>;
+  byUtmMedium: Record<string, number>;
+  byUtmCampaign: Record<string, number>;
+  byHour: Record<string, number>;
+  byWeekday: Record<string, number>;
+  pathCounts: Record<string, number>;
+  byHourTz: Record<string, number>;
+  durationHistogram: Record<string, number>;
+  funnelEventCounts: Record<string, number>;
+  funnelBySourceRaw: Record<string, number>;
+  funnelByPathRaw: Record<string, number>;
+  timeSeries: TimeSeriesPoint[];
+}
+
 const RETENTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 @Injectable()
@@ -136,6 +172,8 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(forwardRef(() => AnalyticsBufferService))
     private readonly bufferService?: AnalyticsBufferService,
+    @Optional()
+    private readonly prisma?: PrismaService,
   ) {}
 
   onModuleInit(): void {
@@ -326,8 +364,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     if (this.isValidCountryCode(hint)) return hint;
 
     const normalizedIp = normalizeIp(ip);
-    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp))
-      return 'unknown';
+    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp)) return 'unknown';
 
     const cacheKey = `${KEY_PREFIX}:ip_country:${normalizedIp}`;
     if (this.redis) {
@@ -572,11 +609,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         1,
       );
       pipe.expire(`${KEY_PREFIX}:funnel:source:${day}`, ttl);
-      pipe.hincrby(
-        `${KEY_PREFIX}:funnel:path:${day}`,
-        `${path}|${event}`,
-        1,
-      );
+      pipe.hincrby(`${KEY_PREFIX}:funnel:path:${day}`, `${path}|${event}`, 1);
       pipe.expire(`${KEY_PREFIX}:funnel:path:${day}`, ttl);
       void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
@@ -615,11 +648,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
           // max 24h
           const durationBucket = this.durationBucket(durationSec);
           const pipe = this.redis.pipeline();
-          pipe.hincrby(
-            `${KEY_PREFIX}:duration_hist:${day}`,
-            durationBucket,
-            1,
-          );
+          pipe.hincrby(`${KEY_PREFIX}:duration_hist:${day}`, durationBucket, 1);
           pipe.expire(`${KEY_PREFIX}:duration_hist:${day}`, ttl);
           pipe.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec);
           pipe.expire(`${KEY_PREFIX}:duration_sum:${day}`, ttl);
@@ -805,6 +834,136 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Read historical days from the AnalyticsDailySummary EAV table in PostgreSQL.
+   * Reconstructs the same accumulator shape used by the Redis day loop in getStats().
+   * Returns null if PrismaService is not injected.
+   */
+  async readDayRangeFromPg(days: string[]): Promise<PgPartialStats | null> {
+    if (!this.prisma || days.length === 0) return null;
+
+    const fromDate = new Date(days[0] + 'T00:00:00Z');
+    const toDate = new Date(days[days.length - 1] + 'T00:00:00Z');
+
+    const rows = await this.prisma.analyticsDailySummary.findMany({
+      where: {
+        date: { gte: fromDate, lte: toDate },
+      },
+    });
+
+    // Initialize accumulator
+    const acc: PgPartialStats = {
+      totalPageviews: 0,
+      totalBounces: 0,
+      durationSum: 0,
+      durationCount: 0,
+      totalLikes: 0,
+      totalUniques: 0,
+      totalSessions: 0,
+      byCountry: {},
+      byDevice: {},
+      byBrowser: {},
+      byOs: {},
+      byReferrer: {},
+      byUtmSource: {},
+      byUtmMedium: {},
+      byUtmCampaign: {},
+      byHour: {},
+      byWeekday: {},
+      pathCounts: {},
+      byHourTz: {},
+      durationHistogram: {},
+      funnelEventCounts: {},
+      funnelBySourceRaw: {},
+      funnelByPathRaw: {},
+      timeSeries: [],
+    };
+
+    // Group rows by date for timeSeries construction
+    const perDay = new Map<string, { pageviews: number; uniques: number }>();
+
+    // Dimension → accumulator hash mapping
+    const hashMap: Record<string, Record<string, number>> = {
+      country: acc.byCountry,
+      device: acc.byDevice,
+      browser: acc.byBrowser,
+      os: acc.byOs,
+      referrer: acc.byReferrer,
+      utm_source: acc.byUtmSource,
+      utm_medium: acc.byUtmMedium,
+      utm_campaign: acc.byUtmCampaign,
+      hour: acc.byHour,
+      weekday: acc.byWeekday,
+      path: acc.pathCounts,
+      hour_tz: acc.byHourTz,
+      duration_bucket: acc.durationHistogram,
+      funnel_event: acc.funnelEventCounts,
+      funnel_by_source: acc.funnelBySourceRaw,
+      funnel_by_path: acc.funnelByPathRaw,
+    };
+
+    for (const row of rows) {
+      const dayStr =
+        row.date instanceof Date
+          ? row.date.toISOString().slice(0, 10)
+          : String(row.date).slice(0, 10);
+
+      if (row.dimension === '_total_') {
+        // Scalar metrics
+        switch (row.dimensionValue) {
+          case 'pageviews':
+            acc.totalPageviews += row.count;
+            // Track per-day for timeSeries
+            if (!perDay.has(dayStr))
+              perDay.set(dayStr, { pageviews: 0, uniques: 0 });
+            perDay.get(dayStr)!.pageviews += row.count;
+            break;
+          case 'bounces':
+            acc.totalBounces += row.count;
+            break;
+          case 'duration_sum':
+            acc.durationSum += row.count;
+            break;
+          case 'duration_count':
+            acc.durationCount += row.count;
+            break;
+          case 'likes':
+            acc.totalLikes += row.count;
+            break;
+          case 'uniques_approx':
+            acc.totalUniques += row.count;
+            // Track per-day for timeSeries
+            if (!perDay.has(dayStr))
+              perDay.set(dayStr, { pageviews: 0, uniques: 0 });
+            perDay.get(dayStr)!.uniques += row.count;
+            break;
+          case 'sessions_approx':
+            acc.totalSessions += row.count;
+            break;
+        }
+      } else {
+        // Hash/breakdown dimensions
+        const target = hashMap[row.dimension];
+        if (target) {
+          target[row.dimensionValue] =
+            (target[row.dimensionValue] || 0) + row.count;
+        }
+      }
+    }
+
+    // Build timeSeries from per-day data, sorted by date
+    for (const day of days) {
+      const entry = perDay.get(day);
+      acc.timeSeries.push({
+        date: day,
+        pageviews: entry?.pageviews ?? 0,
+        uniques: entry?.uniques ?? 0,
+      });
+    }
+
+    return acc;
+  }
+
+  /**
    * Returns aggregated analytics for the full date range [from, to].
    * All metrics (pageviews, uniques, sessions, avg duration, bounce rate, likes, funnel, etc.)
    * are computed over this range. Only activeToday is for the single day "today".
@@ -830,6 +989,16 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
       days.push(this.dayKey(d));
     }
+
+    // Partition days: pgDays (>= PG_CUTOFF_DAYS ago) read from PG, redisDays from Redis
+    const cutoffDate = new Date();
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - PG_CUTOFF_DAYS);
+    const cutoffStr = this.dayKey(cutoffDate);
+    const pgDays = days.filter((d) => d < cutoffStr);
+    const redisDays = days.filter((d) => d >= cutoffStr);
+
+    // Read historical data from PG (returns null if Prisma not injected or no pgDays)
+    const pgStats = await this.readDayRangeFromPg(pgDays);
 
     let totalPageviews = 0;
     let totalBounces = 0;
@@ -877,7 +1046,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     };
 
     try {
-      for (const day of days) {
+      for (const day of redisDays) {
         const [
           pv,
           countries,
@@ -986,7 +1155,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         let weightedDay7 = 0;
         let weightedDay30 = 0;
         let cohortDaysCount = 0;
-        for (const day of days) {
+        for (const day of redisDays) {
           const raw = await this.redis.get(`${KEY_PREFIX}:retention:${day}`);
           if (!raw) continue;
           const parsed = JSON.parse(raw) as {
@@ -1023,16 +1192,70 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       return this.emptyStats(days[0] || from, days[days.length - 1] || to);
     }
 
-    const uniqueHllKeys = days.map((day) => `${KEY_PREFIX}:hll:uniques:${day}`);
-    const sessionHllKeys = days.map(
+    // Merge PG historical stats into Redis accumulators (item 2.21)
+    if (pgStats) {
+      const mergeHash = (
+        target: Record<string, number>,
+        source: Record<string, number>,
+      ) => {
+        for (const [k, v] of Object.entries(source)) {
+          target[k] = (target[k] || 0) + v;
+        }
+      };
+
+      // Additive scalars
+      totalPageviews += pgStats.totalPageviews;
+      totalBounces += pgStats.totalBounces;
+      durationSum += pgStats.durationSum;
+      durationCount += pgStats.durationCount;
+      totalLikes += pgStats.totalLikes;
+
+      // Additive hash dimensions
+      mergeHash(byCountry, pgStats.byCountry);
+      mergeHash(byDevice, pgStats.byDevice);
+      mergeHash(byBrowser, pgStats.byBrowser);
+      mergeHash(byOs, pgStats.byOs);
+      mergeHash(byReferrer, pgStats.byReferrer);
+      mergeHash(byUtmSource, pgStats.byUtmSource);
+      mergeHash(byUtmMedium, pgStats.byUtmMedium);
+      mergeHash(byUtmCampaign, pgStats.byUtmCampaign);
+      mergeHash(byHour, pgStats.byHour);
+      mergeHash(byWeekday, pgStats.byWeekday);
+      mergeHash(pathCounts, pgStats.pathCounts);
+      mergeHash(byHourTz, pgStats.byHourTz);
+
+      // Histogram merge for percentiles (sum bucket counts, recompute later)
+      mergeHash(durationHistogram, pgStats.durationHistogram);
+
+      // Funnel merges (cast needed: funnelEventCounts is Record<FunnelEvent, number>)
+      mergeHash(
+        funnelEventCounts as Record<string, number>,
+        pgStats.funnelEventCounts,
+      );
+      mergeHash(funnelBySourceRaw, pgStats.funnelBySourceRaw);
+      mergeHash(funnelByPathRaw, pgStats.funnelByPathRaw);
+
+      // TimeSeries: prepend PG entries before Redis entries (already sorted by date)
+      timeSeries.unshift(...pgStats.timeSeries);
+    }
+
+    // Redis HLL PFCOUNT for exact cross-day uniques/sessions (Redis window only)
+    const uniqueHllKeys = redisDays.map(
+      (day) => `${KEY_PREFIX}:hll:uniques:${day}`,
+    );
+    const sessionHllKeys = redisDays.map(
       (day) => `${KEY_PREFIX}:hll:sessions:${day}`,
     );
-    const totalUniques =
+    // Redis provides exact HLL union; PG provides summed per-day snapshots
+    const redisUniques =
       uniqueHllKeys.length > 0 ? await this.redis.pfcount(...uniqueHllKeys) : 0;
-    const totalSessions =
+    const redisSessions =
       sessionHllKeys.length > 0
         ? await this.redis.pfcount(...sessionHllKeys)
         : 0;
+    // Combine: PG sum (approximate) + Redis HLL union (exact for Redis window)
+    const totalUniques = redisUniques + (pgStats?.totalUniques ?? 0);
+    const totalSessions = redisSessions + (pgStats?.totalSessions ?? 0);
 
     const topPages = Object.entries(pathCounts)
       .sort((a, b) => b[1] - a[1])

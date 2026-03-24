@@ -60,19 +60,51 @@ describe('AnalyticsRollupService (Integration)', () => {
     p.set(`${KEY_PREFIX}:duration_sum:${day}`, '7500');
     p.set(`${KEY_PREFIX}:duration_count:${day}`, '75');
     // HyperLogLog keys for uniques/sessions
-    p.pfadd(`${KEY_PREFIX}:hll:uniques:${day}`, ...Array.from({ length: 120 }, (_, i) => `user_${i}`));
-    p.pfadd(`${KEY_PREFIX}:hll:sessions:${day}`, ...Array.from({ length: 150 }, (_, i) => `sess_${i}`));
+    p.pfadd(
+      `${KEY_PREFIX}:hll:uniques:${day}`,
+      ...Array.from({ length: 120 }, (_, i) => `user_${i}`),
+    );
+    p.pfadd(
+      `${KEY_PREFIX}:hll:sessions:${day}`,
+      ...Array.from({ length: 150 }, (_, i) => `sess_${i}`),
+    );
     // Hash keys
     p.hset(`${KEY_PREFIX}:country:${day}`, { US: '130', DE: '80', GB: '40' });
     p.hset(`${KEY_PREFIX}:device:${day}`, { desktop: '160', mobile: '90' });
-    p.hset(`${KEY_PREFIX}:browser:${day}`, { chrome: '150', firefox: '60', safari: '40' });
-    p.hset(`${KEY_PREFIX}:os:${day}`, { windows: '120', macos: '80', linux: '50' });
-    p.hset(`${KEY_PREFIX}:referrer:${day}`, { 'google.com': '100', direct: '150' });
-    p.hset(`${KEY_PREFIX}:hour:${day}`, { '10': '80', '14': '100', '20': '70' });
+    p.hset(`${KEY_PREFIX}:browser:${day}`, {
+      chrome: '150',
+      firefox: '60',
+      safari: '40',
+    });
+    p.hset(`${KEY_PREFIX}:os:${day}`, {
+      windows: '120',
+      macos: '80',
+      linux: '50',
+    });
+    p.hset(`${KEY_PREFIX}:referrer:${day}`, {
+      'google.com': '100',
+      direct: '150',
+    });
+    p.hset(`${KEY_PREFIX}:hour:${day}`, {
+      '10': '80',
+      '14': '100',
+      '20': '70',
+    });
     p.hset(`${KEY_PREFIX}:weekday:${day}`, { '3': '250' });
-    p.hset(`${KEY_PREFIX}:path:${day}`, { '/': '150', '/about': '60', '/pricing': '40' });
-    p.hset(`${KEY_PREFIX}:duration_hist:${day}`, { '0_9': '30', '10_29': '25', '30_59': '20' });
-    p.hset(`${KEY_PREFIX}:funnel:event:${day}`, { signup_started: '20', signup_completed: '10' });
+    p.hset(`${KEY_PREFIX}:path:${day}`, {
+      '/': '150',
+      '/about': '60',
+      '/pricing': '40',
+    });
+    p.hset(`${KEY_PREFIX}:duration_hist:${day}`, {
+      '0_9': '30',
+      '10_29': '25',
+      '30_59': '20',
+    });
+    p.hset(`${KEY_PREFIX}:funnel:event:${day}`, {
+      signup_started: '20',
+      signup_completed: '10',
+    });
     await p.exec();
   }
 
@@ -116,7 +148,8 @@ describe('AnalyticsRollupService (Integration)', () => {
 
     // Check funnel
     const funnelRow = rows.find(
-      (r) => r.dimension === 'funnel_event' && r.dimensionValue === 'signup_started',
+      (r) =>
+        r.dimension === 'funnel_event' && r.dimensionValue === 'signup_started',
     );
     expect(funnelRow!.count).toBe(20);
   });

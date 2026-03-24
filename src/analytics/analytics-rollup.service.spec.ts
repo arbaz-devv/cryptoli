@@ -1,4 +1,7 @@
-import { AnalyticsRollupService, DaySnapshot } from './analytics-rollup.service';
+import {
+  AnalyticsRollupService,
+  DaySnapshot,
+} from './analytics-rollup.service';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createRedisMock } from '../../test/helpers/redis.mock';
 
@@ -45,7 +48,7 @@ describe('AnalyticsRollupService', () => {
     redisMock._clientMock.get.mockResolvedValue(null);
     redisMock._clientMock.set.mockResolvedValue('OK');
 
-    service = new AnalyticsRollupService(prisma as any, redisMock as any);
+    service = new AnalyticsRollupService(prisma, redisMock as any);
   });
 
   afterEach(() => {
@@ -55,7 +58,7 @@ describe('AnalyticsRollupService', () => {
   describe('readDayFromRedis()', () => {
     it('should return empty snapshot when Redis is not ready', async () => {
       const notReadyMock = createRedisMock(false);
-      const svc = new AnalyticsRollupService(prisma as any, notReadyMock as any);
+      const svc = new AnalyticsRollupService(prisma, notReadyMock as any);
 
       const snapshot = await svc.readDayFromRedis(DAY);
       expect(snapshot.pageviews).toBe(0);
@@ -73,7 +76,8 @@ describe('AnalyticsRollupService', () => {
         return Promise.resolve(null);
       });
       client.hgetall.mockImplementation((key: string) => {
-        if (key.includes('country')) return Promise.resolve({ US: '80', DE: '70' });
+        if (key.includes('country'))
+          return Promise.resolve({ US: '80', DE: '70' });
         if (key.includes('device')) return Promise.resolve({ desktop: '100' });
         return Promise.resolve({});
       });
@@ -126,7 +130,9 @@ describe('AnalyticsRollupService', () => {
 
     it('should skip when PG already has rows for the day (idempotency)', async () => {
       redisMock._clientMock.get.mockResolvedValue(null); // no NX lock
-      prisma.analyticsDailySummary.findFirst.mockResolvedValue({ id: 'existing' });
+      prisma.analyticsDailySummary.findFirst.mockResolvedValue({
+        id: 'existing',
+      });
 
       const result = await service.rollupDay(DAY);
 
@@ -135,7 +141,9 @@ describe('AnalyticsRollupService', () => {
     });
 
     it('should skip when pageviews is zero (Redis down or keys expired)', async () => {
-      jest.spyOn(service, 'readDayFromRedis').mockResolvedValue(makeSnapshot({ pageviews: 0 }));
+      jest
+        .spyOn(service, 'readDayFromRedis')
+        .mockResolvedValue(makeSnapshot({ pageviews: 0 }));
 
       const result = await service.rollupDay(DAY);
 
@@ -208,7 +216,9 @@ describe('AnalyticsRollupService', () => {
         new Error('Connection timeout'),
       );
 
-      await expect(service.rollupDay(DAY)).rejects.toThrow('Connection timeout');
+      await expect(service.rollupDay(DAY)).rejects.toThrow(
+        'Connection timeout',
+      );
     });
 
     it('should produce correct EAV rows from snapshot', async () => {
@@ -229,40 +239,81 @@ describe('AnalyticsRollupService', () => {
 
       await service.rollupDay(DAY);
 
-      const rows = prisma.analyticsDailySummary.createMany.mock.calls[0][0].data;
+      const rows =
+        prisma.analyticsDailySummary.createMany.mock.calls[0][0].data;
 
       // Verify scalar rows
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'pageviews', count: 200 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 200,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'uniques_approx', count: 100 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'uniques_approx',
+          count: 100,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'sessions_approx', count: 120 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'sessions_approx',
+          count: 120,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'bounces', count: 20 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'bounces',
+          count: 20,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'likes', count: 10 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'likes',
+          count: 10,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'duration_sum', count: 6000 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'duration_sum',
+          count: 6000,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: '_total_', dimensionValue: 'duration_count', count: 60 }),
+        expect.objectContaining({
+          dimension: '_total_',
+          dimensionValue: 'duration_count',
+          count: 60,
+        }),
       );
 
       // Verify hash rows
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: 'country', dimensionValue: 'US', count: 120 }),
+        expect.objectContaining({
+          dimension: 'country',
+          dimensionValue: 'US',
+          count: 120,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: 'duration_bucket', dimensionValue: '0_9', count: 30 }),
+        expect.objectContaining({
+          dimension: 'duration_bucket',
+          dimensionValue: '0_9',
+          count: 30,
+        }),
       );
       expect(rows).toContainEqual(
-        expect.objectContaining({ dimension: 'funnel_event', dimensionValue: 'signup_started', count: 10 }),
+        expect.objectContaining({
+          dimension: 'funnel_event',
+          dimensionValue: 'signup_started',
+          count: 10,
+        }),
       );
     });
 
@@ -275,7 +326,8 @@ describe('AnalyticsRollupService', () => {
 
       await service.rollupDay(DAY);
 
-      const rows = prisma.analyticsDailySummary.createMany.mock.calls[0][0].data;
+      const rows =
+        prisma.analyticsDailySummary.createMany.mock.calls[0][0].data;
       const likeRow = rows.find(
         (r: { dimensionValue: string }) => r.dimensionValue === 'likes',
       );
@@ -290,7 +342,9 @@ describe('AnalyticsRollupService', () => {
 
   describe('checkAndRollup()', () => {
     it('should check 7 days on first run (startup backfill)', async () => {
-      const rollupSpy = jest.spyOn(service, 'rollupDay').mockResolvedValue(false);
+      const rollupSpy = jest
+        .spyOn(service, 'rollupDay')
+        .mockResolvedValue(false);
 
       await (service as any).checkAndRollup();
 
@@ -298,7 +352,9 @@ describe('AnalyticsRollupService', () => {
     });
 
     it('should check only 2 days on subsequent runs', async () => {
-      const rollupSpy = jest.spyOn(service, 'rollupDay').mockResolvedValue(false);
+      const rollupSpy = jest
+        .spyOn(service, 'rollupDay')
+        .mockResolvedValue(false);
 
       await (service as any).checkAndRollup();
       rollupSpy.mockClear();

@@ -55,10 +55,7 @@ describe('AnalyticsInterceptor', () => {
   });
 
   it('should set country to undefined when no country header present', (done) => {
-    const { context, req } = createContext(
-      {},
-      { remoteAddress: '8.8.8.8' },
-    );
+    const { context, req } = createContext({}, { remoteAddress: '8.8.8.8' });
 
     interceptor.intercept(context, nextHandler).subscribe(() => {
       expect(req.analyticsCtx.country).toBeUndefined();
@@ -79,10 +76,7 @@ describe('AnalyticsInterceptor', () => {
   });
 
   it('should use empty string when user-agent header is absent', (done) => {
-    const { context, req } = createContext(
-      {},
-      { remoteAddress: '8.8.8.8' },
-    );
+    const { context, req } = createContext({}, { remoteAddress: '8.8.8.8' });
 
     interceptor.intercept(context, nextHandler).subscribe(() => {
       expect(req.analyticsCtx.userAgent).toBe('');

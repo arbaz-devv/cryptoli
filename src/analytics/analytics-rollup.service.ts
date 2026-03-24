@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -132,7 +137,9 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
       redis.hgetall(`${KEY_PREFIX}:hour_tz:${day}`),
     ]);
 
-    const parseHash = (h: Record<string, string> | null): Record<string, number> => {
+    const parseHash = (
+      h: Record<string, string> | null,
+    ): Record<string, number> => {
       const result: Record<string, number> = {};
       for (const [k, v] of Object.entries(h || {})) {
         result[k] = parseInt(v, 10) || 0;
@@ -302,7 +309,12 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
 
     const addScalar = (name: string, value: number) => {
       if (value !== 0) {
-        rows.push({ date, dimension: '_total_', dimensionValue: name, count: value });
+        rows.push({
+          date,
+          dimension: '_total_',
+          dimensionValue: name,
+          count: value,
+        });
       }
     };
 

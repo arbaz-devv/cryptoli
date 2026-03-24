@@ -43,9 +43,7 @@ describe('ip-utils', () => {
     });
 
     it('should return empty string for undefined header value', () => {
-      expect(
-        firstHeader(mockReq({ 'x-test': undefined }), 'x-test'),
-      ).toBe('');
+      expect(firstHeader(mockReq({ 'x-test': undefined }), 'x-test')).toBe('');
     });
   });
 
@@ -176,16 +174,14 @@ describe('ip-utils', () => {
 
     it('should parse multiple comma-separated entries', () => {
       expect(
-        parseForwardedHeader(
-          'for=203.0.113.10;proto=https, for=70.41.3.18',
-        ),
+        parseForwardedHeader('for=203.0.113.10;proto=https, for=70.41.3.18'),
       ).toEqual(['203.0.113.10', '70.41.3.18']);
     });
 
     it('should handle quoted bracketed IPv6', () => {
-      expect(
-        parseForwardedHeader('for="[2001:db8::1]"'),
-      ).toEqual(['[2001:db8::1]']);
+      expect(parseForwardedHeader('for="[2001:db8::1]"')).toEqual([
+        '[2001:db8::1]',
+      ]);
     });
 
     it('should return empty array for no for= directives', () => {
@@ -195,9 +191,9 @@ describe('ip-utils', () => {
 
   describe('getClientIp()', () => {
     it('should extract from cf-connecting-ip', () => {
-      expect(
-        getClientIp(mockReq({ 'cf-connecting-ip': '203.0.113.1' })),
-      ).toBe('203.0.113.1');
+      expect(getClientIp(mockReq({ 'cf-connecting-ip': '203.0.113.1' }))).toBe(
+        '203.0.113.1',
+      );
     });
 
     it('should extract from x-real-ip', () => {
@@ -216,24 +212,20 @@ describe('ip-utils', () => {
 
     it('should filter "unknown" entries from x-forwarded-for', () => {
       expect(
-        getClientIp(
-          mockReq({ 'x-forwarded-for': 'unknown, 203.0.113.4' }),
-        ),
+        getClientIp(mockReq({ 'x-forwarded-for': 'unknown, 203.0.113.4' })),
       ).toBe('203.0.113.4');
     });
 
     it('should extract from RFC 7239 Forwarded header', () => {
       expect(
-        getClientIp(
-          mockReq({ forwarded: 'for=203.0.113.5;proto=https' }),
-        ),
+        getClientIp(mockReq({ forwarded: 'for=203.0.113.5;proto=https' })),
       ).toBe('203.0.113.5');
     });
 
     it('should fall back to socket remoteAddress', () => {
-      expect(
-        getClientIp(mockReq({}, { remoteAddress: '203.0.113.6' })),
-      ).toBe('203.0.113.6');
+      expect(getClientIp(mockReq({}, { remoteAddress: '203.0.113.6' }))).toBe(
+        '203.0.113.6',
+      );
     });
 
     it('should fall back to req.ip', () => {
@@ -264,9 +256,9 @@ describe('ip-utils', () => {
     });
 
     it('should extract from x-vercel-ip-country', () => {
-      expect(
-        getCountryHint(mockReq({ 'x-vercel-ip-country': 'de' })),
-      ).toBe('DE');
+      expect(getCountryHint(mockReq({ 'x-vercel-ip-country': 'de' }))).toBe(
+        'DE',
+      );
     });
 
     it('should return undefined when no country header present', () => {

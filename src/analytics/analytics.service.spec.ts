@@ -1,5 +1,6 @@
 import { AnalyticsService } from './analytics.service';
 import { createRedisMock } from '../../test/helpers/redis.mock';
+import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { normalizeIp } from './ip-utils';
 
 describe('AnalyticsService', () => {
@@ -98,9 +99,7 @@ describe('AnalyticsService', () => {
 
       const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
       const incrCmds = pipe.commands.filter((c: any) => c.cmd === 'incr');
-      const likeCmd = incrCmds.find((c: any) =>
-        c.args[0].includes(':like:'),
-      );
+      const likeCmd = incrCmds.find((c: any) => c.args[0].includes(':like:'));
       expect(likeCmd).toBeDefined();
     });
 
@@ -114,9 +113,7 @@ describe('AnalyticsService', () => {
       });
 
       const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
-      const hincrCmds = pipe.commands.filter(
-        (c: any) => c.cmd === 'hincrby',
-      );
+      const hincrCmds = pipe.commands.filter((c: any) => c.cmd === 'hincrby');
       const funnelCmd = hincrCmds.find((c: any) =>
         c.args[0].includes(':funnel:event:'),
       );
@@ -139,9 +136,7 @@ describe('AnalyticsService', () => {
       });
 
       const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
-      const hincrCmds = pipe.commands.filter(
-        (c: any) => c.cmd === 'hincrby',
-      );
+      const hincrCmds = pipe.commands.filter((c: any) => c.cmd === 'hincrby');
       const durationCmd = hincrCmds.find((c: any) =>
         c.args[0].includes(':duration_hist:'),
       );
@@ -476,6 +471,335 @@ describe('AnalyticsService', () => {
     it('should return "unknown" for empty IP without hint', async () => {
       const result = await (service as any).resolveCountry('');
       expect(result).toBe('unknown');
+    });
+  });
+
+  describe('readDayRangeFromPg()', () => {
+    it('should return null when PrismaService is not injected', async () => {
+      // Default service has no Prisma injected
+      const result = await service.readDayRangeFromPg(['2026-01-01']);
+      expect(result).toBeNull();
+    });
+
+    it('should return null for empty days array', async () => {
+      const prismaMock = createPrismaMock();
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const result = await svc.readDayRangeFromPg([]);
+      expect(result).toBeNull();
+    });
+
+    it('should reconstruct accumulator from EAV rows', async () => {
+      const prismaMock = createPrismaMock();
+      const day = '2026-01-15';
+      const dateObj = new Date(day + 'T00:00:00Z');
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 100,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'bounces',
+          count: 20,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_sum',
+          count: 5000,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_count',
+          count: 50,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'likes',
+          count: 10,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'uniques_approx',
+          count: 80,
+        },
+        {
+          date: dateObj,
+          dimension: '_total_',
+          dimensionValue: 'sessions_approx',
+          count: 90,
+        },
+        {
+          date: dateObj,
+          dimension: 'country',
+          dimensionValue: 'US',
+          count: 60,
+        },
+        {
+          date: dateObj,
+          dimension: 'country',
+          dimensionValue: 'DE',
+          count: 40,
+        },
+        {
+          date: dateObj,
+          dimension: 'device',
+          dimensionValue: 'desktop',
+          count: 70,
+        },
+        {
+          date: dateObj,
+          dimension: 'browser',
+          dimensionValue: 'Chrome',
+          count: 55,
+        },
+        {
+          date: dateObj,
+          dimension: 'path',
+          dimensionValue: '/home',
+          count: 45,
+        },
+        {
+          date: dateObj,
+          dimension: 'duration_bucket',
+          dimensionValue: '0_9',
+          count: 30,
+        },
+        {
+          date: dateObj,
+          dimension: 'funnel_event',
+          dimensionValue: 'signup_started',
+          count: 15,
+        },
+        {
+          date: dateObj,
+          dimension: 'funnel_by_source',
+          dimensionValue: 'google|signup_started',
+          count: 8,
+        },
+        {
+          date: dateObj,
+          dimension: 'funnel_by_path',
+          dimensionValue: '/home|signup_started',
+          count: 5,
+        },
+        { date: dateObj, dimension: 'hour', dimensionValue: '14', count: 25 },
+        {
+          date: dateObj,
+          dimension: 'weekday',
+          dimensionValue: '3',
+          count: 100,
+        },
+        {
+          date: dateObj,
+          dimension: 'hour_tz',
+          dimensionValue: '10',
+          count: 18,
+        },
+      ]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const result = await svc.readDayRangeFromPg([day]);
+
+      expect(result).not.toBeNull();
+      expect(result!.totalPageviews).toBe(100);
+      expect(result!.totalBounces).toBe(20);
+      expect(result!.durationSum).toBe(5000);
+      expect(result!.durationCount).toBe(50);
+      expect(result!.totalLikes).toBe(10);
+      expect(result!.totalUniques).toBe(80);
+      expect(result!.totalSessions).toBe(90);
+      expect(result!.byCountry).toEqual({ US: 60, DE: 40 });
+      expect(result!.byDevice).toEqual({ desktop: 70 });
+      expect(result!.byBrowser).toEqual({ Chrome: 55 });
+      expect(result!.pathCounts).toEqual({ '/home': 45 });
+      expect(result!.durationHistogram).toEqual({ '0_9': 30 });
+      expect(result!.funnelEventCounts).toEqual({ signup_started: 15 });
+      expect(result!.funnelBySourceRaw).toEqual({ 'google|signup_started': 8 });
+      expect(result!.funnelByPathRaw).toEqual({ '/home|signup_started': 5 });
+      expect(result!.byHour).toEqual({ '14': 25 });
+      expect(result!.byWeekday).toEqual({ '3': 100 });
+      expect(result!.byHourTz).toEqual({ '10': 18 });
+      expect(result!.timeSeries).toEqual([
+        { date: day, pageviews: 100, uniques: 80 },
+      ]);
+    });
+
+    it('should aggregate multiple days into a single accumulator', async () => {
+      const prismaMock = createPrismaMock();
+      const day1 = '2026-01-14';
+      const day2 = '2026-01-15';
+      const d1 = new Date(day1 + 'T00:00:00Z');
+      const d2 = new Date(day2 + 'T00:00:00Z');
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
+        {
+          date: d1,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 50,
+        },
+        {
+          date: d1,
+          dimension: '_total_',
+          dimensionValue: 'uniques_approx',
+          count: 30,
+        },
+        { date: d1, dimension: 'country', dimensionValue: 'US', count: 25 },
+        {
+          date: d2,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 75,
+        },
+        {
+          date: d2,
+          dimension: '_total_',
+          dimensionValue: 'uniques_approx',
+          count: 40,
+        },
+        { date: d2, dimension: 'country', dimensionValue: 'US', count: 35 },
+        { date: d2, dimension: 'country', dimensionValue: 'GB', count: 10 },
+      ]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const result = await svc.readDayRangeFromPg([day1, day2]);
+
+      expect(result!.totalPageviews).toBe(125);
+      expect(result!.totalUniques).toBe(70);
+      expect(result!.byCountry).toEqual({ US: 60, GB: 10 });
+      expect(result!.timeSeries).toEqual([
+        { date: day1, pageviews: 50, uniques: 30 },
+        { date: day2, pageviews: 75, uniques: 40 },
+      ]);
+    });
+
+    it('should produce zero-value timeSeries entries for days with no PG data', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const result = await svc.readDayRangeFromPg(['2026-01-15']);
+
+      expect(result!.totalPageviews).toBe(0);
+      expect(result!.timeSeries).toEqual([
+        { date: '2026-01-15', pageviews: 0, uniques: 0 },
+      ]);
+    });
+  });
+
+  describe('getStats() hybrid partitioning', () => {
+    it('should use only Redis for recent days when no Prisma injected', async () => {
+      // All dates within 28-day window → all go to Redis, no PG
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+      client.get.mockResolvedValue('10');
+      client.hgetall.mockResolvedValue({});
+      client.pfcount.mockResolvedValue(5);
+
+      service = new AnalyticsService(redisMock as any);
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await service.getStats(today, today);
+
+      expect(result).toBeDefined();
+      expect(result!.totalPageviews).toBe(10);
+    });
+
+    it('should merge PG stats with Redis stats for mixed date ranges', async () => {
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+      // Redis returns 20 pageviews per GET (for the recent day)
+      client.get.mockResolvedValue('20');
+      client.hgetall.mockResolvedValue({});
+      client.pfcount.mockResolvedValue(8);
+
+      const prismaMock = createPrismaMock();
+      // Old day is 60 days ago (well past 28-day cutoff)
+      const oldDate = new Date();
+      oldDate.setUTCDate(oldDate.getUTCDate() - 60);
+      const oldDay = oldDate.toISOString().slice(0, 10);
+      const oldDateObj = new Date(oldDay + 'T00:00:00Z');
+
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'pageviews',
+          count: 100,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'uniques_approx',
+          count: 50,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'sessions_approx',
+          count: 60,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'bounces',
+          count: 10,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'likes',
+          count: 5,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_sum',
+          count: 3000,
+        },
+        {
+          date: oldDateObj,
+          dimension: '_total_',
+          dimensionValue: 'duration_count',
+          count: 30,
+        },
+        {
+          date: oldDateObj,
+          dimension: 'country',
+          dimensionValue: 'US',
+          count: 40,
+        },
+        {
+          date: oldDateObj,
+          dimension: 'device',
+          dimensionValue: 'mobile',
+          count: 35,
+        },
+      ]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await svc.getStats(oldDay, today);
+
+      expect(result).toBeDefined();
+      // PG: 100 pageviews for oldDay + Redis: 20 * N redisDays
+      // The exact count depends on how many redisDays are in the range,
+      // but total must be > 100 (PG) since Redis also contributes
+      expect(result!.totalPageviews).toBeGreaterThanOrEqual(100);
+      // PG country data should be merged
+      expect(result!.byCountry.US).toBeGreaterThanOrEqual(40);
+      expect(result!.byDevice.mobile).toBeGreaterThanOrEqual(35);
+      // TimeSeries should include both PG and Redis entries
+      expect(result!.timeSeries.length).toBeGreaterThan(1);
+      // First entry should be the old PG day
+      expect(result!.timeSeries[0].date).toBe(oldDay);
+      // Uniques = PG sum + Redis HLL union
+      expect(result!.totalUniques).toBeGreaterThanOrEqual(50);
     });
   });
 });

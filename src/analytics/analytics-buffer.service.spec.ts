@@ -1,11 +1,16 @@
-import { AnalyticsBufferService, BufferedEvent } from './analytics-buffer.service';
+import {
+  AnalyticsBufferService,
+  BufferedEvent,
+} from './analytics-buffer.service';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 
 describe('AnalyticsBufferService', () => {
   let service: AnalyticsBufferService;
   let prisma: ReturnType<typeof createPrismaMock>;
 
-  const makeEvent = (overrides: Partial<BufferedEvent> = {}): BufferedEvent => ({
+  const makeEvent = (
+    overrides: Partial<BufferedEvent> = {},
+  ): BufferedEvent => ({
     eventType: 'page_view',
     sessionId: 'test-session',
     ...overrides,
@@ -15,7 +20,7 @@ describe('AnalyticsBufferService', () => {
     prisma = createPrismaMock();
     prisma.analyticsEvent.createMany.mockResolvedValue({ count: 0 });
     prisma.$executeRaw.mockResolvedValue(0);
-    service = new AnalyticsBufferService(prisma as any);
+    service = new AnalyticsBufferService(prisma);
   });
 
   afterEach(() => {
