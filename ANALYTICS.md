@@ -223,14 +223,30 @@ AnalyticsService.track(ip, ua, body, countryHint, serverCtx?)
   │      HINCRBY analytics:os:{day} {name}
   │      HINCRBY analytics:referrer:{day} {host}
   │      HINCRBY analytics:utm_source:{day} {src}
+  │      HINCRBY analytics:utm_medium:{day} {med}
+  │      HINCRBY analytics:utm_campaign:{day} {camp}
   │      HINCRBY analytics:hour:{day} {h}
   │      HINCRBY analytics:weekday:{day} {wd}
   │      HINCRBY analytics:path:{day} {path}
+  │      HINCRBY analytics:session_pages:{day} {sessionId}
+  │      HINCRBY analytics:hour_tz:{day} {localHour}  (if timezone sent)
   │      ZADD   analytics:recent_sessions {ts} {member}
-  │      SET    analytics:first_visit:{sessionId} NX
-  │      SADD   analytics:cohort:{day} {sessionId} (idempotent)
-  │      ... (EXPIRE paired with each write)
+  │      SET    analytics:first_visit:{sessionId} EX {35d} NX  (cohort TTL: 35 days)
+  │      SADD   analytics:cohort:{day} {sessionId} (idempotent, 35-day TTL)
+  │      ... (EXPIRE paired with each write, standard TTL: 32 days)
   │      pipeline.exec()          ← ~38 commands, 1 TCP roundtrip
+  │
+  │    page_leave branch (separate pipeline):
+  │      HINCRBY analytics:duration_hist:{day} {bucket}
+  │      INCRBY  analytics:duration_sum:{day} {seconds}
+  │      INCR    analytics:duration_count:{day}
+  │      HGET    analytics:session_pages:{day} {sessionId} → if '1' + duration<30s:
+  │        INCR  analytics:bounces:{day}  (two-step, not pipelined — not idempotent)
+  │
+  │    like branch:   INCR analytics:like:{day}
+  │    funnel branch: HINCRBY analytics:funnel:event:{day}, funnel:source:{day}, funnel:path:{day}
+  │
+  │    geo cache:     SET analytics:ip_country:{ip} {code} EX {30d}  (on geoip-lite resolve)
   │
   └──► bufferService.push({
          eventType, sessionId, userId, ipHash, country,
@@ -360,6 +376,11 @@ session-creation points (`login`, `register`, `changePassword`) pass this
 value. Useful for security auditing and understanding registration vs
 login patterns.
 
+**Redis TTL note:** Standard analytics keys use 32-day TTL (`TTL_DAYS = 32`).
+Cohort-related keys (`first_visit:{sessionId}`, `cohort:{day}`) use a
+separate 35-day TTL (`cohortTtl = 35 * 24 * 60 * 60`), providing a 3-day
+buffer for retention analysis that looks 30 days forward.
+
 **`ipHash` without salt:** Intentional. The hash serves two purposes:
 correlation (same IP across sessions and analytics events) and privacy
 (AnalyticsEvent stores only the hash, never raw IP). A salted hash would
@@ -461,10 +482,14 @@ migration. Single `createMany()` per day. The `getStats()` reconstruction
 loop already works with flat maps.
 
 **Uniques storage:** Stores per-day PFCOUNT integer (not HLL binary).
-Cross-day unique counts from DailySummary slightly overcount (~3% at
-boundary) because sessions spanning multiple days are counted in each.
-Acceptable for historical data; within the 28-day Redis window, true HLL
-union is used.
+Cross-day unique counts from DailySummary overcount sessions that span
+multiple days (each day counts the session independently). The overcount
+is proportional to the multi-day return rate within the PG window — for
+short PG ranges (~7 days) it is ~3-5%, for longer ranges (~60 days) it
+can reach 10-20% depending on user behavior. Within the 28-day Redis
+window, true HLL union is used (exact). This is an accepted trade-off;
+storing HLL binary (12 KB/day) for lossless merge is a future option if
+the approximation proves insufficient.
 
 **Duration histograms:** Stored as dimension rows (`duration_bucket/0_9`,
 `duration_bucket/10_29`, etc.). Mergeable across sources — add bucket
@@ -553,15 +578,28 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
 ```
 
 **Rollup flow:**
-1. Hourly `checkAndRollup()` checks yesterday and day-before-yesterday
-2. `rollupDay(day)` — idempotent with 3 layers of protection:
-   - PostgreSQL check: `findFirst({ where: { date, dimension: '_total_' } })`
-   - Redis NX lock: `SET analytics:rollup:last:{day} 1 EX 172800 NX`
-   - PostgreSQL unique constraint: catches race conditions
-3. `readDayFromRedis(day)` — extracted from `getStats()` per-day read loop
-   (same 22 Redis keys), returns a `DaySnapshot` struct
-4. Writes rows via `prisma.analyticsDailySummary.createMany()`
-5. Logs success/failure, stores `analytics:rollup:last_success` in Redis
+1. Hourly `checkAndRollup()` checks yesterday, day-before-yesterday, and
+   up to 7 days back on initial startup (covers multi-day outages)
+2. `rollupDay(day)` — idempotent with correct operation ordering:
+   - PostgreSQL check: `findFirst({ where: { date, dimension: '_total_' } })` — skip if exists
+   - `readDayFromRedis(day)` — extracted from `getStats()` per-day read loop
+     (same 22 Redis keys), returns a `DaySnapshot` struct
+   - Validate snapshot is non-zero (`pageviews > 0`) — skip if Redis was
+     down or keys expired (prevents writing all-zeros rows permanently)
+   - Write rows via `prisma.analyticsDailySummary.createMany()`
+   - **After successful write:** set Redis NX lock
+     `SET analytics:rollup:last:{day} 1 EX 172800 NX` (performance
+     optimization to skip future PG checks, not a correctness guard)
+   - PostgreSQL unique constraint `@@unique([date, dimension, dimensionValue])`
+     is the true idempotency guard — catches race conditions between instances
+3. Logs success/failure, stores `analytics:rollup:last_success` in Redis
+
+**Why NX lock is set AFTER the PG write:** If the process crashes between
+acquiring the lock and writing to PG, the lock blocks retries for 48 hours
+and the day's data is lost. Setting the lock after the write means a crash
+simply results in a redundant re-read on the next tick (caught by the PG
+unique constraint). The PG check (`findFirst`) is the primary idempotency
+guard; the NX lock is a fast-path optimization to avoid repeated PG queries.
 
 **Why separate service:** `AnalyticsService` is 1,154 lines with only
 `RedisService` injected. Rollup needs `PrismaService` and has its own
@@ -635,8 +673,12 @@ Events emitted **after** DB writes, **after** socket emissions, matching
 the existing socket emit ordering convention.
 
 **Implementation notes:**
-- All controllers except SearchController already have `@Req()` on mutating
-  endpoints. SearchController needs `@Req()` added.
+- Controllers with `@Req()` on mutating endpoints: ReviewsController,
+  CommentsController, ComplaintsController, UsersController, AuthController
+  (on changePassword only — login/register lack @Req()).
+  Controllers without `@Req()`: SearchController, CompaniesController,
+  FeedController, TrendingController. Of these, only SearchController
+  needs `@Req()` added (the others don't emit analytics events).
 - `ComplaintsService.vote()` returns `$transaction` directly (no
   post-transaction code). Must refactor to capture result, then track.
 - `ComplaintsService` currently injects only `PrismaService`. Must also
@@ -667,7 +709,7 @@ against the full dependency graph.
 | **Simple additive** | totalPageviews, totalBounces, likes, sales, byCountry, byDevice, byBrowser, byOs, byReferrer, byUtm*, byHour, byWeekday, byHourTz, topPages (raw), funnelEvents, funnelBySource, funnelByPath | `redis[k] + pg[k]` for each key |
 | **Weighted** | avgDurationSeconds | `(redisSum + pgSum) / (redisCount + pgCount)` |
 | **Histogram merge** | durationP50, durationP95 | Merge bucket counts from both sources, recompute percentiles from combined histogram |
-| **Approximate** | totalUniques, totalSessions | Redis portion uses cross-day HLL union (exact). PG portion sums per-day PFCOUNT snapshots. Accept ~3% boundary overcount |
+| **Approximate** | totalUniques, totalSessions | Redis portion uses cross-day HLL union (exact). PG portion sums per-day PFCOUNT snapshots. Overcount scales with multi-day return rate (3-20% depending on PG range length) |
 | **Derived** | bounceRate, funnel rates | Recompute from merged components (never merge two rates) |
 | **Concatenated** | timeSeries | `[...pgEntries, ...redisEntries]` sorted by date |
 | **Redis-only** | activeToday | Always live from Redis (today is always in the Redis window) |
@@ -1007,8 +1049,19 @@ server-side event tracking.
 - `src/complaints/complaints.service.ts` — refactor vote() to capture result; add analyticsCtx
 - `src/users/users.service.ts` — add analyticsCtx to follow/unfollow
 - `src/search/search.service.ts` — add analyticsCtx; SearchController add `@Req()`
+- `src/analytics/analytics.interceptor.spec.ts` — NEW (unit tests for context extraction)
+- `src/analytics/ip-utils.spec.ts` — NEW (unit tests for extracted IP utilities)
+- `src/auth/auth.service.spec.ts` — update createSession tests for SessionMetadata
+- `src/auth/auth.controller.spec.ts` — add mockReq to login/register tests for new @Req()
+- `src/reviews/reviews.service.spec.ts` — update create/vote/helpful tests for analyticsCtx param
+- `src/comments/comments.service.spec.ts` — update create/vote tests for analyticsCtx param
+- `src/complaints/complaints.service.spec.ts` — update vote() tests for refactored result capture + analyticsCtx
+- `src/users/users.service.spec.ts` — update follow/unfollow tests for analyticsCtx param
+- `src/search/search.service.spec.ts` — update search tests for analyticsCtx param
+- `src/analytics/analytics.service.spec.ts` — update for pipeline conversion + hybrid getStats() merge tests
 - `test/integration/analytics-buffer.spec.ts` — NEW
 - `test/integration/analytics-rollup.spec.ts` — NEW
+- `test/integration/analytics-hybrid-stats.spec.ts` — NEW (merge logic with real PG + Redis)
 
 ### Phase 3 — Admin Integration
 
@@ -1021,11 +1074,11 @@ server-side event tracking.
 - `src/admin/dto/sessions-query.dto.ts` — NEW
 - `src/admin/dto/sessions-export-query.dto.ts` — NEW
 - `src/admin/dto/rollup.dto.ts` — NEW
-- `src/admin/admin.service.spec.ts` — update mocks and assertions
-- `test/e2e/admin.e2e-spec.ts` — assert real device/country values
+- `src/admin/admin.service.spec.ts` — update mocks for new methods (getUserSessions, sessionsToCSV, getUserActivity, rollupAnalytics)
+- `test/e2e/admin.e2e-spec.ts` — assert real device/country values; test GET sessions, GET sessions/export, GET activity, POST rollup endpoints (guard, pagination, response shapes)
 
 **Admin frontend files (cryptoi-admin):**
-- `lib/admin-api.ts` — add AdminUserSession interface, fetchUserSessions function
+- `lib/admin-api.ts` — add AdminUserSession interface (with country field), fetchUserSessions function; add `country` and `registrationCountry` to AdminUserDetail.user intersection type
 - `app/dashboard/users/[id]/page.tsx` — add "View all sessions →" link
 - `app/dashboard/users/[id]/sessions/page.tsx` — NEW (session history table)
 - `app/dashboard/users/[id]/sessions/ExportSessionsButtons.tsx` — NEW (client component)
@@ -1063,6 +1116,18 @@ Phase 1 (schema) ─────────────────────
 All scheduling uses `setInterval` in `onModuleInit()`. Bot detection uses
 the already-installed `ua-parser-js/bot-detection` submodule. No
 `@nestjs/schedule` needed.
+
+### Phase Completion Criteria
+
+Each phase is complete when:
+
+1. All listed files are created/modified
+2. `npm run test:all` passes (unit + integration + e2e)
+3. `npm run test:cov` passes coverage thresholds
+4. `npx tsc --noEmit` passes (no type errors)
+5. `npm run lint` passes
+6. `specs/` directory is synced with implementation changes (via `/specs` skill)
+7. `AGENTS.md` is updated if new modules/services are added
 
 ---
 
