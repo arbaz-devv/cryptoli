@@ -77,7 +77,9 @@
 
 > **Learnings:** Added both model mocks with the full CRUD method set plus `createMany`, `deleteMany`, and `groupBy` — these are needed by AnalyticsBufferService (`createMany` for batch inserts), AnalyticsRollupService (`createMany` for rollup writes, `groupBy` for aggregation queries), and GDPR cleanup (`deleteMany`). The existing 19 models had varying method sets; the new analytics models follow the broadest pattern since they'll be used by multiple Phase 2 services. All 395 unit tests pass unchanged — the new mocks are additive only.
 
-- [ ] **1.8** Extend pipeline mock in `test/helpers/redis.mock.ts`: add chainable methods to the `pipeline()` return value — `incr`, `incrby`, `hincrby`, `pfadd`, `zadd`, `sadd`, `set`, `expire`, `zremrangebyscore`, `hset`, `hsetnx` — each returning `this` for chaining, plus a `commands` array for test assertions. Keep existing `exec` mock.
+- [x] **1.8** Extend pipeline mock in `test/helpers/redis.mock.ts`: add chainable methods to the `pipeline()` return value — `incr`, `incrby`, `hincrby`, `pfadd`, `zadd`, `sadd`, `set`, `expire`, `zremrangebyscore`, `hset`, `hsetnx` — each returning `this` for chaining, plus a `commands` array for test assertions. Keep existing `exec` mock.
+
+> **Learnings:** Changed `pipeline` from `mockReturnValue` to `mockImplementation` so each call returns a fresh pipe object with its own empty `commands` array — this prevents cross-test contamination. Each chainable method pushes `{ cmd, args }` to the `commands` array before returning `this`, allowing tests to assert both command ordering and arguments. The `exec` mock remains a `jest.fn().mockResolvedValue([])` on each pipe instance. All 514 existing tests (395 unit + 38 integration + 81 e2e) pass unchanged — no tests depended on the old minimal pipeline mock shape.
 
 - [ ] **1.9** Run `npm run test:all`, `npm run test:cov`, `npx tsc --noEmit`, `npm run lint` — all must pass.
 

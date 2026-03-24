@@ -13,8 +13,56 @@ export function createRedisMock(ready = false) {
     ttl: jest.fn(),
     keys: jest.fn().mockResolvedValue([]),
     mget: jest.fn().mockResolvedValue([]),
-    pipeline: jest.fn().mockReturnValue({
-      exec: jest.fn().mockResolvedValue([]),
+    pipeline: jest.fn().mockImplementation(() => {
+      const pipe = {
+        commands: [] as Array<{ cmd: string; args: unknown[] }>,
+        incr(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'incr', args });
+          return pipe;
+        },
+        incrby(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'incrby', args });
+          return pipe;
+        },
+        hincrby(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'hincrby', args });
+          return pipe;
+        },
+        pfadd(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'pfadd', args });
+          return pipe;
+        },
+        zadd(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'zadd', args });
+          return pipe;
+        },
+        sadd(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'sadd', args });
+          return pipe;
+        },
+        set(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'set', args });
+          return pipe;
+        },
+        expire(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'expire', args });
+          return pipe;
+        },
+        zremrangebyscore(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'zremrangebyscore', args });
+          return pipe;
+        },
+        hset(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'hset', args });
+          return pipe;
+        },
+        hsetnx(...args: unknown[]) {
+          pipe.commands.push({ cmd: 'hsetnx', args });
+          return pipe;
+        },
+        exec: jest.fn().mockResolvedValue([]),
+      };
+      return pipe;
     }),
     multi: jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue([]),
