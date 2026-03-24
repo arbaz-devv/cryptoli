@@ -1,6 +1,8 @@
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createRedisMock } from '../../test/helpers/redis.mock';
 
@@ -8,13 +10,22 @@ describe('UsersService', () => {
   let service: UsersService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let redisMock: ReturnType<typeof createRedisMock>;
+  let analyticsService: { track: jest.Mock };
+
+  const mockCtx: AnalyticsContext = {
+    ip: '1.2.3.4',
+    userAgent: 'TestAgent/1.0',
+    country: 'US',
+  };
 
   beforeEach(() => {
     prisma = createPrismaMock();
     redisMock = createRedisMock(false);
+    analyticsService = { track: jest.fn().mockResolvedValue(undefined) };
     service = new UsersService(
       prisma as unknown as PrismaService,
       redisMock as any,
+      analyticsService as unknown as AnalyticsService,
     );
   });
 
@@ -204,6 +215,66 @@ describe('UsersService', () => {
       const result = await service.getFollowStatusBulk('viewer1', ['user2']);
 
       expect(result.following.user2).toBe(true);
+    });
+  });
+
+  describe('analytics tracking', () => {
+    it('should track user_follow event after successful follow', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2' });
+      prisma.follow.create.mockResolvedValue({});
+
+      await service.followUser('u1', 'targetuser', mockCtx);
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        expect.objectContaining({
+          event: 'user_follow',
+          consent: true,
+          userId: 'u1',
+          properties: { targetUserId: 'u2', targetUsername: 'targetuser' },
+        }),
+      );
+    });
+
+    it('should track user_unfollow event after successful unfollow', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2' });
+      prisma.follow.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.unfollowUser('u1', 'targetuser', mockCtx);
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        expect.objectContaining({
+          event: 'user_unfollow',
+          consent: true,
+          userId: 'u1',
+          properties: { targetUserId: 'u2', targetUsername: 'targetuser' },
+        }),
+      );
+    });
+
+    it('should not track when analyticsCtx is absent', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2' });
+      prisma.follow.create.mockResolvedValue({});
+
+      await service.followUser('u1', 'targetuser');
+
+      expect(analyticsService.track).not.toHaveBeenCalled();
+    });
+
+    it('should not track when analyticsService is not injected', async () => {
+      const serviceNoAnalytics = new UsersService(
+        prisma as unknown as PrismaService,
+        redisMock as any,
+      );
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2' });
+      prisma.follow.create.mockResolvedValue({});
+
+      await serviceNoAnalytics.followUser('u1', 'targetuser', mockCtx);
+
+      expect(analyticsService.track).not.toHaveBeenCalled();
     });
   });
 });

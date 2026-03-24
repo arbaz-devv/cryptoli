@@ -63,7 +63,11 @@ export class UsersController {
     @Param('username') username: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.usersService.followUser(req.user.id, username);
+    return this.usersService.followUser(
+      req.user.id,
+      username,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Delete(':username/follow')
@@ -72,7 +76,11 @@ export class UsersController {
     @Param('username') username: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.usersService.unfollowUser(req.user.id, username);
+    return this.usersService.unfollowUser(
+      req.user.id,
+      username,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Get(':username/followers')
