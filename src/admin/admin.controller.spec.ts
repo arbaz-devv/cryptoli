@@ -11,6 +11,10 @@ describe('AdminController', () => {
       getStats: jest.fn().mockResolvedValue({ totalUsers: 1 }),
       getUsers: jest.fn().mockResolvedValue({ users: [], pagination: {} }),
       getUserDetail: jest.fn().mockResolvedValue({ user: {} }),
+      updateUserStatus: jest.fn().mockResolvedValue({ ok: true }),
+      getComplaints: jest.fn().mockResolvedValue({ complaints: [], pagination: {} }),
+      getComplaint: jest.fn().mockResolvedValue({ id: 'c1' }),
+      updateComplaintStatus: jest.fn().mockResolvedValue({ ok: true }),
       getReviews: jest.fn().mockResolvedValue({ reviews: [], pagination: {} }),
       getReview: jest.fn().mockResolvedValue({ id: 'r1' }),
       updateReviewStatus: jest.fn().mockResolvedValue({ ok: true }),
@@ -49,6 +53,7 @@ describe('AdminController', () => {
         q: 'alice',
         dateFrom: '2026-01-01',
         dateTo: '2026-01-31',
+        status: 'suspended',
       } as any);
 
       expect(mockAdminService.getUsers).toHaveBeenCalledWith(
@@ -56,6 +61,7 @@ describe('AdminController', () => {
           q: 'alice',
           dateFrom: '2026-01-01',
           dateTo: '2026-01-31',
+          status: 'suspended',
         }),
       );
     });
@@ -70,6 +76,57 @@ describe('AdminController', () => {
     it('should default lazy to false', async () => {
       await controller.userDetail('u1', {} as any);
       expect(mockAdminService.getUserDetail).toHaveBeenCalledWith('u1', false);
+    });
+  });
+
+  describe('updateUserStatus()', () => {
+    it('should delegate to admin.updateUserStatus()', async () => {
+      await controller.updateUserStatus(
+        'u1',
+        { status: 'suspended', reason: 'spam' } as any,
+      );
+      expect(mockAdminService.updateUserStatus).toHaveBeenCalledWith(
+        'u1',
+        'suspended',
+        'spam',
+      );
+    });
+  });
+
+  describe('complaints()', () => {
+    it('should clamp pagination and pass filters', async () => {
+      await controller.complaints({
+        page: 0,
+        limit: 500,
+        status: 'open',
+        q: 'funds',
+      } as any);
+
+      expect(mockAdminService.getComplaints).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page: 1,
+          limit: 100,
+          status: 'open',
+          q: 'funds',
+        }),
+      );
+    });
+  });
+
+  describe('getComplaint()', () => {
+    it('should delegate to admin.getComplaint()', async () => {
+      await controller.getComplaint('c1');
+      expect(mockAdminService.getComplaint).toHaveBeenCalledWith('c1');
+    });
+  });
+
+  describe('updateComplaintStatus()', () => {
+    it('should delegate to admin.updateComplaintStatus()', async () => {
+      await controller.updateComplaintStatus('c1', { status: 'resolved' } as any);
+      expect(mockAdminService.updateComplaintStatus).toHaveBeenCalledWith(
+        'c1',
+        'resolved',
+      );
     });
   });
 

@@ -47,6 +47,7 @@ describe('AdminService', () => {
           avatar: null,
           role: 'USER',
           createdAt: new Date('2026-01-15'),
+          moderation: null,
           _count: { reviews: 3 },
         },
       ]);
@@ -88,6 +89,16 @@ describe('AdminService', () => {
       expect(findCall.where.createdAt.gte).toEqual(new Date('2026-01-01'));
     });
 
+    it('should apply suspended status filter', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
+
+      await service.getUsers({ page: 1, limit: 10, status: 'suspended' });
+
+      const findCall = prisma.user.findMany.mock.calls[0][0];
+      expect(findCall.where.moderation).toEqual({ status: 'SUSPENDED' });
+    });
+
     it('should normalize pagination (clamp limit to 100)', async () => {
       prisma.user.findMany.mockResolvedValue([]);
       prisma.user.count.mockResolvedValue(0);
@@ -112,6 +123,7 @@ describe('AdminService', () => {
         reputation: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
+        moderation: null,
         _count: { reviews: 0 },
       });
 
@@ -142,6 +154,7 @@ describe('AdminService', () => {
         reputation: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
+        moderation: null,
         _count: { reviews: 0 },
       });
 
@@ -166,6 +179,7 @@ describe('AdminService', () => {
         reputation: 0,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-15'),
+        moderation: null,
         _count: { reviews: 1 },
       });
       prisma.comment.count.mockResolvedValue(5);
@@ -184,6 +198,67 @@ describe('AdminService', () => {
       expect(result.metrics!.commentsCount).toBe(5);
       expect(result.metrics!.votesCount).toBe(6); // 3+2+1
       expect(result.activitySeries).toHaveLength(7);
+    });
+  });
+
+  describe('getComplaints()', () => {
+    it('should return paginated complaints', async () => {
+      prisma.complaint.findMany.mockResolvedValue([
+        {
+          id: 'c1',
+          title: 'Missing funds',
+          content: 'Details',
+          author: { id: 'u1', username: 'alice', name: 'Alice', email: 'a@b.com' },
+          company: null,
+          product: { id: 'p1', name: 'WalletX' },
+          productId: 'p1',
+          companyId: null,
+          reportCount: 4,
+          status: 'OPEN',
+          createdAt: new Date('2026-03-01'),
+          updatedAt: new Date('2026-03-02'),
+        },
+      ]);
+      prisma.complaint.count.mockResolvedValue(1);
+
+      const result = await service.getComplaints({ page: 1, limit: 10 });
+
+      expect(result.complaints).toHaveLength(1);
+      expect((result.complaints[0] as any).subject).toBe('Missing funds');
+      expect((result.complaints[0] as any).priority).toBe('medium');
+      expect(result.pagination.total).toBe(1);
+    });
+  });
+
+  describe('updateComplaintStatus()', () => {
+    it('should update complaint status', async () => {
+      prisma.complaint.findUnique.mockResolvedValue({ id: 'c1', status: 'OPEN' });
+      prisma.complaint.update.mockResolvedValue({ id: 'c1', status: 'RESOLVED' });
+
+      const result = await service.updateComplaintStatus('c1', 'resolved');
+
+      expect(prisma.complaint.update).toHaveBeenCalledWith({
+        where: { id: 'c1' },
+        data: { status: 'RESOLVED' },
+      });
+      expect(result.complaint.status).toBe('resolved');
+    });
+  });
+
+  describe('updateUserStatus()', () => {
+    it('should upsert moderation status', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.userModeration.upsert.mockResolvedValue({
+        status: 'SUSPENDED',
+        reason: 'spam',
+        updatedAt: new Date('2026-03-20T00:00:00.000Z'),
+      });
+
+      const result = await service.updateUserStatus('u1', 'suspended', 'spam');
+
+      expect(prisma.userModeration.upsert).toHaveBeenCalled();
+      expect(result.user.status).toBe('suspended');
+      expect(result.user.moderationReason).toBe('spam');
     });
   });
 

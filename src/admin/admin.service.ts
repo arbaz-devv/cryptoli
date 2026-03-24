@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ComplaintStatus,
+  Prisma,
+  ReviewStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReviewStatus } from '@prisma/client';
-import type { Prisma } from '@prisma/client';
 
 /**
  * Backend in-memory caches (admin APIs)
@@ -53,7 +56,24 @@ const usersListCache = new Map<
   }
 >();
 
-const RATINGS_LIST_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+const COMPLAINTS_LIST_CACHE_TTL_MS = 30 * 1000;
+const complaintsListCache = new Map<
+  string,
+  {
+    data: {
+      complaints: unknown[];
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
+    };
+    expiry: number;
+  }
+>();
+
+const RATINGS_LIST_CACHE_TTL_MS = 30 * 1000;
 const ratingsListCache = new Map<
   string,
   {
@@ -100,6 +120,63 @@ export class AdminService {
     return d;
   }
 
+  private clearAdminCaches() {
+    statsCache = null;
+    usersListCache.clear();
+    complaintsListCache.clear();
+  }
+
+  private mapUserStatus(status?: string | null) {
+    return status === 'SUSPENDED' ? 'suspended' : 'active';
+  }
+
+  private mapComplaintStatus(status: ComplaintStatus) {
+    switch (status) {
+      case ComplaintStatus.OPEN:
+        return 'open';
+      case ComplaintStatus.IN_PROGRESS:
+        return 'in_progress';
+      case ComplaintStatus.RESOLVED:
+        return 'resolved';
+      case ComplaintStatus.CLOSED:
+        return 'dismissed';
+      default:
+        return 'open';
+    }
+  }
+
+  private parseComplaintStatus(status?: string): ComplaintStatus | undefined {
+    if (!status) return undefined;
+    const normalized = status.trim().toLowerCase();
+    switch (normalized) {
+      case 'open':
+        return ComplaintStatus.OPEN;
+      case 'in_progress':
+        return ComplaintStatus.IN_PROGRESS;
+      case 'resolved':
+        return ComplaintStatus.RESOLVED;
+      case 'dismissed':
+        return ComplaintStatus.CLOSED;
+      default:
+        return undefined;
+    }
+  }
+
+  private mapComplaintPriority(reportCount: number) {
+    if (reportCount >= 10) return 'high' as const;
+    if (reportCount >= 3) return 'medium' as const;
+    return 'low' as const;
+  }
+
+  private mapComplaintRelatedTo(complaint: {
+    productId?: string | null;
+    companyId?: string | null;
+  }) {
+    if (complaint.productId) return 'product';
+    if (complaint.companyId) return 'company';
+    return 'general';
+  }
+
   async getStats() {
     const now = Date.now();
     if (statsCache && statsCache.expiry > now) return statsCache.data;
@@ -117,9 +194,9 @@ export class AdminService {
       openComplaints,
     ] = await Promise.all([
       this.prisma.user.count(),
-      this.prisma.$queryRaw<[{ count: bigint }]>`
-        SELECT COUNT(DISTINCT "userId") as count FROM "Session" WHERE "createdAt" >= ${startOfToday}
-      `.then((rows) => Number(rows[0]?.count ?? 0)),
+      this.prisma.$queryRaw<[{ count: bigint }]>(
+        Prisma.sql`SELECT COUNT(DISTINCT "userId") as count FROM "Session" WHERE "createdAt" >= ${startOfToday}`,
+      ).then((rows) => Number(rows[0]?.count ?? 0)),
       this.prisma.review.count({ where: { status: 'PENDING' } }),
       this.prisma.review.count({ where: { status: 'FLAGGED' } }),
       this.prisma.review.count(),
@@ -150,6 +227,7 @@ export class AdminService {
     q?: string;
     dateFrom?: string;
     dateTo?: string;
+    status?: string;
   }) {
     const { page: p, limit: l } = this.normalizePagination(
       params.page,
@@ -161,6 +239,7 @@ export class AdminService {
       q: params.q ?? null,
       dateFrom: params.dateFrom ?? null,
       dateTo: params.dateTo ?? null,
+      status: params.status ?? null,
     });
     const now = Date.now();
     const hit = usersListCache.get(cacheKey);
@@ -178,6 +257,7 @@ export class AdminService {
         name?: { contains: string; mode: 'insensitive' };
         username?: { contains: string; mode: 'insensitive' };
       }>;
+      moderation?: { status: 'SUSPENDED' } | { is: null };
     } = {};
     const createdAtRange = this.buildCreatedAtRange(
       params.dateFrom,
@@ -192,6 +272,12 @@ export class AdminService {
         { username: { contains: q, mode: 'insensitive' } },
       ];
     }
+    if (params.status === 'suspended') {
+      where.moderation = { status: 'SUSPENDED' };
+    } else if (params.status === 'active') {
+      where.moderation = { is: null };
+    }
+
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -206,6 +292,11 @@ export class AdminService {
           avatar: true,
           role: true,
           createdAt: true,
+          moderation: {
+            select: {
+              status: true,
+            },
+          },
           _count: { select: { reviews: true } },
         },
       }),
@@ -217,7 +308,7 @@ export class AdminService {
       name: u.name ?? u.username,
       username: u.username,
       role: u.role.toLowerCase(),
-      status: 'active' as const,
+      status: this.mapUserStatus(u.moderation?.status),
       joinedAt: u.createdAt.toISOString().slice(0, 10),
       reviewCount: u._count.reviews,
       lastActive: '-',
@@ -256,6 +347,15 @@ export class AdminService {
         reputation: true,
         createdAt: true,
         updatedAt: true,
+        moderation: {
+          select: {
+            status: true,
+            reason: true,
+            suspendedAt: true,
+            restoredAt: true,
+            updatedAt: true,
+          },
+        },
         _count: { select: { reviews: true } },
       },
     });
@@ -277,11 +377,13 @@ export class AdminService {
           username: user.username,
           name: user.name ?? user.username,
           role: user.role.toLowerCase(),
-          status: 'active',
+          status: this.mapUserStatus(user.moderation?.status),
           joinedAt: user.createdAt.toISOString().slice(0, 10),
           reviewCount: user._count.reviews,
           lastActive: user.updatedAt.toISOString().slice(0, 10),
           lastLoginAt: undefined,
+          moderationReason: user.moderation?.reason ?? undefined,
+          moderatedAt: user.moderation?.updatedAt?.toISOString(),
         },
         metrics: null,
         activitySeries: [],
@@ -385,7 +487,7 @@ export class AdminService {
         username: user.username,
         name: user.name ?? user.username,
         role: user.role.toLowerCase(),
-        status: 'active',
+        status: this.mapUserStatus(user.moderation?.status),
         joinedAt: user.createdAt.toISOString().slice(0, 10),
         reviewCount: user._count.reviews,
         lastActive: lastActivityDate.toISOString().slice(0, 10),
@@ -397,6 +499,8 @@ export class AdminService {
                 )[0]
                 .createdAt.toISOString()
             : undefined,
+        moderationReason: user.moderation?.reason ?? undefined,
+        moderatedAt: user.moderation?.updatedAt?.toISOString(),
       },
       metrics: {
         commentsCount,
@@ -421,13 +525,9 @@ export class AdminService {
       complaints: complaints.map((c) => ({
         id: c.id,
         subject: c.title,
-        relatedTo: c.product ? 'product' : c.company ? 'company' : 'general',
-        priority:
-          c.reportCount >= 10 ? 'high' : c.reportCount >= 3 ? 'medium' : 'low',
-        status:
-          c.status.toLowerCase() === 'closed'
-            ? 'dismissed'
-            : c.status.toLowerCase(),
+        relatedTo: this.mapComplaintRelatedTo(c),
+        priority: this.mapComplaintPriority(c.reportCount),
+        status: this.mapComplaintStatus(c.status),
         createdAt: c.createdAt.toISOString(),
       })),
       discussions: posts.map((p) => ({
@@ -439,6 +539,222 @@ export class AdminService {
         createdAt: p.createdAt.toISOString(),
       })),
       feedbacks: [],
+    };
+  }
+
+  async getComplaints(params: {
+    page: number;
+    limit: number;
+    q?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+  }) {
+    const { page: p, limit: l } = this.normalizePagination(
+      params.page,
+      params.limit,
+    );
+    const cacheKey = JSON.stringify({
+      page: p,
+      limit: l,
+      q: params.q ?? null,
+      dateFrom: params.dateFrom ?? null,
+      dateTo: params.dateTo ?? null,
+      status: params.status ?? null,
+    });
+    const now = Date.now();
+    const hit = complaintsListCache.get(cacheKey);
+    if (hit && hit.expiry > now) {
+      return {
+        complaints: [...hit.data.complaints],
+        pagination: { ...hit.data.pagination },
+      };
+    }
+
+    const where: Prisma.ComplaintWhereInput = {};
+    const createdAtRange = this.buildCreatedAtRange(
+      params.dateFrom,
+      params.dateTo,
+    );
+    if (createdAtRange) where.createdAt = createdAtRange;
+
+    const complaintStatus = this.parseComplaintStatus(params.status);
+    if (params.status && complaintStatus) {
+      where.status = complaintStatus;
+    }
+
+    if (params.q?.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { content: { contains: q, mode: 'insensitive' } },
+        { author: { name: { contains: q, mode: 'insensitive' } } },
+        { author: { username: { contains: q, mode: 'insensitive' } } },
+        { company: { name: { contains: q, mode: 'insensitive' } } },
+        { product: { name: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [complaints, total] = await Promise.all([
+      this.prisma.complaint.findMany({
+        where,
+        skip: (p - 1) * l,
+        take: l,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          author: { select: { id: true, username: true, name: true, email: true } },
+          company: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.complaint.count({ where }),
+    ]);
+
+    const result = {
+      complaints: complaints.map((complaint) => ({
+        id: complaint.id,
+        subject: complaint.title,
+        description: complaint.content,
+        submittedBy:
+          complaint.author?.name ?? complaint.author?.username ?? 'Unknown',
+        submittedByEmail: complaint.author?.email ?? '-',
+        relatedTo: this.mapComplaintRelatedTo(complaint),
+        relatedId: complaint.productId ?? complaint.companyId ?? undefined,
+        priority: this.mapComplaintPriority(complaint.reportCount),
+        status: this.mapComplaintStatus(complaint.status),
+        createdAt: complaint.createdAt.toISOString(),
+        updatedAt: complaint.updatedAt.toISOString(),
+      })),
+      pagination: {
+        page: p,
+        limit: l,
+        total,
+        totalPages: Math.ceil(total / l),
+      },
+    };
+
+    complaintsListCache.set(cacheKey, {
+      data: result,
+      expiry: now + COMPLAINTS_LIST_CACHE_TTL_MS,
+    });
+    for (const key of complaintsListCache.keys()) {
+      const e = complaintsListCache.get(key);
+      if (e && e.expiry <= Date.now()) complaintsListCache.delete(key);
+    }
+    return result;
+  }
+
+  async getComplaint(id: string) {
+    const complaint = await this.prisma.complaint.findUnique({
+      where: { id },
+      include: {
+        author: {
+          select: { id: true, username: true, name: true, email: true },
+        },
+        company: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true } },
+        replies: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            company: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!complaint) throw new NotFoundException('Complaint not found');
+
+    return {
+      id: complaint.id,
+      subject: complaint.title,
+      description: complaint.content,
+      submittedBy:
+        complaint.author?.name ?? complaint.author?.username ?? 'Unknown',
+      submittedByEmail: complaint.author?.email ?? '-',
+      relatedTo: this.mapComplaintRelatedTo(complaint),
+      relatedId: complaint.productId ?? complaint.companyId ?? undefined,
+      priority: this.mapComplaintPriority(complaint.reportCount),
+      status: this.mapComplaintStatus(complaint.status),
+      createdAt: complaint.createdAt.toISOString(),
+      updatedAt: complaint.updatedAt.toISOString(),
+      adminNotes: null,
+      replies: complaint.replies.map((reply) => ({
+        id: reply.id,
+        content: reply.content,
+        createdAt: reply.createdAt.toISOString(),
+        companyId: reply.companyId,
+        companyName: reply.company?.name ?? 'Unknown',
+      })),
+    };
+  }
+
+  async updateComplaintStatus(id: string, status: string) {
+    const mappedStatus = this.parseComplaintStatus(status);
+    if (!mappedStatus) {
+      throw new NotFoundException('Invalid complaint status');
+    }
+
+    const existing = await this.prisma.complaint.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Complaint not found');
+
+    const complaint = await this.prisma.complaint.update({
+      where: { id },
+      data: { status: mappedStatus },
+    });
+
+    this.clearAdminCaches();
+
+    return {
+      ok: true,
+      complaint: {
+        id: complaint.id,
+        status: this.mapComplaintStatus(complaint.status),
+      },
+    };
+  }
+
+  async updateUserStatus(id: string, status: string, reason?: string) {
+    const normalized = status.trim().toLowerCase();
+    if (normalized !== 'active' && normalized !== 'suspended') {
+      throw new NotFoundException('Invalid user status');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const moderation = await this.prisma.userModeration.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        status:
+          normalized === 'suspended'
+            ? 'SUSPENDED'
+            : 'ACTIVE',
+        reason: reason?.trim() || null,
+        suspendedAt: normalized === 'suspended' ? new Date() : null,
+        restoredAt: normalized === 'active' ? new Date() : null,
+      },
+      update: {
+        status:
+          normalized === 'suspended'
+            ? 'SUSPENDED'
+            : 'ACTIVE',
+        reason: reason?.trim() || null,
+        suspendedAt:
+          normalized === 'suspended' ? new Date() : undefined,
+        restoredAt: normalized === 'active' ? new Date() : undefined,
+      },
+    });
+
+    this.clearAdminCaches();
+
+    return {
+      ok: true,
+      user: {
+        id,
+        status: this.mapUserStatus(moderation.status),
+        moderationReason: moderation.reason,
+        moderatedAt: moderation.updatedAt.toISOString(),
+      },
     };
   }
 

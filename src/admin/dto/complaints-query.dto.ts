@@ -2,15 +2,15 @@ import { IsOptional, IsString, IsDateString, MaxLength } from 'class-validator';
 import { PageLimitDto } from './page-limit.dto';
 import { IsDateRangeValid } from './date-range.validator';
 
-export class UsersQueryDto extends PageLimitDto {
-  @IsOptional()
-  @IsString({ message: 'status must be a string' })
-  status?: string;
-
+export class ComplaintsQueryDto extends PageLimitDto {
   @IsOptional()
   @IsString({ message: 'q must be a string' })
   @MaxLength(200, { message: 'q must not exceed 200 characters' })
   q?: string;
+
+  @IsOptional()
+  @IsString({ message: 'status must be a string' })
+  status?: string;
 
   @IsOptional()
   @IsDateString(

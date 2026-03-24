@@ -5,3 +5,6 @@ export * from './admin-login.dto';
 export * from './admin-lazy-query.dto';
 export * from './reviews-query.dto';
 export * from './users-query.dto';
+export * from './complaints-query.dto';
+export * from './update-complaint-status.dto';
+export * from './update-user-status.dto';

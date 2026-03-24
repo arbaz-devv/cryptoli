@@ -11,8 +11,11 @@ import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import {
   AdminLazyQueryDto,
+  ComplaintsQueryDto,
   PageLimitDto,
+  UpdateComplaintStatusDto,
   UpdateReviewStatusDto,
+  UpdateUserStatusDto,
   ReviewsQueryDto,
   UsersQueryDto,
 } from './dto';
@@ -37,12 +40,48 @@ export class AdminController {
       q: query.q,
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
+      status: query.status,
     });
   }
 
   @Get('users/:id')
   async userDetail(@Param('id') id: string, @Query() query: AdminLazyQueryDto) {
     return this.admin.getUserDetail(id, query.lazy ?? false);
+  }
+
+  @Patch('users/:id/status')
+  async updateUserStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserStatusDto,
+  ) {
+    return this.admin.updateUserStatus(id, dto.status, dto.reason);
+  }
+
+  @Get('complaints')
+  async complaints(@Query() query: ComplaintsQueryDto) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    return this.admin.getComplaints({
+      page,
+      limit,
+      q: query.q,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      status: query.status,
+    });
+  }
+
+  @Get('complaints/:id')
+  async getComplaint(@Param('id') id: string) {
+    return this.admin.getComplaint(id);
+  }
+
+  @Patch('complaints/:id')
+  async updateComplaintStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateComplaintStatusDto,
+  ) {
+    return this.admin.updateComplaintStatus(id, dto.status);
   }
 
   @Get('reviews')
