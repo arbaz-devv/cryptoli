@@ -992,7 +992,8 @@ the `as` cast on `parser.getResult()`.
 | **Drop ipwho.is** | 0 | Remove external API fallback. Use geoip-lite only |
 | **Bot filtering** | 0 | Add `isBot()` check to `track()` to exclude crawler traffic |
 | **IP storage** | 1 | Store `ipHash` (SHA-256) in analytics_events, never raw IP. Session stores raw IP for admin visibility (disclosed in privacy policy) |
-| **User deletion** | 2 | Add deletion handler: SET userId = NULL in analytics_events for deleted users |
+| **User deletion** | 2 | Add deletion handler: `anonymizeUserAnalytics(userId)` — SET userId = NULL in analytics_events for deleted users |
+| **90-day retention anonymization** | 2 | Add scheduled handler: `anonymizeExpiredUsers()` — daily job on `AnalyticsService` that SET userId = NULL on `analytics_events` rows older than 90 days. Uses `$executeRaw` with `synchronous_commit = off`. Single UPDATE for steady-state (≤200K rows); day-based batching for initial backfill. Two-key Redis guard: `analytics:anonymize:running` (EX 7200 NX, before work, prevents concurrent runs) + `analytics:anonymize:ran:{today}` (EX 86400, after completion, prevents redundant daily runs). try/finally on running lock DEL. Both GDPR methods live on AnalyticsService (PrismaService already injected for hybrid getStats). No startup backfill needed — the WHERE clause is self-correcting |
 | **Server-side logging disclosure** | 4 | Separate section in privacy page — legitimate interest, not analytics consent |
 | **Consent versioning** | 4 | Version cookie to `analytics_consent_v2` to re-prompt for expanded tracking |
 
