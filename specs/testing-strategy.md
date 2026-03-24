@@ -87,7 +87,6 @@ nock                          — HTTP interception (blocks outbound requests)
 |--------|------|---------------|
 | PrismaClient auto-loads `.env` | **CRITICAL** — writes to real DB | `@prisma/client` reads `.env` from project root at construction time, even in tests |
 | `process.env.REDIS_URL` from `.env` | **HIGH** — writes to real Redis | `redis.service.ts` reads directly from `process.env`, not ConfigService |
-| `fetch('https://ipwho.is/...')` | **MEDIUM** — outbound HTTP | `analytics.service.ts:363` calls external API for IP geolocation |
 | `webPush.sendNotification()` | **LOW** — sends real push | Only fires when `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` are in env |
 | `import 'dotenv/config'` in `main.ts` | **LOW in tests** — only imported in production bootstrap | `main.ts` is not imported by test modules, but caution required |
 
