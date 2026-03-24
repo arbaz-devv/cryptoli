@@ -91,7 +91,9 @@
 
 ### 2A: Shared Utilities
 
-- [ ] **2.1** Create `src/analytics/ip-utils.ts`: extract `normalizeIp` (controller line 25, service line 291) and `isPrivateOrLocalIp` (controller line 42, service line 312) from both files into a shared module. Also extract `getClientIp`, `getCountryHint`, `pickBestIp`, `parseForwardedHeader`, `firstHeader` from the controller's IP-handling code.
+- [x] **2.1** Create `src/analytics/ip-utils.ts`: extract `normalizeIp` (controller line 25, service line 291) and `isPrivateOrLocalIp` (controller line 42, service line 312) from both files into a shared module. Also extract `getClientIp`, `getCountryHint`, `pickBestIp`, `parseForwardedHeader`, `firstHeader` from the controller's IP-handling code.
+
+> **Learnings:** The controller and service had slightly different `normalizeIp` implementations — the controller version handles `::ffff:` stripping in the bracketed IPv6 case while the service version does not. Used the controller's more thorough version as canonical. The `isPrivateOrLocalIp` implementations were functionally identical (minor style difference in the empty-ip check). All 7 functions exported: `firstHeader`, `normalizeIp`, `isPrivateOrLocalIp`, `pickBestIp`, `parseForwardedHeader`, `getClientIp`, `getCountryHint`. File is additive-only — consumers updated in items 2.3 and 2.4. All 395 unit tests pass unchanged.
 
 - [ ] **2.2** Create `src/common/ua.ts`: extract `getDeviceAndBrowser()` from `src/analytics/analytics.service.ts` into a shared utility (needed by both AnalyticsService and AuthService in Phase 2).
 
