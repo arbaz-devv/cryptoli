@@ -55,7 +55,11 @@ export class ComplaintsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.complaintsService.create(body, req.user.id);
+    return this.complaintsService.create(
+      body,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Get(':id')
@@ -74,7 +78,12 @@ export class ComplaintsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.complaintsService.vote(id, body.voteType, req.user.id);
+    return this.complaintsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Post(':id/reply')

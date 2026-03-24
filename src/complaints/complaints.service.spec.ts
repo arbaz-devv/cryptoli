@@ -3,14 +3,28 @@ import { ComplaintsService } from './complaints.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 describe('ComplaintsService', () => {
   let service: ComplaintsService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let analyticsMock: { track: jest.Mock };
+
+  const mockCtx: AnalyticsContext = {
+    ip: '1.2.3.4',
+    userAgent: 'TestAgent/1.0',
+    country: 'US',
+  };
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new ComplaintsService(prisma as unknown as PrismaService);
+    analyticsMock = {
+      track: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new ComplaintsService(
+      prisma as unknown as PrismaService,
+      analyticsMock as any,
+    );
   });
 
   describe('vote()', () => {
@@ -277,6 +291,108 @@ describe('ComplaintsService', () => {
       await service.reply('c1', 'text');
 
       expect(prisma.complaint.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('analytics tracking', () => {
+    it('should track complaint_created with context', async () => {
+      prisma.complaint.create.mockResolvedValue({
+        id: 'c1',
+        title: 'Test',
+        content: 'Content',
+        status: 'OPEN',
+        authorId: 'u1',
+      });
+
+      await service.create(
+        { title: 'Test', content: 'Content' },
+        'u1',
+        mockCtx,
+      );
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        {
+          event: 'complaint_created',
+          consent: true,
+          userId: 'u1',
+          properties: {
+            complaintId: 'c1',
+            companyId: undefined,
+            productId: undefined,
+          },
+        },
+        'US',
+      );
+    });
+
+    it('should track vote_cast after transaction completes', async () => {
+      const txMock = {
+        complaint: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
+          update: jest.fn(),
+        },
+        complaintVote: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+          count: jest.fn(),
+        },
+      };
+      txMock.complaintVote.count
+        .mockResolvedValueOnce(1) // UP
+        .mockResolvedValueOnce(0); // DOWN
+
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
+
+      await service.vote('c1', 'UP', 'u1', mockCtx);
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId: 'u1',
+          properties: { complaintId: 'c1', voteType: 'UP' },
+        },
+        'US',
+      );
+    });
+
+    it('should not track when analyticsCtx is absent', async () => {
+      prisma.complaint.create.mockResolvedValue({
+        id: 'c1',
+        title: 'Test',
+        content: 'Content',
+        status: 'OPEN',
+        authorId: 'u1',
+      });
+
+      await service.create({ title: 'Test', content: 'Content' }, 'u1');
+
+      expect(analyticsMock.track).not.toHaveBeenCalled();
+    });
+
+    it('should not track when analyticsService is undefined', async () => {
+      const serviceNoAnalytics = new ComplaintsService(
+        prisma as unknown as PrismaService,
+      );
+      prisma.complaint.create.mockResolvedValue({
+        id: 'c1',
+        title: 'Test',
+        content: 'Content',
+        status: 'OPEN',
+        authorId: 'u1',
+      });
+
+      await serviceNoAnalytics.create(
+        { title: 'Test', content: 'Content' },
+        'u1',
+        mockCtx,
+      );
+
+      expect(analyticsMock.track).not.toHaveBeenCalled();
     });
   });
 });
