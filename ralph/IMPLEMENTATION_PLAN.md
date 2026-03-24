@@ -165,11 +165,17 @@
 
 ### 2F: AnalyticsRollupService
 
-- [ ] **2.17** Create `src/analytics/analytics-rollup.service.ts` (~215 lines): `readDayFromRedis(day)` extracts per-day read from existing `getStats()` loop (same 22 Redis keys, returns `DaySnapshot`). `rollupDay(day)` is idempotent — PG check first, read Redis, validate non-zero, `createMany()`, then NX lock. `checkAndRollup()` runs hourly via `setInterval`, checks yesterday + day-before-yesterday. On startup, backfills up to 7 days. See ANALYTICS.md "AnalyticsRollupService" for full flow and idempotency ordering.
+- [x] **2.17** Create `src/analytics/analytics-rollup.service.ts` (~215 lines): `readDayFromRedis(day)` extracts per-day read from existing `getStats()` loop (same 22 Redis keys, returns `DaySnapshot`). `rollupDay(day)` is idempotent — PG check first, read Redis, validate non-zero, `createMany()`, then NX lock. `checkAndRollup()` runs hourly via `setInterval`, checks yesterday + day-before-yesterday. On startup, backfills up to 7 days. See ANALYTICS.md "AnalyticsRollupService" for full flow and idempotency ordering.
 
-- [ ] **2.18** Create `src/analytics/analytics-rollup.service.spec.ts`: unit tests for rollup logic, idempotency (PG unique constraint catch), skip-on-zero-pageviews, NX lock timing (set after PG write, not before).
+> **Learnings:** The service reads 23 Redis keys per day (the spec says 22 — the extra is `hll:sessions:{day}` PFCOUNT needed for `sessions_approx` in the DailySummary). `readDayFromRedis()` uses a single `Promise.all` for all keys. `rollupDay()` checks NX lock first (fast-path), then PG `findFirst` (primary idempotency), then validates `pageviews > 0`, then `createMany` with `skipDuplicates: true` as belt-and-suspenders with the unique constraint. The P2002 unique constraint error is caught and treated as a concurrent-rollup success. Zero-value entries are omitted from rows to avoid polluting the summary table. The `DaySnapshot` interface and `snapshotToRows()` converter are co-located in the service file (~280 lines total, slightly over the ~215 estimate).
 
-- [ ] **2.19** Create `test/integration/analytics-rollup.spec.ts`: integration test with real PG + Redis verifying end-to-end rollup flow.
+- [x] **2.18** Create `src/analytics/analytics-rollup.service.spec.ts`: unit tests for rollup logic, idempotency (PG unique constraint catch), skip-on-zero-pageviews, NX lock timing (set after PG write, not before).
+
+> **Learnings:** 18 unit tests covering: readDayFromRedis (Redis not ready, full parse, null values), rollupDay (NX lock skip, PG exists skip, zero pageviews skip, successful write + NX lock, NX-after-PG ordering, P2002 graceful handling, non-P2002 rethrow, correct EAV rows, zero-value omission), checkAndRollup (7-day backfill on first run, 2-day on subsequent, last_success recording, error continuity), lifecycle (timer scheduling/cleanup). All 490 unit tests pass.
+
+- [x] **2.19** Create `test/integration/analytics-rollup.spec.ts`: integration test with real PG + Redis verifying end-to-end rollup flow.
+
+> **Learnings:** 5 integration tests: full Redis-to-PG rollup with EAV row verification, idempotency (second rollup returns false), NX lock TTL verification (~172800s), zero-pageview skip, and HyperLogLog approximation bounds. Used a minimal `makeRedisService()` wrapper to duck-type the real ioredis client as RedisService. Seeded Redis with pipeline for atomicity. HLL uniques/sessions are approximate (120 members → ~118-122 count), so tests use range assertions. All 47 integration tests pass.
 
 ### 2G: Hybrid getStats()
 
