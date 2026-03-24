@@ -107,7 +107,9 @@
 
 > **Learnings:** Removed three private methods (`normalizeIp`, `isPrivateOrLocalIp`, `getDeviceAndBrowser`) and two imports (`isIP` from `node:net`, `UAParser` from `ua-parser-js`). Added imports from `./ip-utils` and `../common/ua`. Updated `resolveCountry()` and `track()` call sites from `this.method()` to bare function calls. The service spec had `normalizeIp` tests using `(service as any).normalizeIp()` — updated to call the imported standalone function directly. All 403 unit + 81 e2e tests pass. Typecheck clean.
 
-- [ ] **2.5** Create `src/analytics/ip-utils.spec.ts`: unit tests for all extracted IP utilities.
+- [x] **2.5** Create `src/analytics/ip-utils.spec.ts`: unit tests for all extracted IP utilities.
+
+> **Learnings:** Created 50 tests covering all 7 exported functions: `firstHeader` (5 tests), `normalizeIp` (10 tests), `isPrivateOrLocalIp` (12 tests), `pickBestIp` (5 tests), `parseForwardedHeader` (4 tests), `getClientIp` (9 tests), `getCountryHint` (6 tests). Used a minimal `mockReq()` helper local to the test file (just headers + socket/ip — no Express dependency needed). All 453 unit tests pass.
 
 ### 2B: AnalyticsInterceptor + Context
 
