@@ -56,7 +56,6 @@
     "@types/nock": "^10.0.3",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
-    "@types/ua-parser-js": "^0.7.39",
     "@types/web-push": "^3.6.4",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

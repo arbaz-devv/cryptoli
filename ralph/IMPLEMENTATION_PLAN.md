@@ -25,7 +25,9 @@
 
 > **Learnings:** `isBot` from `ua-parser-js/bot-detection` accepts raw UA strings directly (not parsed results). It crashes on `undefined` input, so the guard is `if (userAgent && isBot(userAgent)) return;` — empty UA strings are allowed through since they're not bots, just missing data. The module exports `{ isAIAssistant, isAICrawler, isBot }` — we only need `isBot` which covers CLI, crawler, fetcher, and library browser types. Three unit tests added: Googlebot rejection, bingbot rejection, and empty-UA passthrough.
 
-- [ ] **0.4** Fix ua-parser-js type safety: in `src/analytics/analytics.service.ts` (line 7), replace `const UAParser = require('ua-parser-js') as ...` with `import UAParser from 'ua-parser-js'`. Remove the `as` cast on `getResult()` (line 414). In `package.json`, remove `@types/ua-parser-js` from devDependencies (line 59). ua-parser-js v2.0.9 ships its own `.d.ts`.
+- [x] **0.4** Fix ua-parser-js type safety: in `src/analytics/analytics.service.ts` (line 7), replace `const UAParser = require('ua-parser-js') as ...` with `import UAParser from 'ua-parser-js'`. Remove the `as` cast on `getResult()` (line 414). In `package.json`, remove `@types/ua-parser-js` from devDependencies (line 59). ua-parser-js v2.0.9 ships its own `.d.ts`.
+
+> **Learnings:** ua-parser-js v2 uses `export = UAParser` with a merged namespace containing both function overloads and a class. `import UAParser from 'ua-parser-js'` gives the namespace (not the class directly), so construction requires `new UAParser.UAParser(ua)` instead of `new UAParser(ua)`. The `isBot` import from `ua-parser-js/bot-detection` works with standard ESM `import { isBot }` syntax. Removed `@types/ua-parser-js` (v1 types) which would have conflicted with the built-in v2 `.d.ts` files.
 
 - [ ] **0.5** Add geoip-lite update script: add `"geoip:update": "node node_modules/geoip-lite/scripts/updatedb.js"` to `package.json` scripts. Add `LICENSE_KEY` documentation to `.env.example` (MaxMind license key for GeoLite2 updates).
 

@@ -3,18 +3,8 @@ import { isIP } from 'node:net';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import * as geoip from 'geoip-lite';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const UAParser = require('ua-parser-js') as new (ua?: string) => {
-  getResult: () => {
-    device?: { type?: string };
-    browser?: { name?: string };
-    os?: { name?: string };
-  };
-};
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { isBot } = require('ua-parser-js/bot-detection') as {
-  isBot: (ua: string) => boolean;
-};
+import UAParser from 'ua-parser-js';
+import { isBot } from 'ua-parser-js/bot-detection';
 
 const KEY_PREFIX = 'analytics';
 const KEY_RECENT_SESSIONS = `${KEY_PREFIX}:recent_sessions`;
@@ -394,12 +384,8 @@ export class AnalyticsService {
     browser: string;
     os: string;
   } {
-    const parser = new UAParser(userAgent || '');
-    const result = parser.getResult() as {
-      device?: { type?: string };
-      browser?: { name?: string };
-      os?: { name?: string };
-    };
+    const parser = new UAParser.UAParser(userAgent || '');
+    const result = parser.getResult();
     const d = (result.device?.type || 'desktop').toLowerCase();
     const deviceType = d === 'mobile' || d === 'tablet' ? d : 'desktop';
     return {
