@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseInterceptors } from '@nestjs/common';
+import type { Request } from 'express';
 import { SearchService } from './search.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
@@ -14,9 +15,15 @@ export class SearchController {
     @Query('q') q?: string,
     @Query('type') type = 'all',
     @Query('limit') limit = '10',
+    @Req() req?: Request,
   ) {
     const parsedLimit = parseInt(limit, 10) || 10;
     const safeLimit = Math.min(SEARCH_LIMIT_MAX, Math.max(1, parsedLimit));
-    return this.searchService.search(q ?? '', type, safeLimit);
+    return this.searchService.search(
+      q ?? '',
+      type,
+      safeLimit,
+      (req as any)?.analyticsCtx,
+    );
   }
 }
