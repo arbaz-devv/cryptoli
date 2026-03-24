@@ -359,7 +359,9 @@
 
 > Frontend-only. Can run in parallel with Phases 2-3 after Phase 0 is deployed.
 
-- [ ] **4.1** Update `AnalyticsTracker.tsx` in cryptoli-frontend: remove `sendBeacon` (the `preferBeacon` param and sendBeacon branch from `sendTrack()`). Add `credentials: "include"` to fetch calls. `keepalive: true` already handles page unload.
+- [x] **4.1** Update `AnalyticsTracker.tsx` in cryptoli-frontend: remove `sendBeacon` (the `preferBeacon` param and sendBeacon branch from `sendTrack()`). Add `credentials: "include"` to fetch calls. `keepalive: true` already handles page unload.
+
+> **Learnings:** The jsdom test environment (vitest) does not provide `window.localStorage` or `window.sessionStorage` — they must be mocked via `Object.defineProperty` with a custom `createStorageMock()` factory. The `sendBeacon` removal was clean — only `sendTrack()` used it, called from 3 sites (2 page_leave events + 1 inline navigation leave). The `preferBeacon` third argument was removed from all call sites. `credentials: "include"` ensures auth cookies are forwarded cross-origin to the API. 5 new tests: fetch with credentials+keepalive, no sendBeacon usage, page_leave via fetch, consent skip, missing base URL skip. All 9 frontend tests pass.
 
 - [ ] **4.2** Update `CookieConsent.tsx` in cryptoli-frontend: rename `COOKIE_NAME` from `analytics_consent` to `analytics_consent_v2`. Forces re-consent for expanded scope. `getAnalyticsConsent()` auto-adapts.
 
