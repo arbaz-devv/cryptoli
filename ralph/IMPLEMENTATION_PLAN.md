@@ -95,7 +95,9 @@
 
 > **Learnings:** The controller and service had slightly different `normalizeIp` implementations — the controller version handles `::ffff:` stripping in the bracketed IPv6 case while the service version does not. Used the controller's more thorough version as canonical. The `isPrivateOrLocalIp` implementations were functionally identical (minor style difference in the empty-ip check). All 7 functions exported: `firstHeader`, `normalizeIp`, `isPrivateOrLocalIp`, `pickBestIp`, `parseForwardedHeader`, `getClientIp`, `getCountryHint`. File is additive-only — consumers updated in items 2.3 and 2.4. All 395 unit tests pass unchanged.
 
-- [ ] **2.2** Create `src/common/ua.ts`: extract `getDeviceAndBrowser()` from `src/analytics/analytics.service.ts` into a shared utility (needed by both AnalyticsService and AuthService in Phase 2).
+- [x] **2.2** Create `src/common/ua.ts`: extract `getDeviceAndBrowser()` from `src/analytics/analytics.service.ts` into a shared utility (needed by both AnalyticsService and AuthService in Phase 2).
+
+> **Learnings:** Extracted the function as a standalone export (not a class method). Uses the same `new UAParser.UAParser(userAgent || '')` construction pattern from the service. ua-parser-js v2 reports iPhone Safari as `Mobile Safari` which normalizes to `mobile_safari`. Added 8 unit tests in `src/common/ua.spec.ts` covering desktop/mobile/tablet detection, unknown UAs, empty strings, and space-to-underscore normalization. File is additive-only — consumers updated in items 2.3 and 2.4. All 403 unit tests pass.
 
 - [ ] **2.3** Update `src/analytics/analytics.controller.ts`: remove inline `normalizeIp`, `isPrivateOrLocalIp`, and IP extraction functions. Import from `ip-utils.ts`.
 
