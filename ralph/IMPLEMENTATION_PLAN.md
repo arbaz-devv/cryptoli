@@ -81,7 +81,9 @@
 
 > **Learnings:** Changed `pipeline` from `mockReturnValue` to `mockImplementation` so each call returns a fresh pipe object with its own empty `commands` array — this prevents cross-test contamination. Each chainable method pushes `{ cmd, args }` to the `commands` array before returning `this`, allowing tests to assert both command ordering and arguments. The `exec` mock remains a `jest.fn().mockResolvedValue([])` on each pipe instance. All 514 existing tests (395 unit + 38 integration + 81 e2e) pass unchanged — no tests depended on the old minimal pipeline mock shape.
 
-- [ ] **1.9** Run `npm run test:all`, `npm run test:cov`, `npx tsc --noEmit`, `npm run lint` — all must pass.
+- [x] **1.9** Run `npm run test:all`, `npm run test:cov`, `npx tsc --noEmit`, `npm run lint` — all must pass.
+
+> **Learnings:** All checks pass: 395 unit tests, 38 integration tests, 81 e2e tests (514 total). Typecheck and lint clean. Coverage thresholds met (33/33 suites). Lint auto-fixed a formatting issue in `src/main.ts` (CORS allowedHeaders array formatting from item 1.6) — committed as part of this verification step.
 
 ## Phase 2: Buffer Service + Pipeline + Rollup + Server-Side Events + Session Enrichment
 
