@@ -17,7 +17,9 @@
 
 > **Learnings:** All existing unit and integration track() calls needed `consent: true` added since they previously relied on undefined-as-consent. E2e track tests didn't need changes because the controller returns `{ ok: true }` regardless of whether track() processes the event internally.
 
-- [ ] **0.2** Remove ipwho.is external API fallback from `resolveCountry()` in `src/analytics/analytics.service.ts` (line 363). Delete the `fetch('https://ipwho.is/...')` block. Use `geoip-lite` only — accept `null`/unknown for unresolvable IPs. Keep the Redis `ip_country` cache for geoip-lite results.
+- [x] **0.2** Remove ipwho.is external API fallback from `resolveCountry()` in `src/analytics/analytics.service.ts` (line 363). Delete the `fetch('https://ipwho.is/...')` block. Use `geoip-lite` only — accept `null`/unknown for unresolvable IPs. Keep the Redis `ip_country` cache for geoip-lite results.
+
+> **Learnings:** The removal was clean — deleted the entire `if (!countryCode || countryCode === 'UNKNOWN')` block with the fetch call. Changed `let countryCode` to `const` since it's no longer reassigned. The early return on invalid country code means the cache-write block only runs for valid 2-letter codes. All 50 analytics unit tests and 392 total unit tests pass without changes — no tests depended on the ipwho.is fallback behavior.
 
 - [ ] **0.3** Add bot detection guard in `src/analytics/analytics.service.ts`: import `isBot` from `require('ua-parser-js/bot-detection')` and add `if (isBot(userAgent)) return;` as an early guard in `track()`, alongside the existing consent and Redis-ready checks.
 

@@ -353,31 +353,11 @@ export class AnalyticsService {
       }
     }
 
-    // First try local geoip-lite
+    // Use local geoip-lite only — no external API calls (GDPR)
     const { country } = this.getGeo(normalizedIp);
-    let countryCode = (country || '').toUpperCase();
+    const countryCode = (country || '').toUpperCase();
 
-    // Fallback to external API only if still unknown
-    if (!countryCode || countryCode === 'UNKNOWN') {
-      try {
-        const res = await fetch(
-          `https://ipwho.is/${encodeURIComponent(normalizedIp)}?fields=success,country_code`,
-        );
-        if (res.ok) {
-          const json = (await res.json()) as {
-            success?: boolean;
-            country_code?: string;
-          };
-          if (json.success === true && json.country_code) {
-            countryCode = json.country_code.toUpperCase();
-          }
-        }
-      } catch {
-        // ignore external lookup errors, keep unknown
-      }
-    }
-
-    if (!this.isValidCountryCode(countryCode)) countryCode = 'unknown';
+    if (!this.isValidCountryCode(countryCode)) return 'unknown';
 
     // Cache non-unknown results for 30 days
     if (this.redis && countryCode !== 'unknown') {
