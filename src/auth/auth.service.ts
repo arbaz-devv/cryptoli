@@ -3,8 +3,18 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
+import * as geoip from 'geoip-lite';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
+import { getDeviceAndBrowser } from '../common/ua';
+
+export interface SessionMetadata {
+  ip: string;
+  userAgent: string;
+  country?: string;
+  timezone?: string;
+  trigger: 'login' | 'register' | 'password_change';
+}
 
 export interface SessionUser {
   id: string;
@@ -140,12 +150,20 @@ export class AuthService {
     email: string;
     username: string;
     passwordHash: string;
+    registrationIp?: string;
+    registrationCountry?: string;
   }) {
     return this.prisma.user.create({
       data: {
         email: input.email,
         username: input.username,
         passwordHash: input.passwordHash,
+        ...(input.registrationIp
+          ? { registrationIp: input.registrationIp }
+          : {}),
+        ...(input.registrationCountry
+          ? { registrationCountry: input.registrationCountry }
+          : {}),
       },
       select: {
         id: true,
@@ -215,19 +233,38 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  async createSession(userId: string): Promise<string> {
+  async createSession(userId: string, meta?: SessionMetadata): Promise<string> {
     const token = jwt.sign(
       { userId, jti: randomUUID() },
       this.config.jwtSecret,
       { expiresIn: '7d' },
     );
-    await this.prisma.session.create({
-      data: {
-        userId,
-        token: this.hashToken(token),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+
+    const data: Record<string, unknown> = {
+      userId,
+      token: this.hashToken(token),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    };
+
+    if (meta) {
+      const { device, browser, os } = getDeviceAndBrowser(meta.userAgent);
+      const geoResult = meta.ip ? geoip.lookup(meta.ip) : null;
+      const timezone = geoResult?.timezone || meta.timezone || null;
+
+      data.ip = meta.ip || null;
+      data.ipHash = meta.ip
+        ? createHash('sha256').update(meta.ip).digest('hex')
+        : null;
+      data.userAgent = meta.userAgent || null;
+      data.device = device;
+      data.browser = browser;
+      data.os = os;
+      data.country = meta.country || null;
+      data.timezone = timezone;
+      data.trigger = meta.trigger;
+    }
+
+    await this.prisma.session.create({ data: data as any });
     return token;
   }
 

@@ -18,7 +18,7 @@ import type { CookieOptions } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
-import { AuthService } from './auth.service';
+import { AuthService, SessionMetadata } from './auth.service';
 import {
   changePasswordSchema,
   loginSchema,
@@ -28,6 +28,7 @@ import {
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getClientIp, getCountryHint } from '../analytics/ip-utils';
 
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/auth')
@@ -36,6 +37,18 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private extractSessionMeta(
+    req: Request,
+    trigger: SessionMetadata['trigger'],
+  ): SessionMetadata {
+    return {
+      ip: getClientIp(req),
+      userAgent: req.headers['user-agent'] || '',
+      country: getCountryHint(req) || undefined,
+      trigger,
+    };
+  }
 
   private sessionCookieOptions(): CookieOptions {
     const corsOrigin = process.env.CORS_ORIGIN ?? '';
@@ -168,6 +181,7 @@ export class AuthController {
   @Post('register')
   async register(
     @Body() body: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     let parsed: {
@@ -214,12 +228,15 @@ export class AuthController {
     }
 
     const passwordHash = await this.authService.hashPassword(password);
+    const meta = this.extractSessionMeta(req, 'register');
     let user: Awaited<ReturnType<AuthService['createUser']>>;
     try {
       user = await this.authService.createUser({
         email,
         username,
         passwordHash,
+        registrationIp: meta.ip || undefined,
+        registrationCountry: meta.country,
       });
     } catch (err) {
       if (
@@ -237,7 +254,7 @@ export class AuthController {
       throw err;
     }
 
-    const token = await this.authService.createSession(user.id);
+    const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
 
     return {
@@ -253,6 +270,7 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() body: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     let parsed: { email: string; password: string };
@@ -293,7 +311,8 @@ export class AuthController {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = await this.authService.createSession(user.id);
+    const meta = this.extractSessionMeta(req, 'login');
+    const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
 
     return {
@@ -375,7 +394,11 @@ export class AuthController {
     );
     await this.authService.updatePassword(req.user.id, nextPasswordHash);
 
-    const newToken = await this.authService.createSession(req.user.id);
+    const changeMeta = this.extractSessionMeta(req, 'password_change');
+    const newToken = await this.authService.createSession(
+      req.user.id,
+      changeMeta,
+    );
     await this.authService.deleteOtherSessions(req.user.id, newToken);
     res.cookie('session', newToken, this.sessionCookieOptions());
 

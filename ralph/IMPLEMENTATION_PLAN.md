@@ -197,15 +197,25 @@
 
 ### 2H: Session Enrichment
 
-- [ ] **2.24** Define `SessionMetadata` interface in `src/auth/auth.service.ts`: `{ ip, userAgent, country?, timezone?, trigger: 'login' | 'register' | 'password_change' }`. Update `createSession(userId: string, meta?: SessionMetadata)` to persist all metadata fields to Session. Timezone source: `geoip.lookup(ip).timezone` with client-supplied fallback. Use `getDeviceAndBrowser` from `src/common/ua.ts` to parse UA into device/browser/os. Hash IP with SHA-256 for ipHash.
+- [x] **2.24** Define `SessionMetadata` interface in `src/auth/auth.service.ts`: `{ ip, userAgent, country?, timezone?, trigger: 'login' | 'register' | 'password_change' }`. Update `createSession(userId: string, meta?: SessionMetadata)` to persist all metadata fields to Session. Timezone source: `geoip.lookup(ip).timezone` with client-supplied fallback. Use `getDeviceAndBrowser` from `src/common/ua.ts` to parse UA into device/browser/os. Hash IP with SHA-256 for ipHash.
 
-- [ ] **2.25** Extend `createUser()` in `src/auth/auth.service.ts` to accept optional `registrationIp` and `registrationCountry` and persist them to the User model.
+> **Learnings:** `geoip-lite` was already a dependency (used by `analytics.service.ts`). The `geoip.lookup()` returns `{ timezone: string }` as IANA timezone (e.g., `America/New_York`). The `data` object for `prisma.session.create` is typed as `Record<string, unknown>` with `as any` cast because the Session model's optional fields aren't known to the base create type without Prisma's generated types. The `createSession` signature remains backward-compatible — `meta` is optional, and without it no enrichment fields are written (existing callers unaffected). The `hashToken` private method uses SHA-256 for JWT hashing; IP hashing also uses SHA-256 via `createHash` (already imported). `changePassword()` in the controller already had `@Req()` so only needed the metadata extraction added.
 
-- [ ] **2.26** Update `src/auth/auth.controller.ts`: add `@Req() req: Request` to `login()` (line 251) and `register()` (line 165). Extract IP/UA/country from request, pass `SessionMetadata` to `createSession()`. Pass `registrationIp`/`registrationCountry` to `createUser()` in `register()`.
+- [x] **2.25** Extend `createUser()` in `src/auth/auth.service.ts` to accept optional `registrationIp` and `registrationCountry` and persist them to the User model.
 
-- [ ] **2.27** Update `src/auth/auth.service.spec.ts`: add tests for `createSession` with `SessionMetadata`, verify all fields persisted. Update `createUser` tests for registration IP/country.
+> **Learnings:** Used conditional spread (`...(input.registrationIp ? { registrationIp: input.registrationIp } : {})`) to avoid writing `undefined` values to the database. The User model's `registrationIp` and `registrationCountry` fields were already added to the schema in Phase 1 (item 1.2).
 
-- [ ] **2.28** Update `src/auth/auth.controller.spec.ts`: add `mockReq` to login/register tests for new `@Req()` parameter.
+- [x] **2.26** Update `src/auth/auth.controller.ts`: add `@Req() req: Request` to `login()` (line 251) and `register()` (line 165). Extract IP/UA/country from request, pass `SessionMetadata` to `createSession()`. Pass `registrationIp`/`registrationCountry` to `createUser()` in `register()`.
+
+> **Learnings:** Added `extractSessionMeta(req, trigger)` private helper to the controller for DRY extraction across login/register/changePassword. Imports `getClientIp` and `getCountryHint` from `../analytics/ip-utils` (already shared utilities from item 2.1). The `@Req()` decorator was already imported in the controller (used by `me()`, `checkUsername()`, `logout()`, `changePassword()`).
+
+- [x] **2.27** Update `src/auth/auth.service.spec.ts`: add tests for `createSession` with `SessionMetadata`, verify all fields persisted. Update `createUser` tests for registration IP/country.
+
+> **Learnings:** Added 5 new tests: (1) createSession persists all SessionMetadata fields including parsed device/browser/os, (2) createSession works without metadata (backward-compatible), (3) createSession handles empty IP gracefully (null ipHash), (4) createUser persists registrationIp/registrationCountry, (5) createUser omits registration fields when not provided. Total: 36 tests in auth.service.spec.ts (was 31).
+
+- [x] **2.28** Update `src/auth/auth.controller.spec.ts`: add `mockReq` to login/register tests for new `@Req()` parameter.
+
+> **Learnings:** Added `mockReq` with `headers['user-agent']`, `cookies`, and `socket.remoteAddress` to the shared `beforeEach`. All existing register/login tests updated to pass `mockReq` as the new second argument (between body and res). Added 3 new tests: (1) register passes SessionMetadata with trigger=register, (2) register passes registrationIp/registrationCountry to createUser, (3) login passes SessionMetadata with trigger=login. Total: 23 tests in auth.controller.spec.ts (was 20).
 
 ### 2I: Server-Side Event Tracking
 
