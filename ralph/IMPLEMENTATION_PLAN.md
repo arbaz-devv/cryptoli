@@ -135,7 +135,9 @@
 
 > **Learnings:** The Prisma `Json?` type requires casting `Record<string, unknown>` to `Prisma.InputJsonValue` for the `properties` field in `createMany`. Added `bufferLength` getter for test assertions. The `flush()` method uses splice-before-await per spec to prevent race conditions between timer-triggered and threshold-triggered flushes. Typecheck clean.
 
-- [ ] **2.11** Create `src/analytics/analytics-buffer.service.spec.ts`: unit tests covering push, overflow drop, flush batching, threshold trigger (500 rows), graceful shutdown drain, PG failure logging (no re-queue).
+- [x] **2.11** Create `src/analytics/analytics-buffer.service.spec.ts`: unit tests covering push, overflow drop, flush batching, threshold trigger (500 rows), graceful shutdown drain, PG failure logging (no re-queue).
+
+> **Learnings:** 13 tests covering all acceptance criteria. The overflow test requires mocking `flush()` to prevent threshold-triggered flushes from draining the buffer during fill. The splice-before-await test verifies `bufferLength === 0` synchronously after calling `flush()` but before awaiting the result. The `synchronous_commit` test uses `invocationCallOrder` to verify `$executeRaw` is called before `createMany`. All 472 unit tests pass.
 
 - [ ] **2.12** Create `test/integration/analytics-buffer.spec.ts`: integration test with real PostgreSQL (TestContainers) verifying `createMany` writes and `synchronous_commit = off`.
 
