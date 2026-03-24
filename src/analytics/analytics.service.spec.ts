@@ -26,6 +26,15 @@ describe('AnalyticsService', () => {
       expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
     });
 
+    it('should no-op when consent is undefined (GDPR opt-in required)', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+      await service.track('1.2.3.4', 'Mozilla/5.0', {
+        event: 'page_view',
+      });
+      expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
+    });
+
     it('should write page_view keys when Redis is ready', async () => {
       redisMock = createRedisMock(true);
       service = new AnalyticsService(redisMock as any);
@@ -34,6 +43,7 @@ describe('AnalyticsService', () => {
         event: 'page_view',
         path: '/reviews',
         sessionId: 'sess_abc123',
+        consent: true,
       });
 
       // incr is called for pageviews key
@@ -48,7 +58,7 @@ describe('AnalyticsService', () => {
       redisMock = createRedisMock(true);
       service = new AnalyticsService(redisMock as any);
 
-      await service.track('1.2.3.4', '', { event: 'like' });
+      await service.track('1.2.3.4', '', { event: 'like', consent: true });
 
       const incrCalls = redisMock._clientMock.incr.mock.calls;
       const likeCall = incrCalls.find((c: string[]) => c[0].includes(':like:'));
@@ -59,7 +69,7 @@ describe('AnalyticsService', () => {
       redisMock = createRedisMock(true);
       service = new AnalyticsService(redisMock as any);
 
-      await service.track('1.2.3.4', '', { event: 'signup_started' });
+      await service.track('1.2.3.4', '', { event: 'signup_started', consent: true });
 
       const hincrCalls = redisMock._clientMock.hincrby.mock.calls;
       const funnelCall = hincrCalls.find((c: any[]) =>
@@ -80,6 +90,7 @@ describe('AnalyticsService', () => {
         enteredAt: '2026-03-19T10:00:00Z',
         leftAt: '2026-03-19T10:00:15Z', // 15 seconds
         sessionId: 'sess_abc123',
+        consent: true,
       });
 
       const hincrCalls = redisMock._clientMock.hincrby.mock.calls;

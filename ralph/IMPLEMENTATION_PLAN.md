@@ -13,7 +13,9 @@
 > Backend-only GDPR/data-quality fixes. All changes in `~/Code/cryptoli`.
 > **Breaking change:** Frontend must ship `consent: true` in all payloads before this deploys, or tracking stops for all clients.
 
-- [ ] **0.1** Fix consent gate in `src/analytics/analytics.service.ts` (line 449): change `if (body.consent === false) return;` to `if (!body.consent) return;`. This makes consent opt-in per GDPR requirements (undefined no longer treated as consent).
+- [x] **0.1** Fix consent gate in `src/analytics/analytics.service.ts` (line 449): change `if (body.consent === false) return;` to `if (!body.consent) return;`. This makes consent opt-in per GDPR requirements (undefined no longer treated as consent).
+
+> **Learnings:** All existing unit and integration track() calls needed `consent: true` added since they previously relied on undefined-as-consent. E2e track tests didn't need changes because the controller returns `{ ok: true }` regardless of whether track() processes the event internally.
 
 - [ ] **0.2** Remove ipwho.is external API fallback from `resolveCountry()` in `src/analytics/analytics.service.ts` (line 363). Delete the `fetch('https://ipwho.is/...')` block. Use `geoip-lite` only — accept `null`/unknown for unresolvable IPs. Keep the Redis `ip_country` cache for geoip-lite results.
 

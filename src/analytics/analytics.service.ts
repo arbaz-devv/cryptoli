@@ -438,7 +438,7 @@ export class AnalyticsService {
     }
   }
 
-  /** Non-blocking: enqueue track and return immediately. Only store when consent is not explicitly false. */
+  /** Non-blocking: enqueue track and return immediately. Only store when consent is explicitly true (GDPR opt-in). */
   async track(
     ip: string,
     userAgent: string,
@@ -446,7 +446,7 @@ export class AnalyticsService {
     countryHint?: string,
   ): Promise<void> {
     if (!this.redisService.isReady() || !this.redis) return;
-    if (body.consent === false) return;
+    if (!body.consent) return;
 
     const now = new Date();
     const day = this.dayKey(now);

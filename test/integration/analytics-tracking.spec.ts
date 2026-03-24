@@ -68,6 +68,7 @@ describe('Analytics Tracking (Integration)', () => {
         path: '/reviews',
         sessionId: 'test-session-abc',
         referrer: 'https://google.com/search?q=crypto',
+        consent: true,
       },
     );
 
@@ -101,6 +102,7 @@ describe('Analytics Tracking (Integration)', () => {
         event: 'page_view',
         path: '/home',
         sessionId: `session-${i}`,
+        consent: true,
       });
     }
 
@@ -126,12 +128,14 @@ describe('Analytics Tracking (Integration)', () => {
       event: 'page_view',
       path: '/dashboard',
       sessionId: 'realtime-session-1',
+      consent: true,
     });
 
     await analyticsService.track('127.0.0.1', 'Mozilla/5.0 Firefox/115', {
       event: 'page_view',
       path: '/settings',
       sessionId: 'realtime-session-2',
+      consent: true,
     });
 
     await waitForWrites();
@@ -170,7 +174,7 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should track like events in Redis', async () => {
-    await analyticsService.track('127.0.0.1', 'Chrome', { event: 'like' });
+    await analyticsService.track('127.0.0.1', 'Chrome', { event: 'like', consent: true });
 
     await waitForWrites();
 
