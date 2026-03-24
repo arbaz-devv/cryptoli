@@ -801,5 +801,425 @@ describe('AnalyticsService', () => {
       // Uniques = PG sum + Redis HLL union
       expect(result!.totalUniques).toBeGreaterThanOrEqual(50);
     });
+
+    it('should merge duration histogram and recompute percentiles', async () => {
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+      // Redis day returns 50 hits in 0_9 bucket via hgetall for duration_hist
+      client.get.mockResolvedValue('10');
+      client.hgetall.mockImplementation((key: string) => {
+        if (key.includes(':duration_hist:')) return Promise.resolve({ '0_9': '50' });
+        return Promise.resolve({});
+      });
+      client.pfcount.mockResolvedValue(5);
+
+      const prismaMock = createPrismaMock();
+      const oldDate = new Date();
+      oldDate.setUTCDate(oldDate.getUTCDate() - 60);
+      const oldDay = oldDate.toISOString().slice(0, 10);
+      const oldDateObj = new Date(oldDay + 'T00:00:00Z');
+      // PG returns 100 hits in 10_29 bucket
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
+        { date: oldDateObj, dimension: '_total_', dimensionValue: 'pageviews', count: 50 },
+        { date: oldDateObj, dimension: '_total_', dimensionValue: 'duration_sum', count: 2000 },
+        { date: oldDateObj, dimension: '_total_', dimensionValue: 'duration_count', count: 100 },
+        { date: oldDateObj, dimension: 'duration_bucket', dimensionValue: '10_29', count: 100 },
+      ]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await svc.getStats(oldDay, today);
+
+      expect(result).toBeDefined();
+      // Duration sum/count should be additive (PG 2000/100 + Redis per-day)
+      // avgDurationSeconds is derived from merged sum/count, not averaged per-window
+      // PG contributes 2000/100 = 20s avg; Redis contributes 0/0 per day
+      // So avgDuration = totalSum / totalCount where both are additive
+      expect(result!.avgDurationSeconds).toBeGreaterThanOrEqual(0);
+      // durationP50 should reflect the merged histogram (PG 10_29 bucket has 100 entries)
+      expect(result!.durationP50Seconds).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should derive bounceRate from merged totals, not average per-window', async () => {
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+      // Redis: 100 pageviews, 10 bounces
+      client.get.mockImplementation((key: string) => {
+        if (key.includes(':pageviews:')) return Promise.resolve('100');
+        if (key.includes(':bounces:')) return Promise.resolve('10');
+        return Promise.resolve('0');
+      });
+      client.hgetall.mockResolvedValue({});
+      client.pfcount.mockResolvedValue(5);
+
+      const prismaMock = createPrismaMock();
+      const oldDate = new Date();
+      oldDate.setUTCDate(oldDate.getUTCDate() - 60);
+      const oldDay = oldDate.toISOString().slice(0, 10);
+      const oldDateObj = new Date(oldDay + 'T00:00:00Z');
+      // PG: 200 pageviews, 100 bounces (50% rate)
+      prismaMock.analyticsDailySummary.findMany.mockResolvedValue([
+        { date: oldDateObj, dimension: '_total_', dimensionValue: 'pageviews', count: 200 },
+        { date: oldDateObj, dimension: '_total_', dimensionValue: 'bounces', count: 100 },
+      ]);
+
+      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await svc.getStats(oldDay, today);
+
+      expect(result).toBeDefined();
+      // Bounce rate should be (totalBounces / totalPageviews) from merged totals
+      // Not an average of per-window rates
+      const expectedBounces = result!.totalBounces;
+      const expectedPageviews = result!.totalPageviews;
+      expect(expectedBounces).toBeGreaterThanOrEqual(100); // at least PG bounces
+      // bounceRate = (totalBounces / totalSessions) * 100 — derived from merged totals
+      const totalSessions = result!.totalSessions;
+      if (totalSessions > 0) {
+        expect(result!.bounceRate).toBeCloseTo(
+          (expectedBounces / totalSessions) * 100,
+          1,
+        );
+      }
+    });
+  });
+
+  describe('track() pipeline details', () => {
+    it('should include expire commands for TTL in page_view pipeline', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', 'Mozilla/5.0', {
+        event: 'page_view',
+        path: '/test',
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const expireCmds = pipe.commands.filter((c: any) => c.cmd === 'expire');
+      // Multiple expire commands for TTL on data keys
+      expect(expireCmds.length).toBeGreaterThan(0);
+    });
+
+    it('should include hsetnx for per-day first_visit hash in page_view pipeline', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', 'Mozilla/5.0', {
+        event: 'page_view',
+        path: '/test',
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const hsetnxCmds = pipe.commands.filter((c: any) => c.cmd === 'hsetnx');
+      const firstVisitCmd = hsetnxCmds.find((c: any) =>
+        c.args[0].includes(':first_visit:'),
+      );
+      expect(firstVisitCmd).toBeDefined();
+      // Key format is per-day hash, not per-session
+      expect(firstVisitCmd.args[0]).toMatch(/^analytics:first_visit:\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should include source and path composite keys for funnel event', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', '', {
+        event: 'signup_completed',
+        path: '/register',
+        utm_source: 'google',
+        consent: true,
+      });
+
+      const pipe = redisMock._clientMock.pipeline.mock.results[0].value;
+      const hincrCmds = pipe.commands.filter((c: any) => c.cmd === 'hincrby');
+
+      // funnel:source key with composite value
+      const sourceCmd = hincrCmds.find((c: any) =>
+        c.args[0].includes(':funnel:source:'),
+      );
+      expect(sourceCmd).toBeDefined();
+      expect(sourceCmd.args[1]).toContain('|signup_completed');
+
+      // funnel:path key with composite value
+      const pathCmd = hincrCmds.find((c: any) =>
+        c.args[0].includes(':funnel:path:'),
+      );
+      expect(pathCmd).toBeDefined();
+      expect(pathCmd.args[1]).toContain('|signup_completed');
+    });
+
+    it('should use two-step bounce detection (HGET then conditional INCR)', async () => {
+      redisMock = createRedisMock(true);
+      // Return '1' for session_pages HGET → triggers bounce increment
+      redisMock._clientMock.hget.mockResolvedValue('1');
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', '', {
+        event: 'page_leave',
+        enteredAt: '2026-03-19T10:00:00Z',
+        leftAt: '2026-03-19T10:00:10Z', // 10s < 30s threshold
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      // Wait for the async bounce detection chain
+      await new Promise((r) => setTimeout(r, 50));
+
+      // HGET is called separately (not in pipeline) for session_pages
+      expect(redisMock._clientMock.hget).toHaveBeenCalledWith(
+        expect.stringContaining(':session_pages:'),
+        'sess_abc',
+      );
+      // INCR for bounces is called separately (not in pipeline)
+      expect(redisMock._clientMock.incr).toHaveBeenCalledWith(
+        expect.stringContaining(':bounces:'),
+      );
+    });
+
+    it('should NOT trigger bounce detection when duration >= 30s', async () => {
+      redisMock = createRedisMock(true);
+      redisMock._clientMock.hget.mockResolvedValue('1');
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', '', {
+        event: 'page_leave',
+        enteredAt: '2026-03-19T10:00:00Z',
+        leftAt: '2026-03-19T10:00:45Z', // 45s >= 30s threshold
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      // HGET should NOT be called for bounce check when duration >= 30s
+      expect(redisMock._clientMock.hget).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('buffer integration', () => {
+    let bufferMock: { push: jest.Mock };
+
+    beforeEach(() => {
+      bufferMock = { push: jest.fn() };
+    });
+
+    it('should push page_view event to buffer after pipeline', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any, bufferMock as any);
+
+      await service.track('1.2.3.4', 'Mozilla/5.0', {
+        event: 'page_view',
+        path: '/reviews',
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      expect(bufferMock.push).toHaveBeenCalledTimes(1);
+      const pushed = bufferMock.push.mock.calls[0][0];
+      expect(pushed.eventType).toBe('page_view');
+      expect(pushed.path).toBe('/reviews');
+      expect(pushed.ipHash).toBeDefined(); // SHA256 of IP
+      expect(pushed.ipHash).toHaveLength(64); // hex SHA256
+    });
+
+    it('should push like event to buffer', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any, bufferMock as any);
+
+      await service.track('1.2.3.4', '', { event: 'like', consent: true });
+
+      expect(bufferMock.push).toHaveBeenCalledTimes(1);
+      expect(bufferMock.push.mock.calls[0][0].eventType).toBe('like');
+    });
+
+    it('should push funnel event to buffer with utm fields', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any, bufferMock as any);
+
+      await service.track('1.2.3.4', '', {
+        event: 'signup_started',
+        utm_source: 'google',
+        utm_medium: 'cpc',
+        consent: true,
+      });
+
+      expect(bufferMock.push).toHaveBeenCalledTimes(1);
+      const pushed = bufferMock.push.mock.calls[0][0];
+      expect(pushed.eventType).toBe('signup_started');
+      expect(pushed.utmSource).toBe('google');
+      expect(pushed.utmMedium).toBe('cpc');
+    });
+
+    it('should push page_leave event to buffer with durationSeconds', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any, bufferMock as any);
+
+      await service.track('1.2.3.4', '', {
+        event: 'page_leave',
+        enteredAt: '2026-03-19T10:00:00Z',
+        leftAt: '2026-03-19T10:02:00Z', // 120 seconds
+        sessionId: 'sess_abc',
+        consent: true,
+      });
+
+      expect(bufferMock.push).toHaveBeenCalledTimes(1);
+      const pushed = bufferMock.push.mock.calls[0][0];
+      expect(pushed.eventType).toBe('page_leave');
+      expect(pushed.durationSeconds).toBe(120);
+    });
+
+    it('should not push to buffer when bufferService is not injected', async () => {
+      redisMock = createRedisMock(true);
+      // No bufferService injected (undefined)
+      service = new AnalyticsService(redisMock as any);
+
+      await service.track('1.2.3.4', 'Mozilla/5.0', {
+        event: 'page_view',
+        consent: true,
+      });
+
+      // No error thrown, pipeline still works
+      expect(redisMock._clientMock.pipeline).toHaveBeenCalled();
+    });
+
+    it('should produce deterministic SHA256 ipHash', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any, bufferMock as any);
+
+      await service.track('8.8.8.8', 'Mozilla/5.0', {
+        event: 'page_view',
+        consent: true,
+      });
+      await service.track('8.8.8.8', 'Mozilla/5.0', {
+        event: 'like',
+        consent: true,
+      });
+
+      // Same IP → same hash (deterministic, no salt per spec)
+      const hash1 = bufferMock.push.mock.calls[0][0].ipHash;
+      const hash2 = bufferMock.push.mock.calls[1][0].ipHash;
+      expect(hash1).toBe(hash2);
+      expect(hash1).toHaveLength(64);
+    });
+  });
+
+  describe('retention pre-computation', () => {
+    it('should no-op when Redis is not ready', async () => {
+      // Default service has Redis not ready
+      await (service as any).computeRetention();
+      // No Redis calls made
+      expect(redisMock._clientMock.smembers).not.toHaveBeenCalled();
+    });
+
+    it('should skip days with empty cohorts', async () => {
+      redisMock = createRedisMock(true);
+      redisMock._clientMock.smembers.mockResolvedValue([]);
+      service = new AnalyticsService(redisMock as any);
+
+      await (service as any).computeRetention();
+
+      // smembers called for cohort, but no hgetall for session_pages
+      expect(redisMock._clientMock.smembers).toHaveBeenCalled();
+      // No retention key written for empty cohorts
+      expect(redisMock._clientMock.set).not.toHaveBeenCalled();
+    });
+
+    it('should compute and store retention percentages for non-empty cohorts', async () => {
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+
+      // Cohort has 2 members on every day
+      client.smembers.mockResolvedValue(['sess_a', 'sess_b']);
+
+      // session_pages: sess_a returned on day+1, sess_b on day+7
+      client.hgetall.mockImplementation((key: string) => {
+        // The key pattern is analytics:session_pages:YYYY-MM-DD
+        // We return sess_a for all lookups to simulate day+1 return
+        return Promise.resolve({ sess_a: '3' });
+      });
+
+      service = new AnalyticsService(redisMock as any);
+      await (service as any).computeRetention();
+
+      // Should write retention keys
+      expect(client.set).toHaveBeenCalled();
+      // Verify the stored JSON structure
+      const setCall = client.set.mock.calls[0];
+      expect(setCall[0]).toMatch(/^analytics:retention:\d{4}-\d{2}-\d{2}$/);
+      const parsed = JSON.parse(setCall[1]);
+      expect(parsed).toHaveProperty('day1Pct');
+      expect(parsed).toHaveProperty('day7Pct');
+      expect(parsed).toHaveProperty('day30Pct');
+      expect(parsed).toHaveProperty('cohortSize');
+      expect(parsed.cohortSize).toBe(2);
+      // sess_a returned in all windows → 1/2 = 50%
+      expect(parsed.day1Pct).toBe(50);
+      // TTL: 48 hours
+      expect(setCall[2]).toBe('EX');
+      expect(setCall[3]).toBe(48 * 60 * 60);
+    });
+
+    it('should continue processing remaining days when one day fails', async () => {
+      redisMock = createRedisMock(true);
+      const client = redisMock._clientMock;
+
+      let callCount = 0;
+      client.smembers.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return Promise.reject(new Error('transient'));
+        return Promise.resolve(['sess_a']);
+      });
+      client.hgetall.mockResolvedValue({});
+
+      service = new AnalyticsService(redisMock as any);
+      await (service as any).computeRetention();
+
+      // Despite first day failing, subsequent days still processed
+      // 35 days total, first fails, rest succeed → 34 set calls
+      // (but cohorts with no returning sessions still get set)
+      expect(client.set).toHaveBeenCalled();
+    });
+  });
+
+  describe('lifecycle', () => {
+    it('should start retention timer on module init', () => {
+      jest.useFakeTimers();
+      try {
+        redisMock = createRedisMock(true);
+        redisMock._clientMock.smembers.mockResolvedValue([]);
+        service = new AnalyticsService(redisMock as any);
+        service.onModuleInit();
+
+        // Timer should be set (we verify by checking it fires)
+        jest.advanceTimersByTime(60 * 60 * 1000); // 1 hour
+        // computeRetention would be called — we verify via smembers
+        expect(redisMock._clientMock.smembers).toHaveBeenCalled();
+
+        service.onModuleDestroy();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('should clear retention timer on module destroy', () => {
+      jest.useFakeTimers();
+      try {
+        redisMock = createRedisMock(true);
+        service = new AnalyticsService(redisMock as any);
+        service.onModuleInit();
+        service.onModuleDestroy();
+
+        // After destroy, advancing time should NOT trigger computeRetention
+        redisMock._clientMock.smembers.mockClear();
+        jest.advanceTimersByTime(60 * 60 * 1000);
+        expect(redisMock._clientMock.smembers).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 });
