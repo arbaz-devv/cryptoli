@@ -99,7 +99,9 @@
 
 > **Learnings:** Extracted the function as a standalone export (not a class method). Uses the same `new UAParser.UAParser(userAgent || '')` construction pattern from the service. ua-parser-js v2 reports iPhone Safari as `Mobile Safari` which normalizes to `mobile_safari`. Added 8 unit tests in `src/common/ua.spec.ts` covering desktop/mobile/tablet detection, unknown UAs, empty strings, and space-to-underscore normalization. File is additive-only — consumers updated in items 2.3 and 2.4. All 403 unit tests pass.
 
-- [ ] **2.3** Update `src/analytics/analytics.controller.ts`: remove inline `normalizeIp`, `isPrivateOrLocalIp`, and IP extraction functions. Import from `ip-utils.ts`.
+- [x] **2.3** Update `src/analytics/analytics.controller.ts`: remove inline `normalizeIp`, `isPrivateOrLocalIp`, and IP extraction functions. Import from `ip-utils.ts`.
+
+> **Learnings:** Removed all 7 inline functions (`firstHeader`, `normalizeIp`, `isPrivateOrLocalIp`, `pickBestIp`, `parseForwardedHeader`, `getClientIp`, `getCountryHint`) and the `isIP` import from `node:net`. Only `getClientIp` and `getCountryHint` needed to be imported from `ip-utils.ts` since they are the only two functions called directly in the controller — the others are internal to `ip-utils.ts`. Controller shrank from 245 to 140 lines. All 403 unit tests, 81 e2e tests pass. Typecheck clean.
 
 - [ ] **2.4** Update `src/analytics/analytics.service.ts`: remove private `normalizeIp` (line 291) and `isPrivateOrLocalIp` (line 312). Import from `ip-utils.ts`. Import `getDeviceAndBrowser` from `src/common/ua.ts`.
 
