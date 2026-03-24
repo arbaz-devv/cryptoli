@@ -117,7 +117,9 @@
 
 > **Learnings:** Simple interface-only file. No tests needed — it's a type definition with no runtime behavior. Typecheck passes.
 
-- [ ] **2.7** Create `src/analytics/analytics.interceptor.ts`: per-controller NestInterceptor that populates `req.analyticsCtx = { clientIp, countryHint, userAgent }` using ip-utils. Controllers opt in via `@UseInterceptors(AnalyticsInterceptor)`.
+- [x] **2.7** Create `src/analytics/analytics.interceptor.ts`: per-controller NestInterceptor that populates `req.analyticsCtx = { clientIp, countryHint, userAgent }` using ip-utils. Controllers opt in via `@UseInterceptors(AnalyticsInterceptor)`.
+
+> **Learnings:** The interceptor maps `getClientIp()` → `ip`, `getCountryHint()` → `country`, and `req.headers['user-agent']` → `userAgent` to match the `AnalyticsContext` interface from 2.6. The spec's field names (`clientIp`, `countryHint`) differ from the interface's (`ip`, `country`) — used the interface's names since that's what downstream consumers will reference. Cast `req` to `any` for the `analyticsCtx` property since Express's `Request` type doesn't include it.
 
 - [ ] **2.8** Create `src/analytics/analytics.interceptor.spec.ts`: unit tests for context extraction.
 
