@@ -131,7 +131,9 @@
 
 ### 2C: AnalyticsBufferService
 
-- [ ] **2.10** Create `src/analytics/analytics-buffer.service.ts`: in-memory event buffer with `push()` (synchronous, drops + logs on overflow at MAX_BUFFER=2000), `flush()` (splice-before-await, `prisma.analyticsEvent.createMany()` with `SET LOCAL synchronous_commit = off`), `onModuleInit` (starts 2s setInterval), `onModuleDestroy` (drains buffer). See ANALYTICS.md "AnalyticsBufferService" for full spec.
+- [x] **2.10** Create `src/analytics/analytics-buffer.service.ts`: in-memory event buffer with `push()` (synchronous, drops + logs on overflow at MAX_BUFFER=2000), `flush()` (splice-before-await, `prisma.analyticsEvent.createMany()` with `SET LOCAL synchronous_commit = off`), `onModuleInit` (starts 2s setInterval), `onModuleDestroy` (drains buffer). See ANALYTICS.md "AnalyticsBufferService" for full spec.
+
+> **Learnings:** The Prisma `Json?` type requires casting `Record<string, unknown>` to `Prisma.InputJsonValue` for the `properties` field in `createMany`. Added `bufferLength` getter for test assertions. The `flush()` method uses splice-before-await per spec to prevent race conditions between timer-triggered and threshold-triggered flushes. Typecheck clean.
 
 - [ ] **2.11** Create `src/analytics/analytics-buffer.service.spec.ts`: unit tests covering push, overflow drop, flush batching, threshold trigger (500 rows), graceful shutdown drain, PG failure logging (no re-queue).
 
