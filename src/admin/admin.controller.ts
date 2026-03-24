@@ -1,10 +1,13 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Param,
   Query,
   Body,
+  Header,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { AdminGuard } from './admin.guard';
@@ -15,6 +18,10 @@ import {
   UpdateReviewStatusDto,
   ReviewsQueryDto,
   UsersQueryDto,
+  SessionsQueryDto,
+  SessionsExportQueryDto,
+  ExportFormat,
+  RollupDto,
 } from './dto';
 
 @Controller('api/admin')
@@ -43,6 +50,42 @@ export class AdminController {
   @Get('users/:id')
   async userDetail(@Param('id') id: string, @Query() query: AdminLazyQueryDto) {
     return this.admin.getUserDetail(id, query.lazy ?? false);
+  }
+
+  @Get('users/:id/sessions')
+  async userSessions(
+    @Param('id') id: string,
+    @Query() query: SessionsQueryDto,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    return this.admin.getUserSessions(id, page, limit);
+  }
+
+  @Get('users/:id/sessions/export')
+  @Header('Cache-Control', 'no-store')
+  async userSessionsExport(
+    @Param('id') id: string,
+    @Query() query: SessionsExportQueryDto,
+  ) {
+    const data = await this.admin.getUserSessionsExport(id, query.format);
+
+    if (query.format === ExportFormat.CSV) {
+      const buffer = Buffer.from(data as string, 'utf-8');
+      return new StreamableFile(buffer, {
+        type: 'text/csv; charset=utf-8',
+        disposition: `attachment; filename="sessions-${id}.csv"`,
+      });
+    }
+
+    return data;
+  }
+
+  @Get('users/:id/activity')
+  async userActivity(@Param('id') id: string, @Query() query: PageLimitDto) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    return this.admin.getUserActivity(id, page, limit);
   }
 
   @Get('reviews')
@@ -78,5 +121,14 @@ export class AdminController {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
     return this.admin.getRatings({ page, limit });
+  }
+
+  @Post('analytics/rollup')
+  async rollup(@Body() dto: RollupDto) {
+    return this.admin.rollupAnalytics({
+      date: dto.date,
+      from: dto.from,
+      to: dto.to,
+    });
   }
 }

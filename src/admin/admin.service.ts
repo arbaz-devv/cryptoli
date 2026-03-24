@@ -1,5 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnalyticsRollupService } from '../analytics/analytics-rollup.service';
 import { ReviewStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -72,7 +78,12 @@ const ratingsListCache = new Map<
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(AnalyticsRollupService)
+    private readonly rollupService?: AnalyticsRollupService,
+  ) {}
 
   private normalizePagination(page: number, limit: number) {
     const normalizedPage = Math.max(1, page);
@@ -446,8 +457,7 @@ export class AdminService {
           ? latestSession.createdAt.toISOString()
           : undefined,
         lastLoginIp: latestSession?.ip ?? undefined,
-        registrationIp:
-          user.registrationIp ?? earliestSession?.ip ?? undefined,
+        registrationIp: user.registrationIp ?? earliestSession?.ip ?? undefined,
         registrationCountry:
           user.registrationCountry ?? earliestSession?.country ?? undefined,
         device: latestSession?.device ?? undefined,
@@ -871,5 +881,354 @@ export class AdminService {
       if (e && e.expiry <= Date.now()) ratingsListCache.delete(key);
     }
     return result;
+  }
+
+  async getUserSessions(userId: string, page: number, limit: number) {
+    const { page: p, limit: l } = this.normalizePagination(page, limit);
+    const where = { userId };
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.session.findMany({
+        where,
+        skip: (p - 1) * l,
+        take: l,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          createdAt: true,
+          expiresAt: true,
+          ip: true,
+          ipHash: true,
+          userAgent: true,
+          device: true,
+          browser: true,
+          os: true,
+          country: true,
+          timezone: true,
+          trigger: true,
+        },
+      }),
+      this.prisma.session.count({ where }),
+    ]);
+
+    return {
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        ipHash: s.ipHash ?? undefined,
+        userAgent: s.userAgent ?? undefined,
+        device: s.device ?? undefined,
+        browser: s.browser ?? undefined,
+        os: s.os ?? undefined,
+        country: s.country ?? undefined,
+        timezone: s.timezone ?? undefined,
+        trigger: s.trigger ?? undefined,
+        createdAt: s.createdAt.toISOString(),
+        expiresAt: s.expiresAt.toISOString(),
+      })),
+      pagination: {
+        page: p,
+        limit: l,
+        total,
+        totalPages: Math.ceil(total / l),
+      },
+    };
+  }
+
+  async getUserSessionsExport(userId: string, format: 'csv' | 'json') {
+    const sessions = await this.prisma.session.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        ipHash: true,
+        userAgent: true,
+        device: true,
+        browser: true,
+        os: true,
+        country: true,
+        timezone: true,
+        trigger: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
+
+    if (format === 'csv') {
+      return this.sessionsToCSV(sessions);
+    }
+
+    return sessions.map((s) => ({
+      ipHash: s.ipHash ?? '',
+      userAgent: s.userAgent ?? '',
+      device: s.device ?? '',
+      browser: s.browser ?? '',
+      os: s.os ?? '',
+      country: s.country ?? '',
+      timezone: s.timezone ?? '',
+      trigger: s.trigger ?? '',
+      createdAt: s.createdAt.toISOString(),
+      expiresAt: s.expiresAt.toISOString(),
+    }));
+  }
+
+  private sessionsToCSV(
+    sessions: Array<{
+      ipHash: string | null;
+      userAgent: string | null;
+      device: string | null;
+      browser: string | null;
+      os: string | null;
+      country: string | null;
+      timezone: string | null;
+      trigger: string | null;
+      createdAt: Date;
+      expiresAt: Date;
+    }>,
+  ): string {
+    const BOM = '\uFEFF';
+    const headers = [
+      'IP Hash',
+      'User Agent',
+      'Device',
+      'Browser',
+      'OS',
+      'Country',
+      'Timezone',
+      'Trigger',
+      'Created At',
+      'Expires At',
+    ];
+
+    const escapeCSV = (val: string): string => {
+      if (val.includes('"') || val.includes(',') || val.includes('\n')) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    const rows = sessions.map((s) =>
+      [
+        s.ipHash ?? '',
+        s.userAgent ?? '',
+        s.device ?? '',
+        s.browser ?? '',
+        s.os ?? '',
+        s.country ?? '',
+        s.timezone ?? '',
+        s.trigger ?? '',
+        s.createdAt.toISOString(),
+        s.expiresAt.toISOString(),
+      ]
+        .map(escapeCSV)
+        .join(','),
+    );
+
+    return BOM + headers.join(',') + '\n' + rows.join('\n');
+  }
+
+  async getUserActivity(userId: string, page: number, limit: number) {
+    const { page: p, limit: l } = this.normalizePagination(page, limit);
+    const cap = p * l;
+
+    const [reviews, comments, complaints, helpfulVotes, follows] =
+      await Promise.all([
+        this.prisma.review.findMany({
+          where: { authorId: userId },
+          take: cap,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            product: { select: { name: true } },
+            company: { select: { name: true } },
+          },
+        }),
+        this.prisma.comment.findMany({
+          where: { authorId: userId },
+          take: cap,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+          },
+        }),
+        this.prisma.complaint.findMany({
+          where: { authorId: userId },
+          take: cap,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            product: { select: { name: true } },
+            company: { select: { name: true } },
+          },
+        }),
+        this.prisma.helpfulVote.findMany({
+          where: { userId },
+          take: cap,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            reviewId: true,
+            createdAt: true,
+          },
+        }),
+        this.prisma.follow.findMany({
+          where: { followerId: userId },
+          take: cap,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            createdAt: true,
+            following: { select: { username: true, name: true } },
+          },
+        }),
+      ]);
+
+    const unified: Array<{
+      type: string;
+      id: string;
+      summary: string;
+      createdAt: string;
+    }> = [];
+
+    for (const r of reviews) {
+      unified.push({
+        type: 'review',
+        id: r.id,
+        summary: `Reviewed: ${r.title} (${r.product?.name ?? r.company?.name ?? '-'})`,
+        createdAt: r.createdAt.toISOString(),
+      });
+    }
+    for (const c of comments) {
+      unified.push({
+        type: 'comment',
+        id: c.id,
+        summary: `Commented: ${c.content.slice(0, 80)}${c.content.length > 80 ? '...' : ''}`,
+        createdAt: c.createdAt.toISOString(),
+      });
+    }
+    for (const c of complaints) {
+      unified.push({
+        type: 'complaint',
+        id: c.id,
+        summary: `Complaint: ${c.title} (${c.product?.name ?? c.company?.name ?? '-'})`,
+        createdAt: c.createdAt.toISOString(),
+      });
+    }
+    for (const v of helpfulVotes) {
+      unified.push({
+        type: 'helpful_vote',
+        id: v.id,
+        summary: `Voted helpful on review ${v.reviewId}`,
+        createdAt: v.createdAt.toISOString(),
+      });
+    }
+    for (const f of follows) {
+      unified.push({
+        type: 'follow',
+        id: f.id,
+        summary: `Followed ${f.following?.name ?? f.following?.username ?? 'user'}`,
+        createdAt: f.createdAt.toISOString(),
+      });
+    }
+
+    unified.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    const start = (p - 1) * l;
+    const paged = unified.slice(start, start + l);
+    const total = unified.length;
+
+    return {
+      activities: paged,
+      pagination: {
+        page: p,
+        limit: l,
+        total,
+        totalPages: Math.ceil(total / l),
+      },
+    };
+  }
+
+  async rollupAnalytics(body: { date?: string; from?: string; to?: string }) {
+    if (!this.rollupService) {
+      return { ok: false, error: 'Rollup service not available' };
+    }
+
+    const start = Date.now();
+
+    if (body.date) {
+      const result = await this.rollupService.rollupDay(body.date);
+      return {
+        ok: true,
+        rolledUp: result ? 1 : 0,
+        skipped: result ? 0 : 1,
+        errors: 0,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    if (body.from && body.to) {
+      const days: string[] = [];
+      const fromDate = new Date(body.from);
+      const toDate = new Date(body.to);
+
+      // Cap at 365 days
+      const maxDate = new Date(fromDate);
+      maxDate.setDate(maxDate.getDate() + 365);
+      const effectiveTo = toDate > maxDate ? maxDate : toDate;
+
+      const current = new Date(fromDate);
+      while (current <= effectiveTo) {
+        days.push(current.toISOString().slice(0, 10));
+        current.setDate(current.getDate() + 1);
+      }
+
+      let rolledUp = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      // Process in chunks of 10 concurrent
+      for (let i = 0; i < days.length; i += 10) {
+        const chunk = days.slice(i, i + 10);
+        const results = await Promise.allSettled(
+          chunk.map((day) => this.rollupService!.rollupDay(day)),
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            if (r.value) rolledUp++;
+            else skipped++;
+          } else {
+            errors++;
+          }
+        }
+      }
+
+      return {
+        ok: true,
+        rolledUp,
+        skipped,
+        errors,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    // Default: yesterday
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const day = yesterday.toISOString().slice(0, 10);
+    const result = await this.rollupService.rollupDay(day);
+    return {
+      ok: true,
+      rolledUp: result ? 1 : 0,
+      skipped: result ? 0 : 1,
+      errors: 0,
+      durationMs: Date.now() - start,
+    };
   }
 }

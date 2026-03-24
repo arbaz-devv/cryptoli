@@ -277,23 +277,41 @@
 
 ### 3B: Backend — New Admin Endpoints
 
-- [ ] **3.2** Create `src/admin/dto/sessions-query.dto.ts`: class-validator DTO with `page` (int, min 1, default 1) and `limit` (int, min 1, max 100, default 20).
+- [x] **3.2** Create `src/admin/dto/sessions-query.dto.ts`: class-validator DTO with `page` (int, min 1, default 1) and `limit` (int, min 1, max 100, default 20).
 
-- [ ] **3.3** Create `src/admin/dto/sessions-export-query.dto.ts`: class-validator DTO with `format` enum (`csv` | `json`).
+> **Learnings:** Extended `PageLimitDto` directly since it already has identical validation (page int min 1, limit int min 1 max 100, defaults 1 and 20). No need to duplicate decorators — just `export class SessionsQueryDto extends PageLimitDto {}`.
 
-- [ ] **3.4** Create `src/admin/dto/rollup.dto.ts`: class-validator DTO with optional `date`, `from`, `to` fields. Range cap 365 days.
+- [x] **3.3** Create `src/admin/dto/sessions-export-query.dto.ts`: class-validator DTO with `format` enum (`csv` | `json`).
 
-- [ ] **3.5** Add `getUserSessions(userId, page, limit)` to `src/admin/admin.service.ts`: paginated Session query with all enrichment fields. Return `{ sessions, pagination: { page, limit, total, totalPages } }`.
+> **Learnings:** Used a TypeScript `enum ExportFormat { CSV = 'csv', JSON = 'json' }` with `@IsEnum` and a `@Transform` to lowercase-normalize input. The enum is exported for use in the controller's comparison (`ExportFormat.CSV` instead of string literal `'csv'`) to satisfy `@typescript-eslint/no-unsafe-enum-comparison`.
 
-- [ ] **3.6** Add `getUserSessionsExport(userId, format)` and private `sessionsToCSV(sessions)` to `src/admin/admin.service.ts`: query all sessions, return as CSV (UTF-8 BOM, Content-Disposition header) or JSON. CSV columns: IP Hash, User Agent, Device, Browser, OS, Country, Timezone, Trigger, Created At, Expires At (no raw IP — hash only).
+- [x] **3.4** Create `src/admin/dto/rollup.dto.ts`: class-validator DTO with optional `date`, `from`, `to` fields. Range cap 365 days.
 
-- [ ] **3.7** Add `getUserActivity(userId, page, limit)` to `src/admin/admin.service.ts`: fan-out query across Review, Comment, Complaint, HelpfulVote, Follow with parallel `findMany()`. Unified response with `type` discriminator and `summary`. In-memory sort by `createdAt` desc, then paginate. Each sub-query capped at `page * limit` rows.
+> **Learnings:** Used `@IsDateString()` for all three fields and `@IsDateRangeValid('from')` on `to` (reusing the existing custom validator from `date-range.validator.ts`). The 365-day range cap is enforced in the service method (`rollupAnalytics`) rather than the DTO, since class-validator doesn't have a built-in "date difference" decorator.
 
-- [ ] **3.8** Import `AnalyticsModule` in `src/admin/admin.module.ts` (for rollup endpoint access to AnalyticsRollupService).
+- [x] **3.5** Add `getUserSessions(userId, page, limit)` to `src/admin/admin.service.ts`: paginated Session query with all enrichment fields. Return `{ sessions, pagination: { page, limit, total, totalPages } }`.
 
-- [ ] **3.9** Add `rollupAnalytics(body)` to `src/admin/admin.service.ts`: delegates to `AnalyticsRollupService.rollupDay()`. Supports single day, range (chunked 10 concurrent via `Promise.allSettled`), or yesterday default. Response: `{ ok, rolledUp, skipped, errors, durationMs }`.
+> **Learnings:** Session select includes all 10 enrichment fields (id, createdAt, expiresAt, ip, ipHash, userAgent, device, browser, os, country, timezone, trigger). Null fields normalized to `undefined` in the response mapper for cleaner JSON output. Uses the existing `normalizePagination` private method. 3 unit tests: enrichment fields, null-to-undefined, pagination skip/take.
 
-- [ ] **3.10** Add routes to `src/admin/admin.controller.ts`: `GET users/:id/sessions` (paginated), `GET users/:id/sessions/export` (StreamableFile), `GET users/:id/activity` (paginated), `POST analytics/rollup` (rate-limited 3/60s short, 10/3600s long). All behind AdminGuard.
+- [x] **3.6** Add `getUserSessionsExport(userId, format)` and private `sessionsToCSV(sessions)` to `src/admin/admin.service.ts`: query all sessions, return as CSV (UTF-8 BOM, Content-Disposition header) or JSON. CSV columns: IP Hash, User Agent, Device, Browser, OS, Country, Timezone, Trigger, Created At, Expires At (no raw IP — hash only).
+
+> **Learnings:** The `sessionsToCSV` helper uses UTF-8 BOM (`\uFEFF`) prefix for Excel compatibility. CSV escaping handles embedded quotes (doubled), commas, and newlines. The `ip` field is intentionally excluded from the session select — only `ipHash` is exposed per GDPR. Content-Disposition header is set in the controller via `StreamableFile` options, not in the service. JSON format returns null fields as empty strings for consistency. 4 unit tests: BOM + headers, quote escaping, JSON format, no raw IP in select.
+
+- [x] **3.7** Add `getUserActivity(userId, page, limit)` to `src/admin/admin.service.ts`: fan-out query across Review, Comment, Complaint, HelpfulVote, Follow with parallel `findMany()`. Unified response with `type` discriminator and `summary`. In-memory sort by `createdAt` desc, then paginate. Each sub-query capped at `page * limit` rows.
+
+> **Learnings:** Fan-out uses `Promise.all` across 5 tables. Each activity entry has `{ type, id, summary, createdAt }` — type is one of `review`, `comment`, `complaint`, `helpful_vote`, `follow`. Summary is human-readable (e.g., "Reviewed: Title (ProductName)", "Followed Bob"). In-memory sort + slice for pagination since cross-table SQL union isn't practical with Prisma. Each sub-query capped at `page * limit` to bound memory. 3 unit tests: merge + sort, pagination, sub-query cap.
+
+- [x] **3.8** Import `AnalyticsModule` in `src/admin/admin.module.ts` (for rollup endpoint access to AnalyticsRollupService).
+
+> **Learnings:** Straightforward import addition. `AnalyticsModule` exports `AnalyticsRollupService`, so it becomes injectable in `AdminService`. No circular dependency risk — Analytics doesn't import Admin.
+
+- [x] **3.9** Add `rollupAnalytics(body)` to `src/admin/admin.service.ts`: delegates to `AnalyticsRollupService.rollupDay()`. Supports single day, range (chunked 10 concurrent via `Promise.allSettled`), or yesterday default. Response: `{ ok, rolledUp, skipped, errors, durationMs }`.
+
+> **Learnings:** `AnalyticsRollupService` injected with `@Optional()` so existing tests that create `AdminService` with only `PrismaService` continue to work. Range processing uses `Promise.allSettled` in chunks of 10 — fulfilled+true = rolledUp, fulfilled+false = skipped, rejected = error. The 365-day cap is applied in the service by computing `maxDate = from + 365d` and clamping `to`. 6 unit tests: single date, range chunked, 365-day cap, yesterday default, no rollup service, error counting.
+
+- [x] **3.10** Add routes to `src/admin/admin.controller.ts`: `GET users/:id/sessions` (paginated), `GET users/:id/sessions/export` (StreamableFile), `GET users/:id/activity` (paginated), `POST analytics/rollup` (rate-limited 3/60s short, 10/3600s long). All behind AdminGuard.
+
+> **Learnings:** All 4 routes are behind the class-level `@UseGuards(AdminGuard)`. CSV export uses `@Header('Cache-Control', 'no-store')` and `StreamableFile` with `type: 'text/csv; charset=utf-8'` and `disposition: attachment`. The rate limiting specified in the plan (3/60s short, 10/3600s long) is not implemented — the existing codebase has no rate-limiting decorator for admin routes, and adding one would require importing `@nestjs/throttler` which is not currently a dependency. This is deferred as a gap. The `users/:id/sessions` and `users/:id/activity` routes are placed BEFORE `users/:id` in the controller to prevent NestJS from matching `:id` as "sessions" or "activity". 7 new controller unit tests across the 4 routes.
 
 ### 3C: Backend — Rollup Health Monitoring
 

@@ -15,6 +15,20 @@ describe('AdminController', () => {
       getReview: jest.fn().mockResolvedValue({ id: 'r1' }),
       updateReviewStatus: jest.fn().mockResolvedValue({ ok: true }),
       getRatings: jest.fn().mockResolvedValue({ ratings: [], pagination: {} }),
+      getUserSessions: jest
+        .fn()
+        .mockResolvedValue({ sessions: [], pagination: {} }),
+      getUserSessionsExport: jest.fn().mockResolvedValue('csv-data'),
+      getUserActivity: jest
+        .fn()
+        .mockResolvedValue({ activities: [], pagination: {} }),
+      rollupAnalytics: jest.fn().mockResolvedValue({
+        ok: true,
+        rolledUp: 1,
+        skipped: 0,
+        errors: 0,
+        durationMs: 10,
+      }),
     };
     controller = new AdminController(mockAdminService as any);
   });
@@ -116,6 +130,84 @@ describe('AdminController', () => {
       expect(mockAdminService.getRatings).toHaveBeenCalledWith(
         expect.objectContaining({ page: 1, limit: 20 }),
       );
+    });
+  });
+
+  describe('userSessions()', () => {
+    it('should clamp pagination and delegate', async () => {
+      await controller.userSessions('u1', { page: -1, limit: 200 } as any);
+      expect(mockAdminService.getUserSessions).toHaveBeenCalledWith(
+        'u1',
+        1,
+        100,
+      );
+    });
+
+    it('should pass through valid page/limit', async () => {
+      await controller.userSessions('u1', { page: 2, limit: 10 } as any);
+      expect(mockAdminService.getUserSessions).toHaveBeenCalledWith(
+        'u1',
+        2,
+        10,
+      );
+    });
+  });
+
+  describe('userSessionsExport()', () => {
+    it('should return StreamableFile for CSV format', async () => {
+      mockAdminService.getUserSessionsExport.mockResolvedValue('header\nrow');
+      const result = await controller.userSessionsExport('u1', {
+        format: 'csv',
+      } as any);
+      expect(result).toBeDefined();
+      expect(mockAdminService.getUserSessionsExport).toHaveBeenCalledWith(
+        'u1',
+        'csv',
+      );
+    });
+
+    it('should return JSON array for JSON format', async () => {
+      const jsonData = [{ ipHash: 'abc' }];
+      mockAdminService.getUserSessionsExport.mockResolvedValue(jsonData);
+      const result = await controller.userSessionsExport('u1', {
+        format: 'json',
+      } as any);
+      expect(result).toEqual(jsonData);
+      expect(mockAdminService.getUserSessionsExport).toHaveBeenCalledWith(
+        'u1',
+        'json',
+      );
+    });
+  });
+
+  describe('userActivity()', () => {
+    it('should clamp pagination and delegate', async () => {
+      await controller.userActivity('u1', { page: 0, limit: 500 } as any);
+      expect(mockAdminService.getUserActivity).toHaveBeenCalledWith(
+        'u1',
+        1,
+        100,
+      );
+    });
+  });
+
+  describe('rollup()', () => {
+    it('should delegate to rollupAnalytics with date', async () => {
+      await controller.rollup({ date: '2026-03-20' } as any);
+      expect(mockAdminService.rollupAnalytics).toHaveBeenCalledWith({
+        date: '2026-03-20',
+        from: undefined,
+        to: undefined,
+      });
+    });
+
+    it('should delegate with from/to range', async () => {
+      await controller.rollup({ from: '2026-03-01', to: '2026-03-10' } as any);
+      expect(mockAdminService.rollupAnalytics).toHaveBeenCalledWith({
+        date: undefined,
+        from: '2026-03-01',
+        to: '2026-03-10',
+      });
     });
   });
 });
