@@ -101,25 +101,61 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
     }> = [];
 
     // Scalar _total_ rows
-    rows.push({ date, dimension: '_total_', dimensionValue: 'pageviews', count: data.pageviews });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'bounces', count: data.bounces });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'likes', count: data.likes });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'duration_sum', count: data.durationSum });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'duration_count', count: data.durationCount });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'uniques_approx', count: data.uniquesApprox });
-    rows.push({ date, dimension: '_total_', dimensionValue: 'sessions_approx', count: data.sessionsApprox });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'pageviews',
+      count: data.pageviews,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'bounces',
+      count: data.bounces,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'likes',
+      count: data.likes,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'duration_sum',
+      count: data.durationSum,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'duration_count',
+      count: data.durationCount,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'uniques_approx',
+      count: data.uniquesApprox,
+    });
+    rows.push({
+      date,
+      dimension: '_total_',
+      dimensionValue: 'sessions_approx',
+      count: data.sessionsApprox,
+    });
 
     // Hash dimension rows
-    const hashDimensions: Array<[string, Record<string, number> | undefined]> = [
-      ['country', data.country],
-      ['device', data.device],
-      ['browser', data.browser],
-      ['path', data.path],
-      ['duration_bucket', data.durationHist],
-      ['funnel_event', data.funnelEvent],
-      ['hour', data.hour],
-      ['weekday', data.weekday],
-    ];
+    const hashDimensions: Array<[string, Record<string, number> | undefined]> =
+      [
+        ['country', data.country],
+        ['device', data.device],
+        ['browser', data.browser],
+        ['path', data.path],
+        ['duration_bucket', data.durationHist],
+        ['funnel_event', data.funnelEvent],
+        ['hour', data.hour],
+        ['weekday', data.weekday],
+      ];
     for (const [dimension, values] of hashDimensions) {
       if (!values) continue;
       for (const [dimensionValue, count] of Object.entries(values)) {
@@ -170,8 +206,10 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
     if (data.device) p.hset(`${KEY_PREFIX}:device:${day}`, data.device);
     if (data.browser) p.hset(`${KEY_PREFIX}:browser:${day}`, data.browser);
     if (data.path) p.hset(`${KEY_PREFIX}:path:${day}`, data.path);
-    if (data.durationHist) p.hset(`${KEY_PREFIX}:duration_hist:${day}`, data.durationHist);
-    if (data.funnelEvent) p.hset(`${KEY_PREFIX}:funnel:event:${day}`, data.funnelEvent);
+    if (data.durationHist)
+      p.hset(`${KEY_PREFIX}:duration_hist:${day}`, data.durationHist);
+    if (data.funnelEvent)
+      p.hset(`${KEY_PREFIX}:funnel:event:${day}`, data.funnelEvent);
     if (data.hour) p.hset(`${KEY_PREFIX}:hour:${day}`, data.hour);
     if (data.weekday) p.hset(`${KEY_PREFIX}:weekday:${day}`, data.weekday);
 
@@ -292,7 +330,11 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
       browser: { chrome: '100', safari: '50' },
       path: { '/': '80', '/about': '40', '/blog': '30' },
       durationHist: { '0_9': '15', '10_29': '20', '60_119': '10' },
-      funnelEvent: { signup_started: '10', signup_completed: '6', purchase: '2' },
+      funnelEvent: {
+        signup_started: '10',
+        signup_completed: '6',
+        purchase: '2',
+      },
       hour: { '10': '40', '14': '60', '22': '50' },
       weekday: { '3': '150' },
     });
@@ -345,12 +387,15 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
     expect(result!.durationP50Seconds).toBeGreaterThan(0);
 
     // Funnel merge: signup_started = 15 + 10 = 25, signup_completed = 8 + 6 = 14
-    expect(result!.funnel.signup_started).toBe(25);
-    expect(result!.funnel.signup_completed).toBe(14);
-    expect(result!.funnel.purchase).toBe(5);
+    expect(result!.funnel!.signup_started).toBe(25);
+    expect(result!.funnel!.signup_completed).toBe(14);
+    expect(result!.funnel!.purchase).toBe(5);
     // Derived funnel rates computed post-merge
-    expect(result!.funnel.signupCompletionRate).toBeCloseTo((14 / 25) * 100, 1);
-    expect(result!.funnel.purchaseRate).toBeCloseTo((5 / 25) * 100, 1);
+    expect(result!.funnel!.signupCompletionRate).toBeCloseTo(
+      (14 / 25) * 100,
+      1,
+    );
+    expect(result!.funnel!.purchaseRate).toBeCloseTo((5 / 25) * 100, 1);
 
     // Hour merge: 10 = 60 + 40 = 100, 14 = 80 + 60 = 140
     expect(result!.byHour['10']).toBe(100);

@@ -4,12 +4,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createSocketMock } from '../../test/helpers/socket.mock';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 describe('CommentsService', () => {
   let service: CommentsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let socketMock: ReturnType<typeof createSocketMock>;
   let notificationsMock: { createForUser: jest.Mock };
+  let analyticsMock: { track: jest.Mock };
+
+  const mockCtx: AnalyticsContext = {
+    ip: '1.2.3.4',
+    userAgent: 'TestAgent/1.0',
+    country: 'US',
+  };
 
   beforeEach(() => {
     prisma = createPrismaMock();
@@ -17,10 +25,14 @@ describe('CommentsService', () => {
     notificationsMock = {
       createForUser: jest.fn().mockResolvedValue(undefined),
     };
+    analyticsMock = {
+      track: jest.fn().mockResolvedValue(undefined),
+    };
     service = new CommentsService(
       prisma as unknown as PrismaService,
       notificationsMock as any,
       socketMock as any,
+      analyticsMock as any,
     );
   });
 
@@ -480,6 +492,121 @@ describe('CommentsService', () => {
       const result = await service.getById('bad-id');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('analytics tracking', () => {
+    it('should track comment_created after create()', async () => {
+      prisma.comment.create.mockResolvedValue({
+        id: 'cm1',
+        content: 'Test',
+        authorId: 'u1',
+        reviewId: 'r1',
+        author: { id: 'u1', username: 'user1', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      prisma.review.findUnique.mockResolvedValue({
+        id: 'r1',
+        title: 'Review',
+        authorId: 'r-author',
+        author: { username: 'reviewer' },
+      });
+      prisma.comment.count.mockResolvedValue(1);
+
+      await service.create({ content: 'Test', reviewId: 'r1' }, 'u1', mockCtx);
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        {
+          event: 'comment_created',
+          consent: true,
+          userId: 'u1',
+          properties: {
+            commentId: 'cm1',
+            reviewId: 'r1',
+            postId: undefined,
+            complaintId: undefined,
+          },
+        },
+        'US',
+      );
+    });
+
+    it('should track vote_cast after vote()', async () => {
+      const txMock = {
+        comment: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue({ id: 'cm1', authorId: 'author1' }),
+          update: jest.fn(),
+        },
+        commentVote: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+          count: jest.fn(),
+        },
+      };
+      txMock.commentVote.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
+      prisma.comment.findUnique.mockResolvedValue({ reviewId: 'r1' });
+      prisma.user.findUnique.mockResolvedValue({ username: 'voter' });
+
+      await service.vote('cm1', 'UP', 'u1', mockCtx);
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestAgent/1.0',
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId: 'u1',
+          properties: { commentId: 'cm1', voteType: 'UP' },
+        },
+        'US',
+      );
+    });
+
+    it('should not track when analyticsCtx is absent', async () => {
+      prisma.comment.create.mockResolvedValue({
+        id: 'cm1',
+        content: 'Test',
+        authorId: 'u1',
+        author: { id: 'u1', username: 'user1', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(1);
+
+      await service.create({ content: 'Test', reviewId: 'r1' }, 'u1');
+
+      expect(analyticsMock.track).not.toHaveBeenCalled();
+    });
+
+    it('should not track when analyticsService is undefined', async () => {
+      const serviceNoAnalytics = new CommentsService(
+        prisma as unknown as PrismaService,
+        notificationsMock as any,
+        socketMock as any,
+      );
+      prisma.comment.create.mockResolvedValue({
+        id: 'cm1',
+        content: 'Test',
+        authorId: 'u1',
+        author: { id: 'u1', username: 'user1', avatar: null, verified: false },
+        _count: { reactions: 0, votes: 0, replies: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(1);
+
+      await serviceNoAnalytics.create(
+        { content: 'Test', reviewId: 'r1' },
+        'u1',
+        mockCtx,
+      );
+
+      expect(analyticsMock.track).not.toHaveBeenCalled();
     });
   });
 });

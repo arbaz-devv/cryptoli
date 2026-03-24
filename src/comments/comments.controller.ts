@@ -40,7 +40,11 @@ export class CommentsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.commentsService.create(body, req.user.id);
+    return this.commentsService.create(
+      body,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Get('list')
@@ -84,6 +88,11 @@ export class CommentsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.commentsService.vote(id, body.voteType, req.user.id);
+    return this.commentsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 }

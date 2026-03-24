@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createCommentSchema } from '../common/utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SocketService } from '../socket/socket.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 @Injectable()
 export class CommentsService {
@@ -11,9 +13,14 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly socketService: SocketService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
-  async create(body: unknown, authorId: string) {
+  async create(
+    body: unknown,
+    authorId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const validated = createCommentSchema.parse(body);
     const targets = [
       validated.reviewId,
@@ -119,6 +126,25 @@ export class CommentsService {
       this.socketService.emitCommentCountUpdated(
         validated.reviewId,
         commentCount,
+      );
+    }
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'comment_created',
+          consent: true,
+          userId: authorId,
+          properties: {
+            commentId: comment.id,
+            reviewId: validated.reviewId,
+            postId: validated.postId,
+            complaintId: validated.complaintId,
+          },
+        },
+        analyticsCtx.country,
       );
     }
 
@@ -332,7 +358,12 @@ export class CommentsService {
     return commentsWithVotes[0] ?? null;
   }
 
-  async vote(commentId: string, voteType: string, userId: string) {
+  async vote(
+    commentId: string,
+    voteType: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     if (!voteType || (voteType !== 'UP' && voteType !== 'DOWN')) {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
@@ -417,6 +448,20 @@ export class CommentsService {
           ? `/?review=${commentWithReview.reviewId}`
           : '/',
       });
+    }
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId,
+          properties: { commentId, voteType: result.voteType },
+        },
+        analyticsCtx.country,
+      );
     }
 
     return {
