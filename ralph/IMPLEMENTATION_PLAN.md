@@ -21,7 +21,9 @@
 
 > **Learnings:** The removal was clean — deleted the entire `if (!countryCode || countryCode === 'UNKNOWN')` block with the fetch call. Changed `let countryCode` to `const` since it's no longer reassigned. The early return on invalid country code means the cache-write block only runs for valid 2-letter codes. All 50 analytics unit tests and 392 total unit tests pass without changes — no tests depended on the ipwho.is fallback behavior.
 
-- [ ] **0.3** Add bot detection guard in `src/analytics/analytics.service.ts`: import `isBot` from `require('ua-parser-js/bot-detection')` and add `if (isBot(userAgent)) return;` as an early guard in `track()`, alongside the existing consent and Redis-ready checks.
+- [x] **0.3** Add bot detection guard in `src/analytics/analytics.service.ts`: import `isBot` from `require('ua-parser-js/bot-detection')` and add `if (isBot(userAgent)) return;` as an early guard in `track()`, alongside the existing consent and Redis-ready checks.
+
+> **Learnings:** `isBot` from `ua-parser-js/bot-detection` accepts raw UA strings directly (not parsed results). It crashes on `undefined` input, so the guard is `if (userAgent && isBot(userAgent)) return;` — empty UA strings are allowed through since they're not bots, just missing data. The module exports `{ isAIAssistant, isAICrawler, isBot }` — we only need `isBot` which covers CLI, crawler, fetcher, and library browser types. Three unit tests added: Googlebot rejection, bingbot rejection, and empty-UA passthrough.
 
 - [ ] **0.4** Fix ua-parser-js type safety: in `src/analytics/analytics.service.ts` (line 7), replace `const UAParser = require('ua-parser-js') as ...` with `import UAParser from 'ua-parser-js'`. Remove the `as` cast on `getResult()` (line 414). In `package.json`, remove `@types/ua-parser-js` from devDependencies (line 59). ua-parser-js v2.0.9 ships its own `.d.ts`.
 

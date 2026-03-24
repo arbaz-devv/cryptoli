@@ -35,6 +35,38 @@ describe('AnalyticsService', () => {
       expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
     });
 
+    it('should no-op when userAgent is a bot (Googlebot)', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+      await service.track(
+        '1.2.3.4',
+        'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        { event: 'page_view', consent: true },
+      );
+      expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
+    });
+
+    it('should no-op when userAgent is a bot (bingbot)', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+      await service.track(
+        '1.2.3.4',
+        'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+        { event: 'page_view', consent: true },
+      );
+      expect(redisMock._clientMock.incr).not.toHaveBeenCalled();
+    });
+
+    it('should still track when userAgent is empty (not a bot)', async () => {
+      redisMock = createRedisMock(true);
+      service = new AnalyticsService(redisMock as any);
+      await service.track('1.2.3.4', '', {
+        event: 'page_view',
+        consent: true,
+      });
+      expect(redisMock._clientMock.incr).toHaveBeenCalled();
+    });
+
     it('should write page_view keys when Redis is ready', async () => {
       redisMock = createRedisMock(true);
       service = new AnalyticsService(redisMock as any);

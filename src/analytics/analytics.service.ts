@@ -11,6 +11,10 @@ const UAParser = require('ua-parser-js') as new (ua?: string) => {
     os?: { name?: string };
   };
 };
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isBot } = require('ua-parser-js/bot-detection') as {
+  isBot: (ua: string) => boolean;
+};
 
 const KEY_PREFIX = 'analytics';
 const KEY_RECENT_SESSIONS = `${KEY_PREFIX}:recent_sessions`;
@@ -427,6 +431,7 @@ export class AnalyticsService {
   ): Promise<void> {
     if (!this.redisService.isReady() || !this.redis) return;
     if (!body.consent) return;
+    if (userAgent && isBot(userAgent)) return;
 
     const now = new Date();
     const day = this.dayKey(now);
