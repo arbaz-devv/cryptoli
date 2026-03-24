@@ -4,6 +4,8 @@ import {
   ConflictException,
   Controller,
   Get,
+  Inject,
+  Optional,
   Patch,
   Post,
   Query,
@@ -28,6 +30,7 @@ import {
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { getClientIp, getCountryHint } from '../analytics/ip-utils';
 
 @UseInterceptors(AnalyticsInterceptor)
@@ -36,6 +39,8 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
+    @Optional() @Inject(AnalyticsService)
+    private readonly analyticsService?: AnalyticsService,
   ) {}
 
   private extractSessionMeta(
@@ -48,6 +53,23 @@ export class AuthController {
       country: getCountryHint(req) || undefined,
       trigger,
     };
+  }
+
+  private trackAuthEvent(
+    req: Request,
+    event: 'user_login' | 'user_register' | 'user_logout' | 'password_change',
+    userId?: string,
+    properties?: Record<string, unknown>,
+  ): void {
+    if (!this.analyticsService) return;
+    const ctx = (req as any).analyticsCtx;
+    if (!ctx) return;
+    void this.analyticsService.track(ctx.ip, ctx.userAgent, {
+      event,
+      consent: true,
+      userId,
+      properties,
+    }, ctx.country);
   }
 
   private sessionCookieOptions(): CookieOptions {
@@ -257,6 +279,10 @@ export class AuthController {
     const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
 
+    this.trackAuthEvent(req, 'user_register', user.id, {
+      username: user.username,
+    });
+
     return {
       user,
       message: 'Registration successful',
@@ -315,6 +341,8 @@ export class AuthController {
     const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
 
+    this.trackAuthEvent(req, 'user_login', user.id);
+
     return {
       user: {
         id: user.id,
@@ -342,6 +370,9 @@ export class AuthController {
       sameSite: opts.sameSite,
       secure: opts.secure,
     });
+
+    this.trackAuthEvent(req, 'user_logout');
+
     return { message: 'Logout successful' };
   }
 
@@ -409,6 +440,8 @@ export class AuthController {
       message: 'Your account password was updated successfully.',
       link: `/${req.user.username}`,
     });
+
+    this.trackAuthEvent(req, 'password_change', req.user.id);
 
     return { message: 'Password changed successfully' };
   }
