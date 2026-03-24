@@ -271,7 +271,9 @@
 
 ### 3A: Backend — getUserDetail() with Real Data
 
-- [ ] **3.1** Update `getUserDetail()` in `src/admin/admin.service.ts` (line 245): expand session query from `select: { createdAt: true }` to include all enrichment fields (ip, ipHash, device, browser, os, country, timezone, trigger). Derive real values: `lastLoginIp` from most recent session, `registrationIp` from `user.registrationIp ?? earliestSession.ip`, `device`/`browser`/`os`/`country`/`timezone` from most recent session, `loginCount` from `sessions.length`. Replace hardcoded `device: 'Unknown'` and `country: 'Unknown'` in activitySeries (lines 405-412) with real per-day device/country breakdowns. Expand activity series from 7 to 30 days.
+- [x] **3.1** Update `getUserDetail()` in `src/admin/admin.service.ts` (line 245): expand session query from `select: { createdAt: true }` to include all enrichment fields (ip, ipHash, device, browser, os, country, timezone, trigger). Derive real values: `lastLoginIp` from most recent session, `registrationIp` from `user.registrationIp ?? earliestSession.ip`, `device`/`browser`/`os`/`country`/`timezone` from most recent session, `loginCount` from `sessions.length`. Replace hardcoded `device: 'Unknown'` and `country: 'Unknown'` in activitySeries (lines 405-412) with real per-day device/country breakdowns. Expand activity series from 7 to 30 days.
+
+> **Learnings:** Added `registrationIp` and `registrationCountry` to user select. Session select expanded from just `createdAt` to all 8 enrichment fields. Most recent session derived via sort-by-createdAt-desc. Activity series `device`/`country` per day uses a `topEntry()` helper that picks the most-frequent value from a frequency map — ties go to whichever key was encountered first (arbitrary but deterministic). The `registrationIp` fallback chain is `user.registrationIp ?? earliestSession.ip ?? undefined`. 4 new unit tests: session field derivation, registrationIp precedence, per-day device/country breakdowns, zero-sessions graceful handling. All 565 unit tests pass, typecheck clean.
 
 ### 3B: Backend — New Admin Endpoints
 

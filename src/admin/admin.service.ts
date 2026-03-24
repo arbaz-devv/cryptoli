@@ -254,6 +254,8 @@ export class AdminService {
         role: true,
         verified: true,
         reputation: true,
+        registrationIp: true,
+        registrationCountry: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { reviews: true } },
@@ -334,7 +336,17 @@ export class AdminService {
       }),
       this.prisma.session.findMany({
         where: { userId: id },
-        select: { createdAt: true },
+        select: {
+          createdAt: true,
+          ip: true,
+          ipHash: true,
+          device: true,
+          browser: true,
+          os: true,
+          country: true,
+          timezone: true,
+          trigger: true,
+        },
       }),
       this.prisma.comment.findMany({
         where: { authorId: id },
@@ -346,21 +358,43 @@ export class AdminService {
       }),
     ]);
 
-    const dayKeys = Array.from({ length: 7 }, (_, idx) => {
+    const dayKeys = Array.from({ length: 30 }, (_, idx) => {
       const d = new Date();
-      d.setDate(d.getDate() - (6 - idx));
+      d.setDate(d.getDate() - (29 - idx));
       return d.toISOString().slice(0, 10);
     });
     const seriesMap: Record<
       string,
-      { logins: number; comments: number; votes: number }
+      {
+        logins: number;
+        comments: number;
+        votes: number;
+        devices: Record<string, number>;
+        countries: Record<string, number>;
+      }
     > = {};
     dayKeys.forEach((key) => {
-      seriesMap[key] = { logins: 0, comments: 0, votes: 0 };
+      seriesMap[key] = {
+        logins: 0,
+        comments: 0,
+        votes: 0,
+        devices: {},
+        countries: {},
+      };
     });
     sessions.forEach((s) => {
       const key = s.createdAt.toISOString().slice(0, 10);
-      if (seriesMap[key]) seriesMap[key].logins += 1;
+      if (seriesMap[key]) {
+        seriesMap[key].logins += 1;
+        if (s.device) {
+          seriesMap[key].devices[s.device] =
+            (seriesMap[key].devices[s.device] || 0) + 1;
+        }
+        if (s.country) {
+          seriesMap[key].countries[s.country] =
+            (seriesMap[key].countries[s.country] || 0) + 1;
+        }
+      }
     });
     comments.forEach((c) => {
       const key = c.createdAt.toISOString().slice(0, 10);
@@ -370,6 +404,25 @@ export class AdminService {
       const key = v.createdAt.toISOString().slice(0, 10);
       if (seriesMap[key]) seriesMap[key].votes += 1;
     });
+
+    // Derive most-frequent value from a Record<string, number>
+    const topEntry = (map: Record<string, number>): string | undefined => {
+      let best: string | undefined;
+      let max = 0;
+      for (const [k, v] of Object.entries(map)) {
+        if (v > max) {
+          max = v;
+          best = k;
+        }
+      }
+      return best;
+    };
+
+    const sortedSessions = [...sessions].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+    const latestSession = sortedSessions[0] ?? null;
+    const earliestSession = sortedSessions[sortedSessions.length - 1] ?? null;
 
     const lastActivityDate = [
       user.updatedAt,
@@ -389,14 +442,20 @@ export class AdminService {
         joinedAt: user.createdAt.toISOString().slice(0, 10),
         reviewCount: user._count.reviews,
         lastActive: lastActivityDate.toISOString().slice(0, 10),
-        lastLoginAt:
-          sessions.length > 0
-            ? sessions
-                .sort(
-                  (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-                )[0]
-                .createdAt.toISOString()
-            : undefined,
+        lastLoginAt: latestSession
+          ? latestSession.createdAt.toISOString()
+          : undefined,
+        lastLoginIp: latestSession?.ip ?? undefined,
+        registrationIp:
+          user.registrationIp ?? earliestSession?.ip ?? undefined,
+        registrationCountry:
+          user.registrationCountry ?? earliestSession?.country ?? undefined,
+        device: latestSession?.device ?? undefined,
+        browser: latestSession?.browser ?? undefined,
+        os: latestSession?.os ?? undefined,
+        country: latestSession?.country ?? undefined,
+        timezone: latestSession?.timezone ?? undefined,
+        loginCount: sessions.length,
       },
       metrics: {
         commentsCount,
@@ -404,8 +463,8 @@ export class AdminService {
       },
       activitySeries: dayKeys.map((date) => ({
         date,
-        device: 'Unknown',
-        country: 'Unknown',
+        device: topEntry(seriesMap[date].devices) ?? 'Unknown',
+        country: topEntry(seriesMap[date].countries) ?? 'Unknown',
         logins: seriesMap[date].logins,
         comments: seriesMap[date].comments,
         votes: seriesMap[date].votes,

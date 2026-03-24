@@ -164,6 +164,8 @@ describe('AdminService', () => {
         role: 'USER',
         verified: false,
         reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-15'),
         _count: { reviews: 1 },
@@ -183,7 +185,224 @@ describe('AdminService', () => {
 
       expect(result.metrics!.commentsCount).toBe(5);
       expect(result.metrics!.votesCount).toBe(6); // 3+2+1
-      expect(result.activitySeries).toHaveLength(7);
+      expect(result.activitySeries).toHaveLength(30);
+      expect(result.user.loginCount).toBe(0);
+    });
+
+    it('should derive user fields from most recent session', async () => {
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 86400000);
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: yesterday,
+          ip: '10.0.0.1',
+          ipHash: 'oldhash',
+          device: 'mobile',
+          browser: 'Firefox',
+          os: 'Android',
+          country: 'DE',
+          timezone: 'Europe/Berlin',
+          trigger: 'login',
+        },
+        {
+          createdAt: now,
+          ip: '192.168.1.1',
+          ipHash: 'newhash',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'US',
+          timezone: 'America/New_York',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      // Most recent session fields
+      expect(result.user.lastLoginIp).toBe('192.168.1.1');
+      expect(result.user.device).toBe('desktop');
+      expect(result.user.browser).toBe('Chrome');
+      expect(result.user.os).toBe('Windows');
+      expect(result.user.country).toBe('US');
+      expect(result.user.timezone).toBe('America/New_York');
+      expect(result.user.loginCount).toBe(2);
+      // registrationIp falls back to earliest session when user field is null
+      expect(result.user.registrationIp).toBe('10.0.0.1');
+      expect(result.user.registrationCountry).toBe('DE');
+    });
+
+    it('should prefer user registrationIp/Country over earliest session', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: '1.2.3.4',
+        registrationCountry: 'GB',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: new Date(),
+          ip: '5.6.7.8',
+          ipHash: 'hash',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Linux',
+          country: 'US',
+          timezone: 'America/Chicago',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      expect(result.user.registrationIp).toBe('1.2.3.4');
+      expect(result.user.registrationCountry).toBe('GB');
+    });
+
+    it('should populate per-day device/country breakdowns in activitySeries', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: new Date(),
+          ip: '1.2.3.4',
+          ipHash: 'h1',
+          device: 'mobile',
+          browser: 'Safari',
+          os: 'iOS',
+          country: 'JP',
+          timezone: 'Asia/Tokyo',
+          trigger: 'login',
+        },
+        {
+          createdAt: new Date(),
+          ip: '5.6.7.8',
+          ipHash: 'h2',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'JP',
+          timezone: 'Asia/Tokyo',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      const todayEntry = result.activitySeries.find(
+        (e: any) => e.date === today,
+      ) as any;
+      expect(todayEntry).toBeDefined();
+      // Two sessions today: 1 mobile + 1 desktop — no clear winner, either is valid
+      expect(['mobile', 'desktop']).toContain(todayEntry.device);
+      expect(todayEntry.country).toBe('JP');
+      expect(todayEntry.logins).toBe(2);
+
+      // Days without sessions should show 'Unknown'
+      const oldDay = result.activitySeries[0] as any;
+      expect(oldDay.device).toBe('Unknown');
+      expect(oldDay.country).toBe('Unknown');
+    });
+
+    it('should handle zero sessions gracefully', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      expect(result.user.lastLoginIp).toBeUndefined();
+      expect(result.user.device).toBeUndefined();
+      expect(result.user.loginCount).toBe(0);
+      expect(result.user.registrationIp).toBeUndefined();
+      expect(result.user.registrationCountry).toBeUndefined();
     });
   });
 
