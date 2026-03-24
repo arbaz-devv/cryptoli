@@ -69,7 +69,9 @@
 
 > **Learnings:** `prisma migrate dev` failed due to drift between migration history and DB state (prior changes applied via `db push` without migrations). Used `prisma db push` instead to sync schema directly — this applies the schema without creating migration files, which is appropriate for development. The DB also had enum values (Role: MODERATOR/ADMIN/VERIFIED_EXPERT, NotificationType: ACCOUNT_CREATED/PROFILE_UPDATED/REVIEW_CREATED/REVIEW_LIKED/COMMENT_ADDED) and Notification columns (actorId, data, pushedAt) plus PushSubscription columns (userAgent, updatedAt) that existed in the DB but not in schema.prisma — added these to the schema to avoid data loss on push. None of these extra features are referenced in application code. Also switched test-db.setup.ts from `prisma migrate deploy` to `prisma db push --skip-generate` since the migration history is unreliable — this ensures test containers always match the current schema.
 
-- [ ] **1.6** Fix CORS in `src/main.ts` (line 108): add `'X-Analytics-Key'` to `allowedHeaders` array. Add `exposedHeaders: ['Content-Disposition']` to the CORS config object.
+- [x] **1.6** Fix CORS in `src/main.ts` (line 108): add `'X-Analytics-Key'` to `allowedHeaders` array. Add `exposedHeaders: ['Content-Disposition']` to the CORS config object.
+
+> **Learnings:** Straightforward config change. `X-Analytics-Key` allows the frontend to send the analytics API key header through CORS preflight. `Content-Disposition` exposure is needed for the session export CSV download in Phase 3 (item 3.10). No dedicated CORS tests exist — the e2e test suite uses `setup-app.ts` which bootstraps differently from `main.ts`, so CORS config is effectively tested only in production bootstrap.
 
 - [ ] **1.7** Update `test/helpers/prisma.mock.ts`: add `analyticsEvent` and `analyticsDailySummary` model mocks (matching the pattern of the existing 19 model mocks). Add `$executeRaw: jest.fn()` to the top-level mock (needed by GDPR anonymization methods in Phase 2; `$executeRawUnsafe` is already mocked but `$executeRaw` is not).
 

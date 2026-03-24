@@ -174,7 +174,10 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should track like events in Redis', async () => {
-    await analyticsService.track('127.0.0.1', 'Chrome', { event: 'like', consent: true });
+    await analyticsService.track('127.0.0.1', 'Chrome', {
+      event: 'like',
+      consent: true,
+    });
 
     await waitForWrites();
 

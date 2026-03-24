@@ -101,7 +101,10 @@ describe('AnalyticsService', () => {
       redisMock = createRedisMock(true);
       service = new AnalyticsService(redisMock as any);
 
-      await service.track('1.2.3.4', '', { event: 'signup_started', consent: true });
+      await service.track('1.2.3.4', '', {
+        event: 'signup_started',
+        consent: true,
+      });
 
       const hincrCalls = redisMock._clientMock.hincrby.mock.calls;
       const funnelCall = hincrCalls.find((c: any[]) =>
