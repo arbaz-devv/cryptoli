@@ -7,6 +7,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
@@ -14,9 +15,11 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ComplaintsService } from './complaints.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
 const COMPLAINTS_LIST_LIMIT_MAX = 50;
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/complaints')
 export class ComplaintsController {
   constructor(private readonly complaintsService: ComplaintsService) {}

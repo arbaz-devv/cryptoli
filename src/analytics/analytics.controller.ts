@@ -6,6 +6,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
@@ -14,7 +15,9 @@ import { AnalyticsService } from './analytics.service';
 import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
 import { getClientIp, getCountryHint } from './ip-utils';
+import { AnalyticsInterceptor } from './analytics.interceptor';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/analytics')
 export class AnalyticsController {
   constructor(

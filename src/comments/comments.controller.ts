@@ -7,13 +7,16 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { CommentsService } from './comments.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/comments')
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}

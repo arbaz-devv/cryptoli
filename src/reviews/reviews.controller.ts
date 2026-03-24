@@ -7,15 +7,18 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ReviewsService } from './reviews.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
 const REVIEW_LIST_LIMIT_MAX = 50;
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/reviews')
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}

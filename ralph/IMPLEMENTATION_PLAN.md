@@ -125,7 +125,9 @@
 
 > **Learnings:** 6 tests covering: IP extraction from CDN headers, country hint extraction, fallback to socket remoteAddress, absent user-agent handling, and pass-through of next.handle() result. Used async done callbacks with Observable subscribe since the interceptor returns an Observable. No shared mock helpers needed — the interceptor only requires a minimal ExecutionContext stub.
 
-- [ ] **2.9** Apply `@UseInterceptors(AnalyticsInterceptor)` to `AnalyticsController` and all feature controllers that emit server-side events: `ReviewsController`, `CommentsController`, `ComplaintsController`, `UsersController`, `SearchController`, `AuthController`.
+- [x] **2.9** Apply `@UseInterceptors(AnalyticsInterceptor)` to `AnalyticsController` and all feature controllers that emit server-side events: `ReviewsController`, `CommentsController`, `ComplaintsController`, `UsersController`, `SearchController`, `AuthController`.
+
+> **Learnings:** Applied `@UseInterceptors(AnalyticsInterceptor)` at the class level to all 7 controllers. Each controller needed `UseInterceptors` added to the `@nestjs/common` import and the `AnalyticsInterceptor` imported from `../analytics/analytics.interceptor`. The interceptor is additive-only at this stage — no controller methods read `req.analyticsCtx` yet (that happens in items 2.29–2.34). All 459 unit + 81 e2e tests pass. Typecheck clean.
 
 ### 2C: AnalyticsBufferService
 

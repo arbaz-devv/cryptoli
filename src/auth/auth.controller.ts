@@ -11,6 +11,7 @@ import {
   Res,
   UnauthorizedException,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { CookieOptions } from 'express';
@@ -26,7 +27,9 @@ import {
 } from '../common/utils';
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/auth')
 export class AuthController {
   constructor(

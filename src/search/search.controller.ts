@@ -1,8 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
 import { SearchService } from './search.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
 const SEARCH_LIMIT_MAX = 50;
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/search')
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}

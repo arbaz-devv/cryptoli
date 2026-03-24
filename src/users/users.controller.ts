@@ -7,13 +7,16 @@ import {
   Req,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import type { SessionUser } from '../auth/auth.service';
 import { UsersService } from './users.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
