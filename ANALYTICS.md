@@ -3,6 +3,17 @@
 > Design for expanding Cryptoli's analytics from a Redis-only ephemeral
 > system to a durable, queryable user intelligence platform.
 
+## Repositories
+
+| Repo | Path | Role |
+|------|------|------|
+| **Backend** (`cryptoli`) | `~/Code/cryptoli` | NestJS 11 API. All analytics services, Prisma schema, Redis, tests |
+| **Admin** (`cryptoi-admin`) | `~/Code/cryptoi-admin` | Next.js 16 admin dashboard. Consumes analytics APIs, user detail, session history |
+| **Frontend** (`cryptoli-frontend`) | `~/Code/cryptoli-frontend` | Next.js user-facing app. Event producer (AnalyticsTracker), consent, privacy page |
+
+> Implementation touches all three repos. Phases 0-3 are backend-primary
+> with Phase 3 also touching admin. Phase 4 is frontend-only.
+
 ## Table of Contents
 
 - [Current State](#current-state)
@@ -996,7 +1007,7 @@ the `as` cast on `parser.getResult()`.
 
 ## Implementation Phases
 
-### Phase 0 — Consent Fix + ipwho.is Removal + Bot Detection
+### Phase 0 — Consent Fix + ipwho.is Removal + Bot Detection (`~/Code/cryptoli`)
 
 **Scope:** Backend-only GDPR/data-quality fixes. Coordinate consent change
 with frontend.
@@ -1013,7 +1024,7 @@ with frontend.
 **Breaking change:** Frontend must ship `consent: true` in all payloads
 before this deploys, or tracking stops for all clients.
 
-### Phase 1 — Schema Migration
+### Phase 1 — Schema Migration (`~/Code/cryptoli`)
 
 **Scope:** Extend Session + User models, add AnalyticsEvent and
 DailySummary tables, update test infra.
@@ -1025,7 +1036,7 @@ DailySummary tables, update test infra.
 - `test/helpers/redis.mock.ts` — extend pipeline mock with chainable methods
 - `src/main.ts` — add `X-Analytics-Key` and `Content-Disposition` to CORS `allowedHeaders`/`exposedHeaders`
 
-### Phase 2 — Buffer Service + Server-Side Events + Pipeline
+### Phase 2 — Buffer Service + Server-Side Events + Pipeline (`~/Code/cryptoli`)
 
 **Scope:** New services, Redis pipeline conversion, session enrichment,
 server-side event tracking.
@@ -1063,11 +1074,11 @@ server-side event tracking.
 - `test/integration/analytics-rollup.spec.ts` — NEW
 - `test/integration/analytics-hybrid-stats.spec.ts` — NEW (merge logic with real PG + Redis)
 
-### Phase 3 — Admin Integration
+### Phase 3 — Admin Integration (`~/Code/cryptoli` + `~/Code/cryptoi-admin`)
 
 **Scope:** Real data in getUserDetail(), new endpoints, new admin pages.
 
-**Backend files:**
+**Backend files (`~/Code/cryptoli`):**
 - `src/admin/admin.service.ts` — change session query; derive real fields; add getUserSessions/getUserSessionsExport/sessionsToCSV/getUserActivity/rollupAnalytics
 - `src/admin/admin.controller.ts` — add sessions/sessions-export/activity/rollup routes
 - `src/admin/admin.module.ts` — import AnalyticsModule
@@ -1077,7 +1088,7 @@ server-side event tracking.
 - `src/admin/admin.service.spec.ts` — update mocks for new methods (getUserSessions, sessionsToCSV, getUserActivity, rollupAnalytics)
 - `test/e2e/admin.e2e-spec.ts` — assert real device/country values; test GET sessions, GET sessions/export, GET activity, POST rollup endpoints (guard, pagination, response shapes)
 
-**Admin frontend files (cryptoi-admin):**
+**Admin dashboard files (`~/Code/cryptoi-admin`):**
 - `lib/admin-api.ts` — add AdminUserSession interface (with country field), fetchUserSessions function; add `country` and `registrationCountry` to AdminUserDetail.user intersection type
 - `app/dashboard/users/[id]/page.tsx` — add "View all sessions →" link
 - `app/dashboard/users/[id]/sessions/page.tsx` — NEW (session history table)
@@ -1085,7 +1096,7 @@ server-side event tracking.
 - `app/api/admin/users/[id]/sessions/route.ts` — NEW (BFF proxy)
 - `app/api/admin/users/[id]/sessions/export/route.ts` — NEW (BFF proxy)
 
-### Phase 4 — Frontend Changes
+### Phase 4 — Frontend Changes (`~/Code/cryptoli-frontend`)
 
 **Scope:** Frontend-only, parallel with Phases 2-3.
 
