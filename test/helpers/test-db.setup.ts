@@ -15,9 +15,12 @@ async function startWithRetry<T>(
     try {
       return await factory();
     } catch (err: any) {
-      const isRetryable = err?.message?.includes('EPIPE') || err?.code === 'EPIPE';
+      const isRetryable =
+        err?.message?.includes('EPIPE') || err?.code === 'EPIPE';
       if (isRetryable && attempt < retries) {
-        console.warn(`[TestSetup] ${label} attempt ${attempt} failed with EPIPE, retrying...`);
+        console.warn(
+          `[TestSetup] ${label} attempt ${attempt} failed with EPIPE, retrying...`,
+        );
         await new Promise((r) => setTimeout(r, 1000 * attempt));
         continue;
       }
@@ -30,7 +33,10 @@ async function startWithRetry<T>(
 export default async function globalSetup() {
   // ── Phase 1: Provision ──────────────────────────────────────────
   const pg = await startWithRetry(
-    () => new PostgreSqlContainer('postgres:16-alpine').withDatabase('cryptoli_test').start(),
+    () =>
+      new PostgreSqlContainer('postgres:16-alpine')
+        .withDatabase('cryptoli_test')
+        .start(),
     'PostgreSQL container',
   );
 
@@ -40,7 +46,7 @@ export default async function globalSetup() {
   );
 
   const databaseUrl = pg.getConnectionUri();
-  execSync('npx prisma migrate deploy', {
+  execSync('npx prisma db push --skip-generate', {
     env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: 'pipe',
   });

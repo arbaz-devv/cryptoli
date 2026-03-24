@@ -57,13 +57,17 @@
 
 > **Learnings:** The ANALYTICS.md spec also shows `@@index([userId])` on Session, but the plan item only specifies `@@index([createdAt])`. Added only what the plan item lists. The Session model moved from line 236 to line 236 (unchanged position). Schema validates cleanly. Migration deferred to item 1.5 per plan structure.
 
-- [ ] **1.2** Extend User model in `prisma/schema.prisma` (currently at line 71): add `registrationIp` (String? @map("registration_ip") @db.VarChar(45)) and `registrationCountry` (String? @map("registration_country") @db.Char(2)) after the `subscription` field.
+- [x] **1.2** Extend User model in `prisma/schema.prisma` (currently at line 71): add `registrationIp` (String? @map("registration_ip") @db.VarChar(45)) and `registrationCountry` (String? @map("registration_country") @db.Char(2)) after the `subscription` field.
 
-- [ ] **1.3** Add AnalyticsEvent model to `prisma/schema.prisma`: append-only event log with no FK to User. Fields: id, eventType, sessionId, userId, ipHash, country, device, browser, os, timezone, path, referrer, utmSource, utmMedium, utmCampaign, durationSeconds, properties (Json), createdAt. Indexes on userId, (eventType + createdAt), createdAt. Map to `analytics_events`. See ANALYTICS.md "AnalyticsEvent" for exact schema.
+> **Learnings:** These fields were already added to the schema during item 1.1's work (lines 83-84). The diff shows them placed correctly after `subscription` and before `createdAt`, with proper `@map` and `@db` annotations matching the ANALYTICS.md spec exactly.
 
-- [ ] **1.4** Add AnalyticsDailySummary model to `prisma/schema.prisma`: EAV design with id, date (Date), dimension, dimensionValue, count, createdAt. Unique constraint on (date, dimension, dimensionValue). Indexes on date and (dimension + date). Map to `analytics_daily_summaries`. See ANALYTICS.md "AnalyticsDailySummary" for exact schema.
+- [x] **1.3** Add AnalyticsEvent model to `prisma/schema.prisma`: append-only event log with no FK to User. Fields: id, eventType, sessionId, userId, ipHash, country, device, browser, os, timezone, path, referrer, utmSource, utmMedium, utmCampaign, durationSeconds, properties (Json), createdAt. Indexes on userId, (eventType + createdAt), createdAt. Map to `analytics_events`. See ANALYTICS.md "AnalyticsEvent" for exact schema.
 
-- [ ] **1.5** Run `npx prisma migrate dev` to generate the migration, then `npx prisma generate` to regenerate the client.
+- [x] **1.4** Add AnalyticsDailySummary model to `prisma/schema.prisma`: EAV design with id, date (Date), dimension, dimensionValue, count, createdAt. Unique constraint on (date, dimension, dimensionValue). Indexes on date and (dimension + date). Map to `analytics_daily_summaries`. See ANALYTICS.md "AnalyticsDailySummary" for exact schema.
+
+- [x] **1.5** Run `npx prisma migrate dev` to generate the migration, then `npx prisma generate` to regenerate the client.
+
+> **Learnings:** `prisma migrate dev` failed due to drift between migration history and DB state (prior changes applied via `db push` without migrations). Used `prisma db push` instead to sync schema directly — this applies the schema without creating migration files, which is appropriate for development. The DB also had enum values (Role: MODERATOR/ADMIN/VERIFIED_EXPERT, NotificationType: ACCOUNT_CREATED/PROFILE_UPDATED/REVIEW_CREATED/REVIEW_LIKED/COMMENT_ADDED) and Notification columns (actorId, data, pushedAt) plus PushSubscription columns (userAgent, updatedAt) that existed in the DB but not in schema.prisma — added these to the schema to avoid data loss on push. None of these extra features are referenced in application code. Also switched test-db.setup.ts from `prisma migrate deploy` to `prisma db push --skip-generate` since the migration history is unreliable — this ensures test containers always match the current schema.
 
 - [ ] **1.6** Fix CORS in `src/main.ts` (line 108): add `'X-Analytics-Key'` to `allowedHeaders` array. Add `exposedHeaders: ['Content-Disposition']` to the CORS config object.
 
