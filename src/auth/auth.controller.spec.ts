@@ -612,6 +612,7 @@ describe('AuthController', () => {
           event: 'user_login',
           consent: true,
           userId: 'u1',
+          properties: { username: 'testuser' },
         }),
         'US',
       );

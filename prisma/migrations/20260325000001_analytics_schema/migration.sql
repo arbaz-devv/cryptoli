@@ -1,58 +1,63 @@
--- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
+-- Idempotent migration: works on fresh DBs (migrations only) and db-pushed DBs.
+-- Requires PostgreSQL >= 12 (for ADD VALUE IF NOT EXISTS in transactions).
 
+-- AlterEnum (idempotent)
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'MODERATOR';
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'ADMIN';
+ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'VERIFIED_EXPERT';
 
-ALTER TYPE "Role" ADD VALUE 'MODERATOR';
-ALTER TYPE "Role" ADD VALUE 'ADMIN';
-ALTER TYPE "Role" ADD VALUE 'VERIFIED_EXPERT';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'ACCOUNT_CREATED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'PROFILE_UPDATED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'REVIEW_CREATED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'REVIEW_LIKED';
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'COMMENT_ADDED';
 
--- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
+-- CreateTable: PushSubscription
+-- This table was missing from the baseline migration (created only via db push).
+-- On fresh DBs this creates it; on db-pushed DBs IF NOT EXISTS skips it.
+CREATE TABLE IF NOT EXISTS "PushSubscription" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "endpoint" TEXT NOT NULL,
+    "p256dh" TEXT NOT NULL,
+    "auth" TEXT NOT NULL,
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT "PushSubscription_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
 
-ALTER TYPE "NotificationType" ADD VALUE 'ACCOUNT_CREATED';
-ALTER TYPE "NotificationType" ADD VALUE 'PROFILE_UPDATED';
-ALTER TYPE "NotificationType" ADD VALUE 'REVIEW_CREATED';
-ALTER TYPE "NotificationType" ADD VALUE 'REVIEW_LIKED';
-ALTER TYPE "NotificationType" ADD VALUE 'COMMENT_ADDED';
+-- DropIndex (idempotent — may not exist on fresh DBs or already dropped on pushed DBs)
+DROP INDEX IF EXISTS "PushSubscription_userId_idx";
 
--- DropIndex
-DROP INDEX "PushSubscription_userId_idx";
+-- AlterTable: User
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "registration_country" CHAR(2);
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "registration_ip" VARCHAR(45);
 
--- AlterTable
-ALTER TABLE "User" ADD COLUMN     "registration_country" CHAR(2),
-ADD COLUMN     "registration_ip" VARCHAR(45);
+-- AlterTable: Session
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "browser" VARCHAR(64);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "country" CHAR(2);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "device" VARCHAR(16);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "ip" VARCHAR(45);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "ipHash" CHAR(64);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "os" VARCHAR(64);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "timezone" VARCHAR(64);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "trigger" VARCHAR(20);
+ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "userAgent" VARCHAR(512);
 
--- AlterTable
-ALTER TABLE "Session" ADD COLUMN     "browser" VARCHAR(64),
-ADD COLUMN     "country" CHAR(2),
-ADD COLUMN     "device" VARCHAR(16),
-ADD COLUMN     "ip" VARCHAR(45),
-ADD COLUMN     "ipHash" CHAR(64),
-ADD COLUMN     "os" VARCHAR(64),
-ADD COLUMN     "timezone" VARCHAR(64),
-ADD COLUMN     "trigger" VARCHAR(20),
-ADD COLUMN     "userAgent" VARCHAR(512);
+-- AlterTable: Notification
+ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "actorId" TEXT;
+ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "data" JSONB;
+ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "pushedAt" TIMESTAMP(3);
 
--- AlterTable
-ALTER TABLE "Notification" ADD COLUMN     "actorId" TEXT,
-ADD COLUMN     "data" JSONB,
-ADD COLUMN     "pushedAt" TIMESTAMP(3);
+-- AlterTable: PushSubscription (columns may already exist from CREATE TABLE above or db push)
+ALTER TABLE "PushSubscription" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "PushSubscription" ADD COLUMN IF NOT EXISTS "userAgent" TEXT;
 
--- AlterTable
-ALTER TABLE "PushSubscription" ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-ADD COLUMN     "userAgent" TEXT;
-
--- CreateTable
-CREATE TABLE "analytics_events" (
+-- CreateTable: analytics_events
+CREATE TABLE IF NOT EXISTS "analytics_events" (
     "id" TEXT NOT NULL,
     "event_type" TEXT NOT NULL,
     "session_id" VARCHAR(128),
@@ -75,8 +80,8 @@ CREATE TABLE "analytics_events" (
     CONSTRAINT "analytics_events_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "analytics_daily_summaries" (
+-- CreateTable: analytics_daily_summaries
+CREATE TABLE IF NOT EXISTS "analytics_daily_summaries" (
     "id" TEXT NOT NULL,
     "date" DATE NOT NULL,
     "dimension" TEXT NOT NULL,
@@ -87,39 +92,31 @@ CREATE TABLE "analytics_daily_summaries" (
     CONSTRAINT "analytics_daily_summaries_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE INDEX "analytics_events_user_id_idx" ON "analytics_events"("user_id");
+-- CreateIndex (all idempotent)
+CREATE INDEX IF NOT EXISTS "analytics_events_user_id_idx" ON "analytics_events"("user_id");
+CREATE INDEX IF NOT EXISTS "analytics_events_event_type_created_at_idx" ON "analytics_events"("event_type", "created_at");
+CREATE INDEX IF NOT EXISTS "analytics_events_created_at_idx" ON "analytics_events"("created_at");
+CREATE INDEX IF NOT EXISTS "analytics_daily_summaries_date_idx" ON "analytics_daily_summaries"("date");
+CREATE INDEX IF NOT EXISTS "analytics_daily_summaries_dimension_date_idx" ON "analytics_daily_summaries"("dimension", "date");
+CREATE UNIQUE INDEX IF NOT EXISTS "analytics_daily_summaries_date_dimension_dimension_value_key" ON "analytics_daily_summaries"("date", "dimension", "dimension_value");
+CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
+CREATE INDEX IF NOT EXISTS "Session_createdAt_idx" ON "Session"("createdAt");
+CREATE INDEX IF NOT EXISTS "Notification_userId_createdAt_idx" ON "Notification"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Notification_userId_read_createdAt_idx" ON "Notification"("userId", "read", "createdAt");
+CREATE INDEX IF NOT EXISTS "PushSubscription_userId_createdAt_idx" ON "PushSubscription"("userId", "createdAt");
 
--- CreateIndex
-CREATE INDEX "analytics_events_event_type_created_at_idx" ON "analytics_events"("event_type", "created_at");
+-- AddForeignKey: Notification.actorId (no IF NOT EXISTS for constraints — use DO $$ guard)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Notification_actorId_fkey') THEN
+    ALTER TABLE "Notification" ADD CONSTRAINT "Notification_actorId_fkey"
+      FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
 
--- CreateIndex
-CREATE INDEX "analytics_events_created_at_idx" ON "analytics_events"("created_at");
-
--- CreateIndex
-CREATE INDEX "analytics_daily_summaries_date_idx" ON "analytics_daily_summaries"("date");
-
--- CreateIndex
-CREATE INDEX "analytics_daily_summaries_dimension_date_idx" ON "analytics_daily_summaries"("dimension", "date");
-
--- CreateIndex
-CREATE UNIQUE INDEX "analytics_daily_summaries_date_dimension_dimension_value_key" ON "analytics_daily_summaries"("date", "dimension", "dimension_value");
-
--- CreateIndex
-CREATE INDEX "Session_userId_idx" ON "Session"("userId");
-
--- CreateIndex
-CREATE INDEX "Session_createdAt_idx" ON "Session"("createdAt");
-
--- CreateIndex
-CREATE INDEX "Notification_userId_createdAt_idx" ON "Notification"("userId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "Notification_userId_read_createdAt_idx" ON "Notification"("userId", "read", "createdAt");
-
--- CreateIndex
-CREATE INDEX "PushSubscription_userId_createdAt_idx" ON "PushSubscription"("userId", "createdAt");
-
--- AddForeignKey
-ALTER TABLE "Notification" ADD CONSTRAINT "Notification_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
+-- AddForeignKey: PushSubscription.userId (missing from all migrations — was only created by db push)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PushSubscription_userId_fkey') THEN
+    ALTER TABLE "PushSubscription" ADD CONSTRAINT "PushSubscription_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
