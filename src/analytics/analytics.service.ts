@@ -1575,13 +1575,10 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     stale: boolean;
   }> {
     if (!this.redis) return { lastSuccessDate: null, stale: true };
-    const lastSuccess = await this.redis.get(
-      'analytics:rollup:last_success',
-    );
+    const lastSuccess = await this.redis.get('analytics:rollup:last_success');
     if (!lastSuccess) return { lastSuccessDate: null, stale: true };
     const lastDate = new Date(lastSuccess + 'T00:00:00Z');
-    const hoursSince =
-      (Date.now() - lastDate.getTime()) / (1000 * 60 * 60);
+    const hoursSince = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60);
     return {
       lastSuccessDate: lastSuccess,
       stale: hoursSince >= 48,

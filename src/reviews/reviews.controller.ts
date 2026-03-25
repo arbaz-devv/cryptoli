@@ -55,7 +55,11 @@ export class ReviewsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.reviewsService.create(body, req.user.id, (req as any).analyticsCtx);
+    return this.reviewsService.create(
+      body,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Get(':id')
@@ -70,7 +74,12 @@ export class ReviewsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.reviewsService.vote(id, body.voteType, req.user.id, (req as any).analyticsCtx);
+    return this.reviewsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 
   @Post(':id/helpful')
@@ -79,6 +88,10 @@ export class ReviewsController {
     @Param('id') id: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.reviewsService.helpful(id, req.user.id, (req as any).analyticsCtx);
+    return this.reviewsService.helpful(
+      id,
+      req.user.id,
+      (req as any).analyticsCtx,
+    );
   }
 }

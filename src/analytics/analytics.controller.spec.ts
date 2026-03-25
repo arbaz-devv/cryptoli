@@ -18,7 +18,9 @@ describe('AnalyticsController', () => {
         lastError: null,
       }),
       getRealtime: jest.fn().mockResolvedValue({ activeNow: 5, byCountry: {} }),
-      getRollupHealth: jest.fn().mockResolvedValue({ lastSuccessDate: '2026-03-23', stale: false }),
+      getRollupHealth: jest
+        .fn()
+        .mockResolvedValue({ lastSuccessDate: '2026-03-23', stale: false }),
     };
     mockPrisma = {
       user: {
@@ -261,11 +263,17 @@ describe('AnalyticsController', () => {
       expect(result.enabled).toBe(true);
       expect(result.configured).toBe(true);
       expect(result.connected).toBe(true);
-      expect(result.rollup).toEqual({ lastSuccessDate: '2026-03-23', stale: false });
+      expect(result.rollup).toEqual({
+        lastSuccessDate: '2026-03-23',
+        stale: false,
+      });
     });
 
     it('should return stale rollup when no last success', async () => {
-      mockAnalyticsService.getRollupHealth.mockResolvedValue({ lastSuccessDate: null, stale: true });
+      mockAnalyticsService.getRollupHealth.mockResolvedValue({
+        lastSuccessDate: null,
+        stale: true,
+      });
       const result = await controller.health();
       expect(result.rollup).toEqual({ lastSuccessDate: null, stale: true });
     });

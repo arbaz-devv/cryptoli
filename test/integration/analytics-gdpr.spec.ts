@@ -104,9 +104,7 @@ describe('GDPR Anonymization (Integration)', () => {
     const events = await prisma.analyticsEvent.findMany({
       orderBy: { createdAt: 'asc' },
     });
-    const deletedUserEvents = events.filter(
-      (e) => e.userId === 'user-deleted',
-    );
+    const deletedUserEvents = events.filter((e) => e.userId === 'user-deleted');
     const keptUserEvents = events.filter((e) => e.userId === 'user-kept');
 
     expect(deletedUserEvents).toHaveLength(0);

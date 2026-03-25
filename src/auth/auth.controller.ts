@@ -39,7 +39,8 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
-    @Optional() @Inject(AnalyticsService)
+    @Optional()
+    @Inject(AnalyticsService)
     private readonly analyticsService?: AnalyticsService,
   ) {}
 
@@ -64,12 +65,17 @@ export class AuthController {
     if (!this.analyticsService) return;
     const ctx = (req as any).analyticsCtx;
     if (!ctx) return;
-    void this.analyticsService.track(ctx.ip, ctx.userAgent, {
-      event,
-      consent: true,
-      userId,
-      properties,
-    }, ctx.country);
+    void this.analyticsService.track(
+      ctx.ip,
+      ctx.userAgent,
+      {
+        event,
+        consent: true,
+        userId,
+        properties,
+      },
+      ctx.country,
+    );
   }
 
   private sessionCookieOptions(): CookieOptions {

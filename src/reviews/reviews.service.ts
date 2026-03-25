@@ -116,7 +116,11 @@ export class ReviewsService {
     };
   }
 
-  async create(body: unknown, authorId: string, analyticsCtx?: AnalyticsContext) {
+  async create(
+    body: unknown,
+    authorId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const validated = createReviewSchema.parse(body);
     const overallScore =
       validated.overallScore ?? calculateOverallScore(validated.criteriaScores);
@@ -232,7 +236,12 @@ export class ReviewsService {
     return review;
   }
 
-  async vote(reviewId: string, voteType: string, userId: string, analyticsCtx?: AnalyticsContext) {
+  async vote(
+    reviewId: string,
+    voteType: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     if (!voteType || (voteType !== 'UP' && voteType !== 'DOWN')) {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
@@ -332,7 +341,11 @@ export class ReviewsService {
     return result;
   }
 
-  async helpful(reviewId: string, userId: string, analyticsCtx?: AnalyticsContext) {
+  async helpful(
+    reviewId: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const review = await tx.review.findUnique({
         where: { id: reviewId },

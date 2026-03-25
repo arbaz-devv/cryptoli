@@ -563,7 +563,11 @@ describe('AuthController', () => {
       authService.createSession.mockResolvedValue('jwt-token');
 
       await controller.register(
-        { email: 'test@test.com', username: 'testuser', password: 'password123' },
+        {
+          email: 'test@test.com',
+          username: 'testuser',
+          password: 'password123',
+        },
         mockReq,
         mockRes,
       );
@@ -644,7 +648,7 @@ describe('AuthController', () => {
       const req = {
         ...mockReq,
         user: { id: 'u1', username: 'testuser' },
-      } as any;
+      };
 
       await controller.changePassword(
         { currentPassword: 'oldpass123', newPassword: 'newpass123' },
