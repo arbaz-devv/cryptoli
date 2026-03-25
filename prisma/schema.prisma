@@ -263,6 +263,7 @@ model Session {
   timezone  String?  @db.VarChar(64)
   trigger   String?  @db.VarChar(20)
 
+  @@index([userId])
   @@index([createdAt])
 }
 

@@ -67,7 +67,7 @@ export interface TrackPayload {
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
-  /** When false, do not store (user declined cookies). When true or omitted, store. */
+  /** When explicitly true, store. When false, undefined, or omitted, do not store (GDPR opt-in). */
   consent?: boolean;
   /** Arbitrary properties for server-side events (stored in PG only). */
   properties?: Record<string, unknown>;
@@ -1520,9 +1520,10 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
 
       if (rowCount <= ANONYMIZE_BATCH_THRESHOLD) {
         // Single UPDATE for steady-state
-        await this.prisma.$executeRaw`SET LOCAL synchronous_commit = off`;
-        await this.prisma
-          .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+        await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
+          await tx.$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+        });
       } else {
         // Batch by calendar day for large backfills
         const oldestResult: { min_date: Date | null }[] = await this.prisma
@@ -1536,9 +1537,10 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
             const dayEnd = new Date(dayStart);
             dayEnd.setDate(dayEnd.getDate() + 1);
 
-            await this.prisma.$executeRaw`SET LOCAL synchronous_commit = off`;
-            await this.prisma
-              .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at >= ${dayStart} AND created_at < ${dayEnd}`;
+            await this.prisma.$transaction(async (tx) => {
+              await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
+              await tx.$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at >= ${dayStart} AND created_at < ${dayEnd}`;
+            });
 
             dayStart.setDate(dayStart.getDate() + 1);
           }

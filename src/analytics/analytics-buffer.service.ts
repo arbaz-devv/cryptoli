@@ -65,27 +65,29 @@ export class AnalyticsBufferService implements OnModuleInit, OnModuleDestroy {
 
     const batch = this.buffer.splice(0, this.buffer.length);
     try {
-      await this.prisma.$executeRaw`SET LOCAL synchronous_commit = off`;
-      await this.prisma.analyticsEvent.createMany({
-        data: batch.map((e) => ({
-          eventType: e.eventType,
-          sessionId: e.sessionId,
-          userId: e.userId,
-          ipHash: e.ipHash,
-          country: e.country,
-          device: e.device,
-          browser: e.browser,
-          os: e.os,
-          timezone: e.timezone,
-          path: e.path,
-          referrer: e.referrer,
-          utmSource: e.utmSource,
-          utmMedium: e.utmMedium,
-          utmCampaign: e.utmCampaign,
-          durationSeconds: e.durationSeconds,
-          properties: (e.properties ?? {}) as Prisma.InputJsonValue,
-          createdAt: e.createdAt ?? new Date(),
-        })),
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
+        await tx.analyticsEvent.createMany({
+          data: batch.map((e) => ({
+            eventType: e.eventType,
+            sessionId: e.sessionId,
+            userId: e.userId,
+            ipHash: e.ipHash,
+            country: e.country,
+            device: e.device,
+            browser: e.browser,
+            os: e.os,
+            timezone: e.timezone,
+            path: e.path,
+            referrer: e.referrer,
+            utmSource: e.utmSource,
+            utmMedium: e.utmMedium,
+            utmCampaign: e.utmCampaign,
+            durationSeconds: e.durationSeconds,
+            properties: (e.properties ?? {}) as Prisma.InputJsonValue,
+            createdAt: e.createdAt ?? new Date(),
+          })),
+        });
       });
     } catch (err) {
       this.logger.error(

@@ -347,7 +347,9 @@ export class AuthController {
     const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
 
-    this.trackAuthEvent(req, 'user_login', user.id);
+    this.trackAuthEvent(req, 'user_login', user.id, {
+      username: user.username,
+    });
 
     return {
       user: {
