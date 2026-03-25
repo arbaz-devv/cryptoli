@@ -264,7 +264,9 @@ export class AuthService {
       data.trigger = meta.trigger;
     }
 
-    await this.prisma.session.create({ data: data as any });
+    await this.prisma.session.create({
+      data: data as Parameters<typeof this.prisma.session.create>[0]['data'],
+    });
     return token;
   }
 

@@ -26,7 +26,7 @@ describe('AnalyticsBufferService (Integration)', () => {
 
   afterEach(() => {
     // Clear any timers
-    (service as any).flushTimer && clearInterval((service as any).flushTimer);
+    if ((service as any).flushTimer) clearInterval((service as any).flushTimer);
   });
 
   afterAll(async () => {

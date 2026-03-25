@@ -16,6 +16,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ComplaintsService } from './complaints.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 const COMPLAINTS_LIST_LIMIT_MAX = 50;
 
@@ -58,7 +59,7 @@ export class ComplaintsController {
     return this.complaintsService.create(
       body,
       req.user.id,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 
@@ -82,7 +83,7 @@ export class ComplaintsController {
       id,
       body.voteType,
       req.user.id,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 

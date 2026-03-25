@@ -27,7 +27,7 @@ export class AnalyticsInterceptor implements NestInterceptor {
       country: getCountryHint(req),
     };
 
-    (req as any).analyticsCtx = analyticsCtx;
+    (req as unknown as Record<string, unknown>).analyticsCtx = analyticsCtx;
 
     return next.handle();
   }

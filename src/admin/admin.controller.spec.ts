@@ -12,7 +12,9 @@ describe('AdminController', () => {
       getUsers: jest.fn().mockResolvedValue({ users: [], pagination: {} }),
       getUserDetail: jest.fn().mockResolvedValue({ user: {} }),
       updateUserStatus: jest.fn().mockResolvedValue({ ok: true }),
-      getComplaints: jest.fn().mockResolvedValue({ complaints: [], pagination: {} }),
+      getComplaints: jest
+        .fn()
+        .mockResolvedValue({ complaints: [], pagination: {} }),
       getComplaint: jest.fn().mockResolvedValue({ id: 'c1' }),
       updateComplaintStatus: jest.fn().mockResolvedValue({ ok: true }),
       getReviews: jest.fn().mockResolvedValue({ reviews: [], pagination: {} }),
@@ -95,10 +97,10 @@ describe('AdminController', () => {
 
   describe('updateUserStatus()', () => {
     it('should delegate to admin.updateUserStatus()', async () => {
-      await controller.updateUserStatus(
-        'u1',
-        { status: 'suspended', reason: 'spam' } as any,
-      );
+      await controller.updateUserStatus('u1', {
+        status: 'suspended',
+        reason: 'spam',
+      } as any);
       expect(mockAdminService.updateUserStatus).toHaveBeenCalledWith(
         'u1',
         'suspended',
@@ -136,7 +138,9 @@ describe('AdminController', () => {
 
   describe('updateComplaintStatus()', () => {
     it('should delegate to admin.updateComplaintStatus()', async () => {
-      await controller.updateComplaintStatus('c1', { status: 'resolved' } as any);
+      await controller.updateComplaintStatus('c1', {
+        status: 'resolved',
+      } as any);
       expect(mockAdminService.updateComplaintStatus).toHaveBeenCalledWith(
         'c1',
         'resolved',

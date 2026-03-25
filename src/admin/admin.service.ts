@@ -4,11 +4,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import {
-  ComplaintStatus,
-  Prisma,
-  ReviewStatus,
-} from '@prisma/client';
+import { ComplaintStatus, Prisma, ReviewStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsRollupService } from '../analytics/analytics-rollup.service';
 
@@ -205,9 +201,11 @@ export class AdminService {
       openComplaints,
     ] = await Promise.all([
       this.prisma.user.count(),
-      this.prisma.$queryRaw<[{ count: bigint }]>(
-        Prisma.sql`SELECT COUNT(DISTINCT "userId") as count FROM "Session" WHERE "createdAt" >= ${startOfToday}`,
-      ).then((rows) => Number(rows[0]?.count ?? 0)),
+      this.prisma
+        .$queryRaw<
+          [{ count: bigint }]
+        >(Prisma.sql`SELECT COUNT(DISTINCT "userId") as count FROM "Session" WHERE "createdAt" >= ${startOfToday}`)
+        .then((rows) => Number(rows[0]?.count ?? 0)),
       this.prisma.review.count({ where: { status: 'PENDING' } }),
       this.prisma.review.count({ where: { status: 'FLAGGED' } }),
       this.prisma.review.count(),
@@ -671,7 +669,9 @@ export class AdminService {
         take: l,
         orderBy: { createdAt: 'desc' },
         include: {
-          author: { select: { id: true, username: true, name: true, email: true } },
+          author: {
+            select: { id: true, username: true, name: true, email: true },
+          },
           company: { select: { id: true, name: true } },
           product: { select: { id: true, name: true } },
         },
@@ -794,22 +794,15 @@ export class AdminService {
       where: { userId: id },
       create: {
         userId: id,
-        status:
-          normalized === 'suspended'
-            ? 'SUSPENDED'
-            : 'ACTIVE',
+        status: normalized === 'suspended' ? 'SUSPENDED' : 'ACTIVE',
         reason: reason?.trim() || null,
         suspendedAt: normalized === 'suspended' ? new Date() : null,
         restoredAt: normalized === 'active' ? new Date() : null,
       },
       update: {
-        status:
-          normalized === 'suspended'
-            ? 'SUSPENDED'
-            : 'ACTIVE',
+        status: normalized === 'suspended' ? 'SUSPENDED' : 'ACTIVE',
         reason: reason?.trim() || null,
-        suspendedAt:
-          normalized === 'suspended' ? new Date() : undefined,
+        suspendedAt: normalized === 'suspended' ? new Date() : undefined,
         restoredAt: normalized === 'active' ? new Date() : undefined,
       },
     });

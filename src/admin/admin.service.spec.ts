@@ -427,7 +427,12 @@ describe('AdminService', () => {
           id: 'c1',
           title: 'Missing funds',
           content: 'Details',
-          author: { id: 'u1', username: 'alice', name: 'Alice', email: 'a@b.com' },
+          author: {
+            id: 'u1',
+            username: 'alice',
+            name: 'Alice',
+            email: 'a@b.com',
+          },
           company: null,
           product: { id: 'p1', name: 'WalletX' },
           productId: 'p1',
@@ -451,8 +456,14 @@ describe('AdminService', () => {
 
   describe('updateComplaintStatus()', () => {
     it('should update complaint status', async () => {
-      prisma.complaint.findUnique.mockResolvedValue({ id: 'c1', status: 'OPEN' });
-      prisma.complaint.update.mockResolvedValue({ id: 'c1', status: 'RESOLVED' });
+      prisma.complaint.findUnique.mockResolvedValue({
+        id: 'c1',
+        status: 'OPEN',
+      });
+      prisma.complaint.update.mockResolvedValue({
+        id: 'c1',
+        status: 'RESOLVED',
+      });
 
       const result = await service.updateComplaintStatus('c1', 'resolved');
 

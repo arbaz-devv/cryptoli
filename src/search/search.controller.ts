@@ -2,6 +2,7 @@ import { Controller, Get, Query, Req, UseInterceptors } from '@nestjs/common';
 import type { Request } from 'express';
 import { SearchService } from './search.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 const SEARCH_LIMIT_MAX = 50;
 
@@ -23,7 +24,7 @@ export class SearchController {
       q ?? '',
       type,
       safeLimit,
-      (req as any)?.analyticsCtx,
+      req ? getAnalyticsCtx(req) : undefined,
     );
   }
 }

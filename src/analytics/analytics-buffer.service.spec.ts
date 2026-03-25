@@ -25,7 +25,7 @@ describe('AnalyticsBufferService', () => {
 
   afterEach(() => {
     // Ensure no lingering timers
-    (service as any).flushTimer && clearInterval((service as any).flushTimer);
+    if ((service as any).flushTimer) clearInterval((service as any).flushTimer);
   });
 
   describe('push()', () => {

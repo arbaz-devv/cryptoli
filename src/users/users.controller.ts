@@ -15,6 +15,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import type { SessionUser } from '../auth/auth.service';
 import { UsersService } from './users.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/users')
@@ -66,7 +67,7 @@ export class UsersController {
     return this.usersService.followUser(
       req.user.id,
       username,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 
@@ -79,7 +80,7 @@ export class UsersController {
     return this.usersService.unfollowUser(
       req.user.id,
       username,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 

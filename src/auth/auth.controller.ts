@@ -30,6 +30,7 @@ import {
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { getClientIp, getCountryHint } from '../analytics/ip-utils';
 
@@ -63,7 +64,7 @@ export class AuthController {
     properties?: Record<string, unknown>,
   ): void {
     if (!this.analyticsService) return;
-    const ctx = (req as any).analyticsCtx;
+    const ctx = getAnalyticsCtx(req);
     if (!ctx) return;
     void this.analyticsService.track(
       ctx.ip,

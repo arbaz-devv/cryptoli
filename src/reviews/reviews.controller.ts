@@ -15,6 +15,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ReviewsService } from './reviews.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 const REVIEW_LIST_LIMIT_MAX = 50;
 
@@ -55,11 +56,7 @@ export class ReviewsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.reviewsService.create(
-      body,
-      req.user.id,
-      (req as any).analyticsCtx,
-    );
+    return this.reviewsService.create(body, req.user.id, getAnalyticsCtx(req));
   }
 
   @Get(':id')
@@ -78,7 +75,7 @@ export class ReviewsController {
       id,
       body.voteType,
       req.user.id,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 
@@ -88,10 +85,6 @@ export class ReviewsController {
     @Param('id') id: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.reviewsService.helpful(
-      id,
-      req.user.id,
-      (req as any).analyticsCtx,
-    );
+    return this.reviewsService.helpful(id, req.user.id, getAnalyticsCtx(req));
   }
 }

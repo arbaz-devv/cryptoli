@@ -15,6 +15,7 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { CommentsService } from './comments.service';
 import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/comments')
@@ -40,11 +41,7 @@ export class CommentsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.commentsService.create(
-      body,
-      req.user.id,
-      (req as any).analyticsCtx,
-    );
+    return this.commentsService.create(body, req.user.id, getAnalyticsCtx(req));
   }
 
   @Get('list')
@@ -92,7 +89,7 @@ export class CommentsController {
       id,
       body.voteType,
       req.user.id,
-      (req as any).analyticsCtx,
+      getAnalyticsCtx(req),
     );
   }
 }

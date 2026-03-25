@@ -940,7 +940,7 @@ describe('AnalyticsService', () => {
       // Bounce rate should be (totalBounces / totalPageviews) from merged totals
       // Not an average of per-window rates
       const expectedBounces = result!.totalBounces;
-      const expectedPageviews = result!.totalPageviews;
+      expect(result!.totalPageviews).toBeGreaterThan(0);
       expect(expectedBounces).toBeGreaterThanOrEqual(100); // at least PG bounces
       // bounceRate = (totalBounces / totalSessions) * 100 — derived from merged totals
       const totalSessions = result!.totalSessions;
@@ -1207,9 +1207,8 @@ describe('AnalyticsService', () => {
       client.smembers.mockResolvedValue(['sess_a', 'sess_b']);
 
       // session_pages: sess_a returned on day+1, sess_b on day+7
-      client.hgetall.mockImplementation((key: string) => {
-        // The key pattern is analytics:session_pages:YYYY-MM-DD
-        // We return sess_a for all lookups to simulate day+1 return
+      client.hgetall.mockImplementation(() => {
+        // Return sess_a for all day lookups to simulate day+1 return
         return Promise.resolve({ sess_a: '3' });
       });
 

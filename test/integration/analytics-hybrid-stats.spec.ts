@@ -35,9 +35,7 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
 
   // A day guaranteed to be >28 days ago (PG territory)
   const pgDay = '2025-12-01';
-  // Today's date string (Redis territory — always within 28 days)
-  const today = new Date().toISOString().slice(0, 10);
-  // Yesterday (also Redis territory)
+  // Yesterday (Redis territory — always within 28 days)
   const yesterday = (() => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() - 1);

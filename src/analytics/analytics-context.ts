@@ -9,3 +9,9 @@ export interface AnalyticsContext {
   country?: string;
   userId?: string;
 }
+
+/** Type-safe accessor for req.analyticsCtx set by AnalyticsInterceptor. */
+export function getAnalyticsCtx(req: unknown): AnalyticsContext | undefined {
+  const r = req as Record<string, unknown>;
+  return r.analyticsCtx as AnalyticsContext | undefined;
+}
