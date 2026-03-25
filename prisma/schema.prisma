@@ -76,6 +76,11 @@ enum VoteType {
   DOWN
 }
 
+enum AdminUserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
   id           String           @id @default(cuid())
   email        String           @unique
@@ -108,8 +113,23 @@ model User {
   complaints     Complaint[]
   complaintVotes ComplaintVote[]
   commentVotes   CommentVote[]
+  moderation     UserModeration?
 
   @@index([createdAt])
+}
+
+model UserModeration {
+  id         String          @id @default(cuid())
+  userId     String          @unique
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     AdminUserStatus @default(ACTIVE)
+  reason     String?
+  suspendedAt DateTime?
+  restoredAt  DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([status])
 }
 
 model Company {

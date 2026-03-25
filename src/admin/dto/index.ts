@@ -8,3 +8,6 @@ export * from './users-query.dto';
 export * from './sessions-query.dto';
 export * from './sessions-export-query.dto';
 export * from './rollup.dto';
+export * from './complaints-query.dto';
+export * from './update-complaint-status.dto';
+export * from './update-user-status.dto';

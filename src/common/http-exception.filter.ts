@@ -4,13 +4,18 @@ import {
   ArgumentsHost,
   HttpException,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { handleError } from './errors';
+import { Sentry } from '../monitoring/sentry';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
+    const request =
+      typeof (ctx as { getRequest?: unknown }).getRequest === 'function'
+        ? ctx.getRequest<Request>()
+        : undefined;
     const response = ctx.getResponse<Response>();
 
     let result: {
@@ -37,6 +42,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     } else {
       result = handleError(exception);
+    }
+
+    if (result.statusCode >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag('layer', 'http');
+        if (request) {
+          scope.setContext('request', {
+            method: request.method,
+            path: request.originalUrl ?? request.url,
+          });
+        }
+        Sentry.captureException(exception);
+      });
     }
 
     response

@@ -57,4 +57,12 @@ export class ConfigService implements OnModuleInit {
   get trustProxy(): string | undefined {
     return this.getOrThrow().TRUST_PROXY;
   }
+
+  get sentryDsn(): string | undefined {
+    return this.getOrThrow().SENTRY_DSN;
+  }
+
+  get sentryTracesSampleRate(): number {
+    return this.getOrThrow().SENTRY_TRACES_SAMPLE_RATE ?? 0.1;
+  }
 }
