@@ -15,6 +15,7 @@ import { validateEnv } from './config/env.schema';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 import './socket/socket.types';
 import { AuthService } from './auth/auth.service';
+import { initSentry, Sentry } from './monitoring/sentry';
 
 type ValidationIssue = {
   field: string;
@@ -51,6 +52,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const authService = app.get(AuthService);
+
+  initSentry({
+    dsn: config.sentryDsn,
+    environment: config.nodeEnv,
+    tracesSampleRate: config.sentryTracesSampleRate,
+  });
 
   if (config.trustProxy) {
     const expressApp = app.getHttpAdapter().getInstance() as {
@@ -181,6 +188,7 @@ async function bootstrap() {
   globalThis.__socketIO = io;
 }
 bootstrap().catch((error: unknown) => {
+  Sentry.captureException(error);
   console.error('Failed to bootstrap application', error);
   process.exit(1);
 });
