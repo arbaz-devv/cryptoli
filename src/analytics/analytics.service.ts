@@ -392,7 +392,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     if (this.isValidCountryCode(hint)) return hint;
 
     const normalizedIp = normalizeIp(ip);
-    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp)) return 'unknown';
+    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp)) return 'XX';
 
     const cacheKey = `${KEY_PREFIX}:ip_country:${normalizedIp}`;
     if (this.redis) {
@@ -408,10 +408,10 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     const { country } = this.getGeo(normalizedIp);
     const countryCode = (country || '').toUpperCase();
 
-    if (!this.isValidCountryCode(countryCode)) return 'unknown';
+    if (!this.isValidCountryCode(countryCode)) return 'XX';
 
     // Cache non-unknown results for 30 days
-    if (this.redis && countryCode !== 'unknown') {
+    if (this.redis && countryCode !== 'XX') {
       try {
         await this.redis.set(cacheKey, countryCode, 'EX', 30 * 24 * 60 * 60);
       } catch {

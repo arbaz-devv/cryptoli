@@ -501,14 +501,14 @@ describe('AnalyticsService', () => {
       expect(result).toBe('US');
     });
 
-    it('should return "unknown" for private/local IPs without hint', async () => {
+    it('should return "XX" for private/local IPs without hint', async () => {
       const result = await (service as any).resolveCountry('127.0.0.1');
-      expect(result).toBe('unknown');
+      expect(result).toBe('XX');
     });
 
-    it('should return "unknown" for empty IP without hint', async () => {
+    it('should return "XX" for empty IP without hint', async () => {
       const result = await (service as any).resolveCountry('');
-      expect(result).toBe('unknown');
+      expect(result).toBe('XX');
     });
   });
 

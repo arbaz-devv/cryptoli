@@ -16,11 +16,11 @@ export class SearchController {
     @Query('q') q?: string,
     @Query('type') type = 'all',
     @Query('limit') limit = '10',
-    @Req() req?: Request,
+    @Req() req?: Request & { user?: { id: string } },
   ) {
     const parsedLimit = parseInt(limit, 10) || 10;
     const safeLimit = Math.min(SEARCH_LIMIT_MAX, Math.max(1, parsedLimit));
-    const userId = (req as any)?.user?.id as string | undefined;
+    const userId = req?.user?.id;
     return this.searchService.search(
       q ?? '',
       type,
