@@ -20,11 +20,13 @@ export class SearchController {
   ) {
     const parsedLimit = parseInt(limit, 10) || 10;
     const safeLimit = Math.min(SEARCH_LIMIT_MAX, Math.max(1, parsedLimit));
+    const userId = (req as any)?.user?.id as string | undefined;
     return this.searchService.search(
       q ?? '',
       type,
       safeLimit,
       req ? getAnalyticsCtx(req) : undefined,
+      userId,
     );
   }
 }

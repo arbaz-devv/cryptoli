@@ -13,7 +13,6 @@ describe('SearchService', () => {
     ip: '1.2.3.4',
     userAgent: 'TestBrowser/1.0',
     country: 'US',
-    userId: 'user-1',
   };
 
   beforeEach(() => {
@@ -96,7 +95,7 @@ describe('SearchService', () => {
       ]);
       prisma.user.findMany.mockResolvedValue([]);
 
-      await service.search('bitcoin', 'all', 10, mockCtx);
+      await service.search('bitcoin', 'all', 10, mockCtx, 'user-1');
 
       expect(analyticsService.track).toHaveBeenCalledWith(
         '1.2.3.4',
@@ -106,6 +105,26 @@ describe('SearchService', () => {
           consent: true,
           userId: 'user-1',
           properties: { query: 'bitcoin', type: 'all', resultCount: 3 },
+        },
+        'US',
+      );
+    });
+
+    it('should track with undefined userId when user is not authenticated', async () => {
+      prisma.company.findMany.mockResolvedValue([{ id: 'c1' }]);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.search('bitcoin', 'all', 10, mockCtx);
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'TestBrowser/1.0',
+        {
+          event: 'search_performed',
+          consent: true,
+          userId: undefined,
+          properties: { query: 'bitcoin', type: 'all', resultCount: 1 },
         },
         'US',
       );

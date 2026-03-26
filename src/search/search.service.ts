@@ -15,6 +15,7 @@ export class SearchService {
     type: string,
     limit: number,
     analyticsCtx?: AnalyticsContext,
+    userId?: string,
   ) {
     if (!query) {
       return { results: {} };
@@ -100,7 +101,7 @@ export class SearchService {
         {
           event: 'search_performed',
           consent: true,
-          userId: analyticsCtx.userId,
+          userId,
           properties: { query, type, resultCount },
         },
         analyticsCtx.country,
