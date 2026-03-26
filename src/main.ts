@@ -57,6 +57,7 @@ async function bootstrap() {
     dsn: config.sentryDsn,
     environment: config.nodeEnv,
     tracesSampleRate: config.sentryTracesSampleRate,
+    release: config.sentryRelease,
   });
 
   if (config.trustProxy) {

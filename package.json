@@ -7,6 +7,8 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "build:with-sourcemaps": "nest build && npm run sentry:sourcemaps:upload",
+    "sentry:sourcemaps:upload": "sh -c 'test -n \"$SENTRY_RELEASE\" || (echo \"SENTRY_RELEASE is required for sourcemap upload\" && exit 1); sentry-cli sourcemaps inject --org cryptoi --project cryptoi-backend ./dist && sentry-cli sourcemaps upload --org cryptoi --project cryptoi-backend --release \"$SENTRY_RELEASE\" ./dist'",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

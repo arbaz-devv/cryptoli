@@ -62,6 +62,10 @@ export class ConfigService implements OnModuleInit {
     return this.getOrThrow().SENTRY_DSN;
   }
 
+  get sentryRelease(): string | undefined {
+    return this.getOrThrow().SENTRY_RELEASE;
+  }
+
   get sentryTracesSampleRate(): number {
     return this.getOrThrow().SENTRY_TRACES_SAMPLE_RATE ?? 0.1;
   }
