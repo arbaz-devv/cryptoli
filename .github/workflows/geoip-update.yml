@@ -1,0 +1,37 @@
+name: Update GeoIP Database
+
+# Runs weekly to verify the MaxMind key works and the DB can be fetched.
+# In production, run `npm run geoip:update` during Docker build or deploy
+# to get the latest GeoLite2 data (the npm package bundles a snapshot
+# from its publish date which degrades over time).
+
+on:
+  schedule:
+    - cron: '0 4 * * 1' # Every Monday at 04:00 UTC
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  update-geoip:
+    name: Fetch & Verify GeoLite2 Database
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update GeoIP database
+        run: npm run geoip:update
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+
+      - name: Smoke test
+        run: node -e "const g = require('geoip-lite'); const r = g.lookup('8.8.8.8'); if (!r || r.country !== 'US') { console.error('GeoIP smoke test failed:', r); process.exit(1); } console.log('GeoIP OK:', r.country, r.timezone);"

@@ -21,7 +21,7 @@
     "test:integration": "jest --config ./test/jest-integration.json",
     "test:smoke": "jest --config ./test/jest-smoke.json --runInBand",
     "test:all": "npm test && npm run test:integration && npm run test:e2e",
-    "geoip:update": "node node_modules/geoip-lite/scripts/updatedb.js"
+    "geoip:update": "LICENSE_KEY=${MAXMIND_LICENSE_KEY} node node_modules/geoip-lite/scripts/updatedb.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
