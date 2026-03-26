@@ -321,7 +321,12 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
     const addHash = (dimension: string, hash: Record<string, number>) => {
       for (const [key, value] of Object.entries(hash)) {
         if (value !== 0) {
-          rows.push({ date, dimension, dimensionValue: key, count: value });
+          rows.push({
+            date,
+            dimension,
+            dimensionValue: key.slice(0, 128),
+            count: value,
+          });
         }
       }
     };

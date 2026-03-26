@@ -79,8 +79,8 @@ describe('Analytics Tracking (Integration)', () => {
     expect(Number(pageviews)).toBeGreaterThanOrEqual(1);
 
     const country = await redis.hgetall(`analytics:country:${today}`);
-    // 127.0.0.1 is private → resolves to 'unknown'
-    expect(country).toHaveProperty('unknown');
+    // 127.0.0.1 is private → resolves to 'XX' (ISO 3166 user-assigned)
+    expect(country).toHaveProperty('XX');
 
     const device = await redis.hgetall(`analytics:device:${today}`);
     expect(device).toHaveProperty('desktop');
@@ -142,8 +142,8 @@ describe('Analytics Tracking (Integration)', () => {
 
     const realtime = await analyticsService.getRealtime();
     expect(realtime.activeNow).toBe(2);
-    // Both sessions are from private IPs → country 'unknown'
-    expect(realtime.byCountry).toHaveProperty('unknown');
+    // Both sessions are from private IPs → country 'XX'
+    expect(realtime.byCountry).toHaveProperty('XX');
   });
 
   it('should gracefully no-op when Redis is not ready', async () => {

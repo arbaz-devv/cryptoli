@@ -307,7 +307,8 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         return part;
       })
       .join('/');
-    return normalized.startsWith('/') ? normalized : `/${normalized}`;
+    const result = normalized.startsWith('/') ? normalized : `/${normalized}`;
+    return result.slice(0, 512);
   }
 
   private sanitizeLabel(raw?: string, fallback = 'none'): string {
@@ -452,7 +453,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     try {
       const u = new URL(referrer);
       const hostname = (u.hostname || '').toLowerCase().replace(/^www\./, '');
-      return hostname || 'direct';
+      return (hostname || 'direct').slice(0, 128);
     } catch {
       return 'direct';
     }
@@ -587,7 +588,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         device,
         browser,
         os,
-        timezone: body.timezone,
+        timezone: body.timezone?.slice(0, 64),
         path,
         referrer,
         utmSource,
@@ -1033,8 +1034,11 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       return null;
 
     const days: string[] = [];
-    for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
-      days.push(this.dayKey(d));
+    const toStr = this.dayKey(toDate);
+    let cursor = this.dayKey(fromDate);
+    while (cursor <= toStr) {
+      days.push(cursor);
+      cursor = this.addDays(cursor, 1);
     }
 
     // Partition days: pgDays (>= PG_CUTOFF_DAYS ago) read from PG, redisDays from Redis
@@ -1531,18 +1535,18 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
         const oldestDate = oldestResult[0]?.min_date;
         if (oldestDate) {
           const dayStart = new Date(oldestDate);
-          dayStart.setHours(0, 0, 0, 0);
+          dayStart.setUTCHours(0, 0, 0, 0);
 
           while (dayStart < cutoff) {
             const dayEnd = new Date(dayStart);
-            dayEnd.setDate(dayEnd.getDate() + 1);
+            dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
             await this.prisma.$transaction(async (tx) => {
               await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
               await tx.$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at >= ${dayStart} AND created_at < ${dayEnd}`;
             });
 
-            dayStart.setDate(dayStart.getDate() + 1);
+            dayStart.setUTCDate(dayStart.getUTCDate() + 1);
           }
         }
       }

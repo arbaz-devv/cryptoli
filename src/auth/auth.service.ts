@@ -255,7 +255,7 @@ export class AuthService {
       data.ipHash = meta.ip
         ? createHash('sha256').update(meta.ip).digest('hex')
         : null;
-      data.userAgent = meta.userAgent || null;
+      data.userAgent = meta.userAgent?.slice(0, 512) || null;
       data.device = device;
       data.browser = browser;
       data.os = os;
