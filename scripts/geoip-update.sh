@@ -5,6 +5,9 @@
 # Writes to a staging directory; only copies to production on success.
 # On any failure, existing data is untouched. Always exits 0.
 
+# Load .env if present (shell scripts don't get dotenv automatically)
+[ -f .env ] && set -a && . ./.env && set +a
+
 DATA_DIR="data/geoip"
 STAGING_DIR="/tmp/geoip-staging"
 EDITION="GeoLite2-City"

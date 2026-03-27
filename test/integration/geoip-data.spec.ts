@@ -40,7 +40,8 @@ describe('GeoIP Database Integrity', () => {
   it('should resolve Cloudflare DNS (1.1.1.1) to a valid country', () => {
     if (skipIfNoDb()) return;
     const result = reader.city('1.1.1.1');
-    expect(result.country?.isoCode).toMatch(/^[A-Z]{2}$/);
+    const code = result.country?.isoCode ?? result.registeredCountry?.isoCode;
+    expect(code).toMatch(/^[A-Z]{2}$/);
   });
 
   it('should throw AddressNotFoundError for private IPs', () => {

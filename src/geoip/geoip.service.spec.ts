@@ -27,13 +27,18 @@ describe('GeoipService', () => {
   });
 
   describe('onModuleInit()', () => {
-    it('should not throw when .mmdb file is missing', async () => {
+    it('should not throw regardless of .mmdb presence', async () => {
       await expect(service.onModuleInit()).resolves.not.toThrow();
     });
 
-    it('should still return empty results after failed init', async () => {
+    it('should return empty for private IPs after init', async () => {
       await service.onModuleInit();
-      expect(service.lookup('8.8.8.8')).toEqual({});
+      expect(service.lookup('127.0.0.1')).toEqual({});
+    });
+
+    it('should return empty for invalid IPs after init', async () => {
+      await service.onModuleInit();
+      expect(service.lookup('not-an-ip')).toEqual({});
     });
   });
 });

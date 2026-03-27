@@ -37,7 +37,7 @@ export class GeoipService implements OnModuleInit {
     try {
       const res = this.reader.city(ip);
       return {
-        country: res.country?.isoCode,
+        country: res.country?.isoCode ?? res.registeredCountry?.isoCode,
         city: res.city?.names?.en,
         region: res.subdivisions?.[0]?.isoCode,
         timezone: res.location?.timeZone,
