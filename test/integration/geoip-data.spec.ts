@@ -38,12 +38,12 @@ describe('GeoIP Database Integrity', () => {
 
   it('should have timezone data for major regions', () => {
     const ips = [
-      { ip: '8.8.8.8', region: 'Americas' },
-      { ip: '185.12.64.1', region: 'Europe' },       // DE
-      { ip: '203.208.60.1', region: 'Asia-Pacific' }, // CN
+      '8.8.8.8', // Americas
+      '185.12.64.1', // Europe (DE)
+      '203.208.60.1', // Asia-Pacific (CN)
     ];
 
-    for (const { ip, region } of ips) {
+    for (const ip of ips) {
       const result = geoip.lookup(ip);
       expect(result).not.toBeNull();
       expect(result!.timezone).toBeDefined();
