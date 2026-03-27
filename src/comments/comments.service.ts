@@ -4,6 +4,66 @@ import { NotFoundError } from '../common/errors';
 import { createCommentSchema } from '../common/utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SocketService } from '../socket/socket.service';
+import { RedisService } from '../redis/redis.service';
+
+function buildVoteCounterDelta(
+  previousVoteType: 'UP' | 'DOWN' | null,
+  nextVoteType: 'UP' | 'DOWN' | null,
+) {
+  const helpfulDelta =
+    (nextVoteType === 'UP' ? 1 : 0) - (previousVoteType === 'UP' ? 1 : 0);
+  const downDelta =
+    (nextVoteType === 'DOWN' ? 1 : 0) - (previousVoteType === 'DOWN' ? 1 : 0);
+
+  return { helpfulDelta, downDelta };
+}
+
+const COMMENT_PAGE_LIMIT_DEFAULT = 20;
+const COMMENT_REPLY_PAGE_LIMIT_DEFAULT = 10;
+const COMMENT_PAGE_LIMIT_MAX = 50;
+const COMMENT_COUNT_CACHE_TTL_SEC = 120;
+
+type CommentTarget = {
+  reviewId?: string;
+  postId?: string;
+  complaintId?: string;
+};
+
+type CursorTokenPayload = {
+  createdAt: string;
+  id: string;
+};
+
+function normalizeLimit(limit: number | undefined, fallback: number): number {
+  if (!limit || Number.isNaN(limit)) return fallback;
+  return Math.min(COMMENT_PAGE_LIMIT_MAX, Math.max(1, Math.floor(limit)));
+}
+
+function encodeCursor(createdAt: Date, id: string): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt: createdAt.toISOString(), id }),
+  ).toString('base64url');
+}
+
+function decodeCursor(cursor?: string): CursorTokenPayload | null {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, 'base64url').toString('utf8'),
+    ) as CursorTokenPayload;
+    if (!parsed?.id || !parsed?.createdAt) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function buildCommentCountCacheKey(target: CommentTarget): string | null {
+  if (target.reviewId) return `comments:count:review:${target.reviewId}`;
+  if (target.postId) return `comments:count:post:${target.postId}`;
+  if (target.complaintId) return `comments:count:complaint:${target.complaintId}`;
+  return null;
+}
 
 @Injectable()
 export class CommentsService {
@@ -11,7 +71,180 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly socketService: SocketService,
+    private readonly redisService: RedisService,
   ) {}
+
+  private buildTargetWhere(target: CommentTarget): Record<string, string> {
+    const provided = [target.reviewId, target.postId, target.complaintId].filter(
+      (value): value is string => Boolean(value),
+    );
+    if (provided.length > 1) {
+      throw new BadRequestException(
+        'Provide exactly one of reviewId, postId, complaintId',
+      );
+    }
+
+    if (target.reviewId) return { reviewId: target.reviewId };
+    if (target.postId) return { postId: target.postId };
+    if (target.complaintId) return { complaintId: target.complaintId };
+    return {};
+  }
+
+  private getCursorWhere(cursor?: string): Record<string, unknown> | undefined {
+    const decoded = decodeCursor(cursor);
+    if (!decoded) return undefined;
+    const createdAt = new Date(decoded.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return undefined;
+
+    return {
+      OR: [
+        { createdAt: { lt: createdAt } },
+        { createdAt, id: { lt: decoded.id } },
+      ],
+    };
+  }
+
+  private async getCachedTopLevelCommentCount(target: CommentTarget): Promise<number> {
+    const where = {
+      ...this.buildTargetWhere(target),
+      parentId: null,
+    };
+    const cacheKey = buildCommentCountCacheKey(target);
+    const redis = this.redisService.getClient();
+    const cacheEnabled =
+      this.redisService.isReady() && redis !== null && cacheKey !== null;
+
+    if (cacheEnabled) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw && /^\d+$/.test(raw)) {
+          return Number(raw);
+        }
+      } catch {
+        // ignore cache read errors
+      }
+    }
+
+    const count = await this.prisma.comment.count({ where });
+
+    if (cacheEnabled) {
+      try {
+        await redis.setex(cacheKey, COMMENT_COUNT_CACHE_TTL_SEC, String(count));
+      } catch {
+        // ignore cache write errors
+      }
+    }
+
+    return count;
+  }
+
+  private async incrementCachedTopLevelCommentCount(
+    target: CommentTarget,
+  ): Promise<number | null> {
+    const cacheKey = buildCommentCountCacheKey(target);
+    const redis = this.redisService.getClient();
+    if (!cacheKey || !this.redisService.isReady() || !redis) return null;
+
+    try {
+      const raw = await redis.get(cacheKey);
+      if (!raw || !/^\d+$/.test(raw)) {
+        return null;
+      }
+      const next = await redis.incrby(cacheKey, 1);
+      await redis.expire(cacheKey, COMMENT_COUNT_CACHE_TTL_SEC);
+      return Number(next);
+    } catch {
+      return null;
+    }
+  }
+
+  private async listCommentsPage(options: {
+    target: CommentTarget;
+    parentId: string | null;
+    user?: { id: string } | null;
+    limit?: number;
+    cursor?: string;
+  }) {
+    const limit = normalizeLimit(
+      options.limit,
+      options.parentId === null
+        ? COMMENT_PAGE_LIMIT_DEFAULT
+        : COMMENT_REPLY_PAGE_LIMIT_DEFAULT,
+    );
+
+    const where = {
+      ...this.buildTargetWhere(options.target),
+      parentId: options.parentId,
+      ...(this.getCursorWhere(options.cursor) ?? {}),
+    };
+
+    const comments = await this.prisma.comment.findMany({
+      where,
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            avatar: true,
+            verified: true,
+          },
+        },
+        _count: {
+          select: {
+            reactions: true,
+            votes: true,
+            replies: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
+
+    const hasMore = comments.length > limit;
+    const pageItems = hasMore ? comments.slice(0, limit) : comments;
+    const lastItem = pageItems.at(-1);
+    const nextCursor =
+      hasMore && lastItem ? encodeCursor(lastItem.createdAt, lastItem.id) : null;
+
+    let commentsWithVotes = pageItems;
+    if (options.user && pageItems.length > 0) {
+      const userVotes = await this.prisma.commentVote.findMany({
+        where: {
+          userId: options.user.id,
+          commentId: { in: pageItems.map((item) => item.id) },
+        },
+        select: { commentId: true, voteType: true },
+      });
+      const voteMap = new Map(userVotes.map((v) => [v.commentId, v.voteType]));
+      commentsWithVotes = pageItems.map((comment) => ({
+        ...comment,
+        userVote: voteMap.get(comment.id) ?? null,
+        helpfulCount: comment.helpfulCount ?? 0,
+        downVoteCount: comment.downVoteCount ?? 0,
+      }));
+    } else {
+      commentsWithVotes = pageItems.map((comment) => ({
+        ...comment,
+        userVote: null,
+        helpfulCount: comment.helpfulCount ?? 0,
+        downVoteCount: comment.downVoteCount ?? 0,
+      }));
+    }
+
+    return {
+      comments: commentsWithVotes,
+      pagination: {
+        limit,
+        hasMore,
+        nextCursor,
+      },
+      totalCount:
+        options.parentId === null
+          ? await this.getCachedTopLevelCommentCount(options.target)
+          : undefined,
+    };
+  }
 
   async create(body: unknown, authorId: string) {
     const validated = createCommentSchema.parse(body);
@@ -113,9 +346,16 @@ export class CommentsService {
         });
       }
 
-      const commentCount = await this.prisma.comment.count({
-        where: { reviewId: validated.reviewId, parentId: null },
-      });
+      let commentCount = validated.parentId
+        ? null
+        : await this.incrementCachedTopLevelCommentCount({
+            reviewId: validated.reviewId,
+          });
+      if (commentCount === null) {
+        commentCount = await this.getCachedTopLevelCommentCount({
+          reviewId: validated.reviewId,
+        });
+      }
       this.socketService.emitCommentCountUpdated(
         validated.reviewId,
         commentCount,
@@ -125,113 +365,24 @@ export class CommentsService {
     return comment;
   }
 
-  private async listComments(
-    reviewId?: string,
-    postId?: string,
-    complaintId?: string,
-    user?: { id: string } | null,
-  ) {
-    const where: Record<string, unknown> = { parentId: null };
-    if (reviewId) where.reviewId = reviewId;
-    if (postId) where.postId = postId;
-    if (complaintId) where.complaintId = complaintId;
-
-    const comments = await this.prisma.comment.findMany({
-      where,
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            avatar: true,
-            verified: true,
-          },
-        },
-        replies: {
-          include: {
-            author: {
-              select: {
-                id: true,
-                username: true,
-                avatar: true,
-                verified: true,
-              },
-            },
-            _count: {
-              select: {
-                reactions: true,
-                votes: true,
-                replies: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'asc' },
-        },
-        _count: {
-          select: {
-            reactions: true,
-            votes: true,
-            replies: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let commentsWithVotes = comments;
-    if (user && comments.length > 0) {
-      const commentIds = comments.flatMap((c) => [
-        c.id,
-        ...c.replies.map((r) => r.id),
-      ]);
-      const userVotes = await this.prisma.commentVote.findMany({
-        where: { userId: user.id, commentId: { in: commentIds } },
-        select: { commentId: true, voteType: true },
-      });
-      const voteMap = new Map(userVotes.map((v) => [v.commentId, v.voteType]));
-      commentsWithVotes = comments.map((comment) => ({
-        ...comment,
-        userVote: voteMap.get(comment.id) ?? null,
-        helpfulCount: comment.helpfulCount ?? 0,
-        downVoteCount: comment.downVoteCount ?? 0,
-        replies: comment.replies.map((reply) => ({
-          ...reply,
-          userVote: voteMap.get(reply.id) ?? null,
-          helpfulCount: reply.helpfulCount ?? 0,
-          downVoteCount: reply.downVoteCount ?? 0,
-        })),
-      }));
-    } else {
-      commentsWithVotes = comments.map((comment) => ({
-        ...comment,
-        userVote: null,
-        helpfulCount: comment.helpfulCount ?? 0,
-        downVoteCount: comment.downVoteCount ?? 0,
-        replies: comment.replies.map((reply) => ({
-          ...reply,
-          userVote: null,
-          helpfulCount: reply.helpfulCount ?? 0,
-          downVoteCount: reply.downVoteCount ?? 0,
-        })),
-      }));
-    }
-
-    return commentsWithVotes;
-  }
-
   async list(
     reviewId?: string,
     postId?: string,
     complaintId?: string,
     user?: { id: string } | null,
+    options?: {
+      parentId?: string;
+      limit?: number;
+      cursor?: string;
+    },
   ) {
-    const comments = await this.listComments(
-      reviewId,
-      postId,
-      complaintId,
+    return this.listCommentsPage({
+      target: { reviewId, postId, complaintId },
+      parentId: options?.parentId ?? null,
       user,
-    );
-    return { comments };
+      limit: options?.limit,
+      cursor: options?.cursor,
+    });
   }
 
   async getById(
@@ -242,13 +393,12 @@ export class CommentsService {
     user?: { id: string } | null,
   ) {
     if (id === 'list') {
-      const comments = await this.listComments(
+      return this.list(
         reviewId,
         postId,
         complaintId,
         user,
       );
-      return { comments };
     }
 
     const where: Record<string, unknown> = { parentId: null };
@@ -268,26 +418,6 @@ export class CommentsService {
             verified: true,
           },
         },
-        replies: {
-          include: {
-            author: {
-              select: {
-                id: true,
-                username: true,
-                avatar: true,
-                verified: true,
-              },
-            },
-            _count: {
-              select: {
-                reactions: true,
-                votes: true,
-                replies: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'asc' },
-        },
         _count: {
           select: {
             reactions: true,
@@ -301,31 +431,23 @@ export class CommentsService {
 
     let commentsWithVotes = comments;
     if (user && comments.length > 0) {
-      const commentIds = comments.flatMap((c) => [
-        c.id,
-        ...c.replies.map((r) => r.id),
-      ]);
       const userVotes = await this.prisma.commentVote.findMany({
-        where: { userId: user.id, commentId: { in: commentIds } },
+        where: { userId: user.id, commentId: { in: comments.map((c) => c.id) } },
         select: { commentId: true, voteType: true },
       });
       const voteMap = new Map(userVotes.map((v) => [v.commentId, v.voteType]));
       commentsWithVotes = comments.map((comment) => ({
         ...comment,
         userVote: voteMap.get(comment.id) ?? null,
-        replies: comment.replies.map((reply) => ({
-          ...reply,
-          userVote: voteMap.get(reply.id) ?? null,
-        })),
+        helpfulCount: comment.helpfulCount ?? 0,
+        downVoteCount: comment.downVoteCount ?? 0,
       }));
     } else {
       commentsWithVotes = comments.map((comment) => ({
         ...comment,
         userVote: null,
-        replies: comment.replies.map((reply) => ({
-          ...reply,
-          userVote: null,
-        })),
+        helpfulCount: comment.helpfulCount ?? 0,
+        downVoteCount: comment.downVoteCount ?? 0,
       }));
     }
 
@@ -374,20 +496,34 @@ export class CommentsService {
         });
       }
 
-      const [helpfulCount, downVoteCount] = await Promise.all([
-        tx.commentVote.count({ where: { commentId, voteType: 'UP' } }),
-        tx.commentVote.count({ where: { commentId, voteType: 'DOWN' } }),
-      ]);
+      const previousVoteType = existingVote
+        ? (existingVote.voteType as 'UP' | 'DOWN')
+        : null;
+      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+        previousVoteType,
+        nextVoteType,
+      );
 
-      await tx.comment.update({
+      const updatedComment = await tx.comment.update({
         where: { id: commentId },
-        data: { helpfulCount, downVoteCount },
+        data: {
+          ...(helpfulDelta !== 0
+            ? { helpfulCount: { increment: helpfulDelta } }
+            : {}),
+          ...(downDelta !== 0
+            ? { downVoteCount: { increment: downDelta } }
+            : {}),
+        },
+        select: {
+          helpfulCount: true,
+          downVoteCount: true,
+        },
       });
 
       return {
         voteType: nextVoteType,
-        helpfulCount,
-        downVoteCount,
+        helpfulCount: updatedComment.helpfulCount ?? 0,
+        downVoteCount: updatedComment.downVoteCount ?? 0,
         commentAuthorId: comment.authorId,
         voterId: userId,
         isNewUpVote: nextVoteType === 'UP',

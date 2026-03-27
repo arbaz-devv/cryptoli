@@ -3,6 +3,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createComplaintSchema, createReplySchema } from '../common/utils';
 
+function buildVoteCounterDelta(
+  previousVoteType: 'UP' | 'DOWN' | null,
+  nextVoteType: 'UP' | 'DOWN' | null,
+) {
+  const helpfulDelta =
+    (nextVoteType === 'UP' ? 1 : 0) - (previousVoteType === 'UP' ? 1 : 0);
+  const downDelta =
+    (nextVoteType === 'DOWN' ? 1 : 0) - (previousVoteType === 'DOWN' ? 1 : 0);
+
+  return { helpfulDelta, downDelta };
+}
+
 @Injectable()
 export class ComplaintsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -42,41 +54,17 @@ export class ComplaintsService {
         status: true,
         helpfulCount: true,
         downVoteCount: true,
-        reportCount: true,
         createdAt: true,
-        updatedAt: true,
-        authorId: true,
-        companyId: true,
-        productId: true,
         author: {
           select: {
-            id: true,
             username: true,
             avatar: true,
             verified: true,
-            reputation: true,
-          },
-        },
-        company: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            logo: true,
-          },
-        },
-        product: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
           },
         },
         _count: {
           select: {
             comments: true,
-            reactions: true,
-            votes: true,
           },
         },
       },
@@ -277,20 +265,34 @@ export class ComplaintsService {
         });
       }
 
-      const [helpfulCount, downVoteCount] = await Promise.all([
-        tx.complaintVote.count({ where: { complaintId, voteType: 'UP' } }),
-        tx.complaintVote.count({ where: { complaintId, voteType: 'DOWN' } }),
-      ]);
+      const previousVoteType = existingVote
+        ? (existingVote.voteType as 'UP' | 'DOWN')
+        : null;
+      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+        previousVoteType,
+        nextVoteType,
+      );
 
-      await tx.complaint.update({
+      const updatedComplaint = await tx.complaint.update({
         where: { id: complaintId },
-        data: { helpfulCount, downVoteCount },
+        data: {
+          ...(helpfulDelta !== 0
+            ? { helpfulCount: { increment: helpfulDelta } }
+            : {}),
+          ...(downDelta !== 0
+            ? { downVoteCount: { increment: downDelta } }
+            : {}),
+        },
+        select: {
+          helpfulCount: true,
+          downVoteCount: true,
+        },
       });
 
       return {
         voteType: nextVoteType,
-        helpfulCount,
-        downVoteCount,
+        helpfulCount: updatedComplaint.helpfulCount ?? 0,
+        downVoteCount: updatedComplaint.downVoteCount ?? 0,
       };
     });
   }

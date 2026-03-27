@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { AllExceptionsFilter } from '../../src/common/http-exception.filter';
@@ -54,6 +55,13 @@ export async function setupTestApp(): Promise<{
   const app = moduleFixture.createNestApplication();
 
   // Replicate main.ts middleware stack
+  app.use(
+    compression({
+      threshold: 1024,
+      level: 6,
+    }),
+  );
+
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

@@ -47,21 +47,20 @@ describe('ReviewsService', () => {
       expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
     });
 
-    it('should recount votes inside the transaction (not use increment/decrement)', async () => {
+    it('should apply delta counter update inside transaction', async () => {
       const txMock = {
         review: {
           findUnique: jest.fn().mockResolvedValue({ id: 'review-1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.helpfulVote.count
-        .mockResolvedValueOnce(1) // UP count
-        .mockResolvedValueOnce(0); // DOWN count
 
       prisma.$transaction.mockImplementation(
         async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
@@ -69,18 +68,10 @@ describe('ReviewsService', () => {
 
       await service.helpful('review-1', 'user-1');
 
-      // Verify recount pattern: count both UP and DOWN
-      expect(txMock.helpfulVote.count).toHaveBeenCalledWith({
-        where: { reviewId: 'review-1', voteType: 'UP' },
-      });
-      expect(txMock.helpfulVote.count).toHaveBeenCalledWith({
-        where: { reviewId: 'review-1', voteType: 'DOWN' },
-      });
-
-      // Verify update uses absolute counts, not increment/decrement
       expect(txMock.review.update).toHaveBeenCalledWith({
         where: { id: 'review-1' },
-        data: { helpfulCount: 1, downVoteCount: 0 },
+        data: { helpfulCount: { increment: 1 } },
+        select: { helpfulCount: true, downVoteCount: true },
       });
     });
 
@@ -88,12 +79,14 @@ describe('ReviewsService', () => {
       const txMock = {
         review: {
           findUnique: jest.fn().mockResolvedValue({ id: 'review-1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn().mockResolvedValue(0),
         },
       };
 
@@ -113,14 +106,16 @@ describe('ReviewsService', () => {
       const txMock = {
         review: {
           findUnique: jest.fn().mockResolvedValue({ id: 'review-1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 0,
+            downVoteCount: 0,
+          }),
         },
         helpfulVote: {
           findUnique: jest
             .fn()
             .mockResolvedValue({ id: 'vote-1', userId: 'user-1' }),
           delete: jest.fn(),
-          count: jest.fn().mockResolvedValue(0),
         },
       };
 
@@ -178,7 +173,10 @@ describe('ReviewsService', () => {
             title: 'Test',
             authorId: 'author1',
           }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         user: {
           findUnique: jest.fn().mockResolvedValue({ username: 'voter' }),
@@ -186,12 +184,8 @@ describe('ReviewsService', () => {
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.helpfulVote.count
-        .mockResolvedValueOnce(1) // UP
-        .mockResolvedValueOnce(0); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
@@ -216,7 +210,10 @@ describe('ReviewsService', () => {
             title: 'Test',
             authorId: 'author1',
           }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 0,
+            downVoteCount: 0,
+          }),
         },
         user: {
           findUnique: jest.fn().mockResolvedValue({ username: 'voter' }),
@@ -224,7 +221,6 @@ describe('ReviewsService', () => {
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue({ id: 'v1', voteType: 'UP' }),
           delete: jest.fn(),
-          count: jest.fn().mockResolvedValue(0),
         },
       };
 
@@ -246,7 +242,10 @@ describe('ReviewsService', () => {
             title: 'Test',
             authorId: 'author1',
           }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 0,
+            downVoteCount: 1,
+          }),
         },
         user: {
           findUnique: jest.fn().mockResolvedValue({ username: 'voter' }),
@@ -254,12 +253,8 @@ describe('ReviewsService', () => {
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue({ id: 'v1', voteType: 'UP' }),
           update: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.helpfulVote.count
-        .mockResolvedValueOnce(0) // UP
-        .mockResolvedValueOnce(1); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
@@ -297,7 +292,10 @@ describe('ReviewsService', () => {
             title: 'Test',
             authorId: 'author1',
           }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         user: {
           findUnique: jest.fn().mockResolvedValue({ username: 'voter' }),
@@ -305,12 +303,8 @@ describe('ReviewsService', () => {
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.helpfulVote.count
-        .mockResolvedValueOnce(1)
-        .mockResolvedValueOnce(0);
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
@@ -332,7 +326,10 @@ describe('ReviewsService', () => {
             title: 'Test',
             authorId: 'author1',
           }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         user: {
           findUnique: jest.fn().mockResolvedValue({ username: 'author' }),
@@ -340,12 +337,8 @@ describe('ReviewsService', () => {
         helpfulVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.helpfulVote.count
-        .mockResolvedValueOnce(1)
-        .mockResolvedValueOnce(0);
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
