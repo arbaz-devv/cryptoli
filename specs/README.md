@@ -27,8 +27,3 @@ NestJS 11 backend for a cryptocurrency/fintech review platform.
 |------|------|---------|
 | [testing-strategy.md](./testing-strategy.md) | [src/**/*.spec.ts](../src/), [test/](../test/) | Test conventions, mocking patterns, coverage targets, priority tiers |
 
-## Agent Protocol
-
-| Spec | Code | Purpose |
-|------|------|---------|
-| [scrip-protocol.md](./scrip-protocol.md) | — | DONE/STUCK/LEARNING markers for autonomous agent loops |

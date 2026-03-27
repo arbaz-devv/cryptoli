@@ -119,7 +119,6 @@ UsersService, call `invalidateProfileCache(username)`.
 | Database schema, relations, cascades   | `specs/data-model.md`           |
 | Voting, reactions, helpful marks       | `specs/voting-system.md`        |
 | Socket.IO, real-time events            | `specs/socket-architecture.md`  |
-| Scrip orchestration                    | `specs/scrip-protocol.md`       |
 | Testing, coverage, isolation           | `specs/testing-strategy.md`     |
 
 Full index with summaries: [specs/README.md](specs/README.md)
