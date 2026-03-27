@@ -10,6 +10,7 @@ export function createPrismaMock(overrides: Record<string, any> = {}) {
       return Promise.all(fn);
     }),
     $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
     $executeRawUnsafe: jest.fn(),
     $disconnect: jest.fn(),
     user: {
@@ -180,6 +181,30 @@ export function createPrismaMock(overrides: Record<string, any> = {}) {
       findMany: jest.fn(),
       create: jest.fn(),
       count: jest.fn(),
+    },
+    analyticsEvent: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+      count: jest.fn(),
+      groupBy: jest.fn(),
+    },
+    analyticsDailySummary: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+      count: jest.fn(),
+      groupBy: jest.fn(),
     },
     ...overrides,
   };

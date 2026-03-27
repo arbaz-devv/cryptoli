@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-19
+Last verified: 2026-03-27
 ---
 
 # Auth System
@@ -41,7 +41,7 @@ Three guards — use the correct one:
 
 - **`@UseGuards(AuthGuard)`** — user MUST be authenticated (401 if not). Sets `req.user` to `SessionUser`.
 - **`@UseGuards(OptionalAuthGuard)`** — anonymous allowed. Sets `req.user` to `SessionUser` or `null`.
-- **`@UseGuards(AdminGuard)`** — admin only. Checks `X-Admin-Key` header or admin JWT.
+- **`@UseGuards(AdminGuard)`** — admin only. Checks `X-Admin-Key` header or admin JWT. (No query param support.)
 
 Without any guard, `req.user` is `undefined` (not `null`). If you need the user identity, you need a guard.
 
@@ -74,20 +74,47 @@ CSRF is Express middleware in `main.ts`, not a NestJS guard:
 
 Separate system from user auth:
 
-- `AdminGuard` checks: `X-Admin-Key` header, OR `?key=` query param, OR JWT with `{ type: 'admin' }` claim
+- `AdminGuard` checks: `X-Admin-Key` header, OR JWT with `{ type: 'admin' }` claim
 - Admin JWT issued by `AdminAuthService.login()` using `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH` env vars
 - `ADMIN_API_KEY` and `ANALYTICS_API_KEY` are completely separate keys
 
 ### Rate Limiting
 
-Auth endpoints override the global throttle to **5 req/60s** for both tiers:
+Login and register endpoints override the global throttle to **5 req/60s** for both tiers:
 
 ```ts
 @Throttle({ short: { limit: 5, ttl: 60000 }, long: { limit: 5, ttl: 60000 } })
 ```
 
 Both `short` and `long` tiers are set identically (`ttl` is in milliseconds).
-Maintain this on any new auth endpoints to mitigate credential stuffing.
+Other auth endpoints (me, check-username, logout, change-password, etc.) use
+the global throttle defaults.
+
+### Session Enrichment
+
+`createSession(userId, meta?: SessionMetadata)` captures request context at
+login/register/password-change. The `SessionMetadata` interface (`auth.service.ts`)
+includes: `ip`, `userAgent`, `country?`, `timezone?`,
+`trigger: 'login' | 'register' | 'password_change'`.
+
+The Session model stores parsed fields: `ip`, `ipHash` (SHA-256), `userAgent`,
+`device`, `browser`, `os` (parsed via `getDeviceAndBrowser()` from
+`src/common/ua.ts`), `country`, `timezone`, `trigger`.
+
+`AuthController.extractSessionMeta(req, trigger)` extracts context using
+`getClientIp()` and `getCountryHint()` from `src/analytics/ip-utils.ts`.
+
+### Analytics Integration
+
+`@UseInterceptors(AnalyticsInterceptor)` is applied at the controller level.
+Auth events tracked: `user_login`, `user_register`, `user_logout`,
+`password_change`. AnalyticsModule is imported in AuthModule (one-directional,
+no circular dependency). `AnalyticsService` is injected with `@Optional()`.
+
+### Registration Context
+
+`createUser()` accepts optional `registrationIp` and `registrationCountry`,
+persisted to the User model for analytics.
 
 ## Verification
 

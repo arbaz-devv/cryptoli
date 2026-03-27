@@ -7,13 +7,17 @@ import {
   Req,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import type { SessionUser } from '../auth/auth.service';
 import { UsersService } from './users.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -60,7 +64,11 @@ export class UsersController {
     @Param('username') username: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.usersService.followUser(req.user.id, username);
+    return this.usersService.followUser(
+      req.user.id,
+      username,
+      getAnalyticsCtx(req),
+    );
   }
 
   @Delete(':username/follow')
@@ -69,7 +77,11 @@ export class UsersController {
     @Param('username') username: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.usersService.unfollowUser(req.user.id, username);
+    return this.usersService.unfollowUser(
+      req.user.id,
+      username,
+      getAnalyticsCtx(req),
+    );
   }
 
   @Get(':username/followers')

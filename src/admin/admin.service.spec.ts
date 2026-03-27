@@ -177,6 +177,8 @@ describe('AdminService', () => {
         role: 'USER',
         verified: false,
         reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
         createdAt: new Date('2026-01-01'),
         updatedAt: new Date('2026-01-15'),
         moderation: null,
@@ -197,7 +199,224 @@ describe('AdminService', () => {
 
       expect(result.metrics!.commentsCount).toBe(5);
       expect(result.metrics!.votesCount).toBe(6); // 3+2+1
-      expect(result.activitySeries).toHaveLength(7);
+      expect(result.activitySeries).toHaveLength(30);
+      expect(result.user.loginCount).toBe(0);
+    });
+
+    it('should derive user fields from most recent session', async () => {
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 86400000);
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: yesterday,
+          ip: '10.0.0.1',
+          ipHash: 'oldhash',
+          device: 'mobile',
+          browser: 'Firefox',
+          os: 'Android',
+          country: 'DE',
+          timezone: 'Europe/Berlin',
+          trigger: 'login',
+        },
+        {
+          createdAt: now,
+          ip: '192.168.1.1',
+          ipHash: 'newhash',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'US',
+          timezone: 'America/New_York',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      // Most recent session fields
+      expect(result.user.lastLoginIp).toBe('192.168.1.1');
+      expect(result.user.device).toBe('desktop');
+      expect(result.user.browser).toBe('Chrome');
+      expect(result.user.os).toBe('Windows');
+      expect(result.user.country).toBe('US');
+      expect(result.user.timezone).toBe('America/New_York');
+      expect(result.user.loginCount).toBe(2);
+      // registrationIp falls back to earliest session when user field is null
+      expect(result.user.registrationIp).toBe('10.0.0.1');
+      expect(result.user.registrationCountry).toBe('DE');
+    });
+
+    it('should prefer user registrationIp/Country over earliest session', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: '1.2.3.4',
+        registrationCountry: 'GB',
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: new Date(),
+          ip: '5.6.7.8',
+          ipHash: 'hash',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Linux',
+          country: 'US',
+          timezone: 'America/Chicago',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      expect(result.user.registrationIp).toBe('1.2.3.4');
+      expect(result.user.registrationCountry).toBe('GB');
+    });
+
+    it('should populate per-day device/country breakdowns in activitySeries', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([
+        {
+          createdAt: new Date(),
+          ip: '1.2.3.4',
+          ipHash: 'h1',
+          device: 'mobile',
+          browser: 'Safari',
+          os: 'iOS',
+          country: 'JP',
+          timezone: 'Asia/Tokyo',
+          trigger: 'login',
+        },
+        {
+          createdAt: new Date(),
+          ip: '5.6.7.8',
+          ipHash: 'h2',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'JP',
+          timezone: 'Asia/Tokyo',
+          trigger: 'login',
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      const todayEntry = result.activitySeries.find(
+        (e: any) => e.date === today,
+      ) as any;
+      expect(todayEntry).toBeDefined();
+      // Two sessions today: 1 mobile + 1 desktop — no clear winner, either is valid
+      expect(['mobile', 'desktop']).toContain(todayEntry.device);
+      expect(todayEntry.country).toBe('JP');
+      expect(todayEntry.logins).toBe(2);
+
+      // Days without sessions should show 'Unknown'
+      const oldDay = result.activitySeries[0] as any;
+      expect(oldDay.device).toBe('Unknown');
+      expect(oldDay.country).toBe('Unknown');
+    });
+
+    it('should handle zero sessions gracefully', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        username: 'alice',
+        name: 'Alice',
+        avatar: null,
+        role: 'USER',
+        verified: false,
+        reputation: 0,
+        registrationIp: null,
+        registrationCountry: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-15'),
+        _count: { reviews: 0 },
+      });
+      prisma.comment.count.mockResolvedValue(0);
+      prisma.helpfulVote.count.mockResolvedValue(0);
+      prisma.complaintVote.count.mockResolvedValue(0);
+      prisma.commentVote.count.mockResolvedValue(0);
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.post.findMany.mockResolvedValue([]);
+      prisma.session.findMany.mockResolvedValue([]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+
+      const result = await service.getUserDetail('1', false);
+
+      expect(result.user.lastLoginIp).toBeUndefined();
+      expect(result.user.device).toBeUndefined();
+      expect(result.user.loginCount).toBe(0);
+      expect(result.user.registrationIp).toBeUndefined();
+      expect(result.user.registrationCountry).toBeUndefined();
     });
   });
 
@@ -208,7 +427,12 @@ describe('AdminService', () => {
           id: 'c1',
           title: 'Missing funds',
           content: 'Details',
-          author: { id: 'u1', username: 'alice', name: 'Alice', email: 'a@b.com' },
+          author: {
+            id: 'u1',
+            username: 'alice',
+            name: 'Alice',
+            email: 'a@b.com',
+          },
           company: null,
           product: { id: 'p1', name: 'WalletX' },
           productId: 'p1',
@@ -232,8 +456,14 @@ describe('AdminService', () => {
 
   describe('updateComplaintStatus()', () => {
     it('should update complaint status', async () => {
-      prisma.complaint.findUnique.mockResolvedValue({ id: 'c1', status: 'OPEN' });
-      prisma.complaint.update.mockResolvedValue({ id: 'c1', status: 'RESOLVED' });
+      prisma.complaint.findUnique.mockResolvedValue({
+        id: 'c1',
+        status: 'OPEN',
+      });
+      prisma.complaint.update.mockResolvedValue({
+        id: 'c1',
+        status: 'RESOLVED',
+      });
 
       const result = await service.updateComplaintStatus('c1', 'resolved');
 
@@ -472,6 +702,333 @@ describe('AdminService', () => {
       expect((result.ratings[0] as any).submittedBy).toBe('CompanyX');
       expect((result.ratings[0] as any).status).toBe('published');
       expect((result.ratings[0] as any).trend).toBe('up');
+    });
+  });
+
+  describe('getUserSessions()', () => {
+    it('should return paginated sessions with enrichment fields', async () => {
+      prisma.session.findMany.mockResolvedValue([
+        {
+          id: 's1',
+          createdAt: new Date('2026-03-20T10:00:00Z'),
+          expiresAt: new Date('2026-04-20T10:00:00Z'),
+          ip: '1.2.3.4',
+          ipHash: 'abc123',
+          userAgent: 'Mozilla/5.0',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'US',
+          timezone: 'America/New_York',
+          trigger: 'login',
+        },
+      ]);
+      prisma.session.count.mockResolvedValue(1);
+
+      const result = await service.getUserSessions('u1', 1, 10);
+
+      expect(result.sessions).toHaveLength(1);
+      expect(result.sessions[0].ipHash).toBe('abc123');
+      expect(result.sessions[0].device).toBe('desktop');
+      expect(result.sessions[0].country).toBe('US');
+      expect(result.pagination.total).toBe(1);
+      expect(result.pagination.totalPages).toBe(1);
+    });
+
+    it('should normalize null fields to undefined', async () => {
+      prisma.session.findMany.mockResolvedValue([
+        {
+          id: 's1',
+          createdAt: new Date(),
+          expiresAt: new Date(),
+          ip: null,
+          ipHash: null,
+          userAgent: null,
+          device: null,
+          browser: null,
+          os: null,
+          country: null,
+          timezone: null,
+          trigger: null,
+        },
+      ]);
+      prisma.session.count.mockResolvedValue(1);
+
+      const result = await service.getUserSessions('u1', 1, 10);
+
+      expect(result.sessions[0].ipHash).toBeUndefined();
+      expect(result.sessions[0].device).toBeUndefined();
+    });
+
+    it('should respect pagination skip/take', async () => {
+      prisma.session.findMany.mockResolvedValue([]);
+      prisma.session.count.mockResolvedValue(25);
+
+      const result = await service.getUserSessions('u1', 3, 10);
+
+      expect(prisma.session.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+      expect(result.pagination.page).toBe(3);
+      expect(result.pagination.totalPages).toBe(3);
+    });
+  });
+
+  describe('getUserSessionsExport()', () => {
+    it('should return CSV with UTF-8 BOM and correct headers', async () => {
+      prisma.session.findMany.mockResolvedValue([
+        {
+          ipHash: 'hash1',
+          userAgent: 'Mozilla/5.0',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'US',
+          timezone: 'America/New_York',
+          trigger: 'login',
+          createdAt: new Date('2026-03-20T10:00:00.000Z'),
+          expiresAt: new Date('2026-04-20T10:00:00.000Z'),
+        },
+      ]);
+
+      const csv = await service.getUserSessionsExport('u1', 'csv');
+
+      expect(typeof csv).toBe('string');
+      expect((csv as string).startsWith('\uFEFF')).toBe(true);
+      expect(csv).toContain(
+        'IP Hash,User Agent,Device,Browser,OS,Country,Timezone,Trigger,Created At,Expires At',
+      );
+      expect(csv).toContain('hash1');
+      expect(csv).toContain('2026-03-20T10:00:00.000Z');
+    });
+
+    it('should escape CSV values containing commas or quotes', async () => {
+      prisma.session.findMany.mockResolvedValue([
+        {
+          ipHash: 'hash1',
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) "quoted"',
+          device: 'desktop',
+          browser: 'Chrome',
+          os: 'Windows',
+          country: 'US',
+          timezone: 'America/New_York',
+          trigger: 'login',
+          createdAt: new Date('2026-03-20T10:00:00.000Z'),
+          expiresAt: new Date('2026-04-20T10:00:00.000Z'),
+        },
+      ]);
+
+      const csv = (await service.getUserSessionsExport('u1', 'csv')) as string;
+
+      // Quoted values with escaped internal quotes
+      expect(csv).toContain('""quoted""');
+    });
+
+    it('should return JSON array for json format', async () => {
+      prisma.session.findMany.mockResolvedValue([
+        {
+          ipHash: 'hash1',
+          userAgent: null,
+          device: null,
+          browser: null,
+          os: null,
+          country: null,
+          timezone: null,
+          trigger: null,
+          createdAt: new Date('2026-03-20T10:00:00.000Z'),
+          expiresAt: new Date('2026-04-20T10:00:00.000Z'),
+        },
+      ]);
+
+      const result = await service.getUserSessionsExport('u1', 'json');
+
+      expect(Array.isArray(result)).toBe(true);
+      expect((result as any[])[0].ipHash).toBe('hash1');
+      expect((result as any[])[0].userAgent).toBe('');
+    });
+
+    it('should exclude raw IP from export (hash only)', async () => {
+      prisma.session.findMany.mockResolvedValue([]);
+
+      await service.getUserSessionsExport('u1', 'csv');
+
+      const selectArg = prisma.session.findMany.mock.calls[0][0].select;
+      expect(selectArg.ipHash).toBe(true);
+      expect(selectArg.ip).toBeUndefined();
+    });
+  });
+
+  describe('getUserActivity()', () => {
+    it('should fan-out across 5 tables and merge sorted by createdAt desc', async () => {
+      prisma.review.findMany.mockResolvedValue([
+        {
+          id: 'r1',
+          title: 'Great',
+          createdAt: new Date('2026-03-20T10:00:00Z'),
+          product: { name: 'ProductA' },
+          company: null,
+        },
+      ]);
+      prisma.comment.findMany.mockResolvedValue([
+        {
+          id: 'c1',
+          content: 'Nice review',
+          createdAt: new Date('2026-03-21T10:00:00Z'),
+        },
+      ]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+      prisma.follow.findMany.mockResolvedValue([
+        {
+          id: 'f1',
+          createdAt: new Date('2026-03-19T10:00:00Z'),
+          following: { username: 'bob', name: 'Bob' },
+        },
+      ]);
+
+      const result = await service.getUserActivity('u1', 1, 10);
+
+      expect(result.activities).toHaveLength(3);
+      // Sorted desc by createdAt
+      expect(result.activities[0].type).toBe('comment');
+      expect(result.activities[1].type).toBe('review');
+      expect(result.activities[2].type).toBe('follow');
+      expect(result.activities[0].summary).toContain('Commented');
+      expect(result.activities[1].summary).toContain('Reviewed');
+      expect(result.activities[2].summary).toContain('Followed Bob');
+    });
+
+    it('should paginate in-memory after merge', async () => {
+      const activities = Array.from({ length: 15 }, (_, i) => ({
+        id: `r${i}`,
+        title: `Review ${i}`,
+        createdAt: new Date(2026, 2, 20, 10, 0, 0, 0),
+        product: { name: 'P' },
+        company: null,
+      }));
+      prisma.review.findMany.mockResolvedValue(activities);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+      prisma.follow.findMany.mockResolvedValue([]);
+
+      const page1 = await service.getUserActivity('u1', 1, 10);
+      expect(page1.activities).toHaveLength(10);
+      expect(page1.pagination.total).toBe(15);
+      expect(page1.pagination.totalPages).toBe(2);
+
+      const page2 = await service.getUserActivity('u1', 2, 10);
+      expect(page2.activities).toHaveLength(5);
+    });
+
+    it('should cap each sub-query at page * limit rows', async () => {
+      prisma.review.findMany.mockResolvedValue([]);
+      prisma.comment.findMany.mockResolvedValue([]);
+      prisma.complaint.findMany.mockResolvedValue([]);
+      prisma.helpfulVote.findMany.mockResolvedValue([]);
+      prisma.follow.findMany.mockResolvedValue([]);
+
+      await service.getUserActivity('u1', 2, 10);
+
+      // Each sub-query should take at most page * limit = 20
+      expect(prisma.review.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 }),
+      );
+      expect(prisma.comment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 }),
+      );
+    });
+  });
+
+  describe('rollupAnalytics()', () => {
+    it('should rollup a single date', async () => {
+      const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
+      const svc = new AdminService(
+        prisma as unknown as PrismaService,
+        mockRollup as any,
+      );
+
+      const result = await svc.rollupAnalytics({ date: '2026-03-20' });
+
+      expect(mockRollup.rollupDay).toHaveBeenCalledWith('2026-03-20');
+      expect(result.ok).toBe(true);
+      expect(result.rolledUp).toBe(1);
+      expect(result.skipped).toBe(0);
+    });
+
+    it('should rollup a date range chunked by 10', async () => {
+      const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
+      const svc = new AdminService(
+        prisma as unknown as PrismaService,
+        mockRollup as any,
+      );
+
+      const result = await svc.rollupAnalytics({
+        from: '2026-03-01',
+        to: '2026-03-15',
+      });
+
+      expect(mockRollup.rollupDay).toHaveBeenCalledTimes(15);
+      expect(result.rolledUp).toBe(15);
+      expect(result.errors).toBe(0);
+    });
+
+    it('should cap range at 365 days', async () => {
+      const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
+      const svc = new AdminService(
+        prisma as unknown as PrismaService,
+        mockRollup as any,
+      );
+
+      await svc.rollupAnalytics({
+        from: '2025-01-01',
+        to: '2026-12-31',
+      });
+
+      // 365 days + 1 (inclusive) = 366 days
+      expect(mockRollup.rollupDay.mock.calls.length).toBeLessThanOrEqual(366);
+    });
+
+    it('should default to yesterday when no date/range provided', async () => {
+      const mockRollup = { rollupDay: jest.fn().mockResolvedValue(false) };
+      const svc = new AdminService(
+        prisma as unknown as PrismaService,
+        mockRollup as any,
+      );
+
+      const result = await svc.rollupAnalytics({});
+
+      expect(mockRollup.rollupDay).toHaveBeenCalledTimes(1);
+      expect(result.skipped).toBe(1);
+      expect(result.rolledUp).toBe(0);
+    });
+
+    it('should return error when rollup service not available', async () => {
+      const result = await service.rollupAnalytics({ date: '2026-03-20' });
+      expect(result.ok).toBe(false);
+    });
+
+    it('should count errors from rejected rollupDay promises', async () => {
+      const mockRollup = {
+        rollupDay: jest
+          .fn()
+          .mockResolvedValueOnce(true) // day 1 success
+          .mockRejectedValueOnce(new Error('fail')) // day 2 error
+          .mockResolvedValueOnce(false), // day 3 skipped
+      };
+      const svc = new AdminService(
+        prisma as unknown as PrismaService,
+        mockRollup as any,
+      );
+
+      const result = await svc.rollupAnalytics({
+        from: '2026-03-01',
+        to: '2026-03-03',
+      });
+
+      expect(result.rolledUp).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.errors).toBe(1);
     });
   });
 

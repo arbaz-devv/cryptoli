@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
+import { createGeoipMock } from '../../test/helpers/geoip.mock';
 
 function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
@@ -24,7 +25,11 @@ describe('AuthService — passwordHash exclusion', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('findUserByEmailOrUsername should use select without passwordHash', async () => {
@@ -102,7 +107,11 @@ describe('AuthService — session token hashing', () => {
       },
     };
     const config = { jwtSecret: 'test-secret-key-for-jwt' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('createSession should store a SHA-256 hash, not the raw JWT', async () => {
@@ -118,6 +127,54 @@ describe('AuthService — session token hashing', () => {
     const storedToken = createCall.data.token as string;
     expect(storedToken).toMatch(/^[a-f0-9]{64}$/);
     expect(storedToken).toBe(sha256(token));
+  });
+
+  it('createSession should persist SessionMetadata fields when provided', async () => {
+    prisma.session.create.mockResolvedValue({});
+
+    await service.createSession('user-1', {
+      ip: '203.0.113.50',
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      country: 'US',
+      trigger: 'login',
+    });
+
+    const createCall = prisma.session.create.mock.calls[0][0];
+    expect(createCall.data.ip).toBe('203.0.113.50');
+    expect(createCall.data.ipHash).toBe(sha256('203.0.113.50'));
+    expect(createCall.data.userAgent).toContain('Chrome');
+    expect(createCall.data.device).toBe('desktop');
+    expect(createCall.data.browser).toBe('chrome');
+    expect(createCall.data.os).toBe('windows');
+    expect(createCall.data.country).toBe('US');
+    expect(createCall.data.trigger).toBe('login');
+  });
+
+  it('createSession should work without metadata (backward-compatible)', async () => {
+    prisma.session.create.mockResolvedValue({});
+
+    const token = await service.createSession('user-1');
+
+    expect(token).toContain('.');
+    const createCall = prisma.session.create.mock.calls[0][0];
+    expect(createCall.data.ip).toBeUndefined();
+    expect(createCall.data.trigger).toBeUndefined();
+  });
+
+  it('createSession should handle null ip gracefully in metadata', async () => {
+    prisma.session.create.mockResolvedValue({});
+
+    await service.createSession('user-1', {
+      ip: '',
+      userAgent: '',
+      trigger: 'register',
+    });
+
+    const createCall = prisma.session.create.mock.calls[0][0];
+    expect(createCall.data.ip).toBeNull();
+    expect(createCall.data.ipHash).toBeNull();
+    expect(createCall.data.trigger).toBe('register');
   });
 
   it('getSessionFromToken should look up by hashed token', async () => {
@@ -181,7 +238,11 @@ describe('AuthService — deleteOtherSessions', () => {
       session: { deleteMany: jest.fn(), create: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should delete all sessions for user except the given token (hashed)', async () => {
@@ -226,7 +287,11 @@ describe('AuthService — createUser', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should create user and return profile without passwordHash', async () => {
@@ -253,6 +318,52 @@ describe('AuthService — createUser', () => {
     expect(createCall.data.passwordHash).toBe('hashed');
     expect(createCall.select.passwordHash).toBeUndefined();
   });
+
+  it('should persist registrationIp and registrationCountry when provided', async () => {
+    prisma.user.create.mockResolvedValue({
+      id: '1',
+      email: 'a@b.com',
+      username: 'alice',
+      role: 'USER',
+      avatar: null,
+      verified: false,
+      reputation: 0,
+    });
+
+    await service.createUser({
+      email: 'a@b.com',
+      username: 'alice',
+      passwordHash: 'hashed',
+      registrationIp: '203.0.113.50',
+      registrationCountry: 'US',
+    });
+
+    const createCall = prisma.user.create.mock.calls[0][0];
+    expect(createCall.data.registrationIp).toBe('203.0.113.50');
+    expect(createCall.data.registrationCountry).toBe('US');
+  });
+
+  it('should not include registration fields when not provided', async () => {
+    prisma.user.create.mockResolvedValue({
+      id: '1',
+      email: 'a@b.com',
+      username: 'alice',
+      role: 'USER',
+      avatar: null,
+      verified: false,
+      reputation: 0,
+    });
+
+    await service.createUser({
+      email: 'a@b.com',
+      username: 'alice',
+      passwordHash: 'hashed',
+    });
+
+    const createCall = prisma.user.create.mock.calls[0][0];
+    expect(createCall.data.registrationIp).toBeUndefined();
+    expect(createCall.data.registrationCountry).toBeUndefined();
+  });
 });
 
 describe('AuthService — hashPassword / comparePassword', () => {
@@ -263,7 +374,11 @@ describe('AuthService — hashPassword / comparePassword', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should hash and verify password round-trip', async () => {
@@ -303,7 +418,11 @@ describe('AuthService — getSessionFromToken edge cases', () => {
       },
     };
     const config = { jwtSecret: 'test-secret-key-for-jwt' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should return null for undefined token', async () => {
@@ -388,7 +507,11 @@ describe('AuthService — getSessionTokenFromRequest', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should prefer Bearer header over cookie', () => {
@@ -451,7 +574,11 @@ describe('AuthService — updateProfile', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should trim bio and convert empty to null', async () => {
@@ -506,7 +633,11 @@ describe('AuthService — generateUsernameSuggestions', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should return available candidates', async () => {

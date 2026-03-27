@@ -1,16 +1,21 @@
-import { Injectable } from '@nestjs/common';
-import { isIP } from 'node:net';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
+import { AnalyticsBufferService } from './analytics-buffer.service';
+import type { BufferedEvent } from './analytics-buffer.service';
+import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
-import * as geoip from 'geoip-lite';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const UAParser = require('ua-parser-js') as new (ua?: string) => {
-  getResult: () => {
-    device?: { type?: string };
-    browser?: { name?: string };
-    os?: { name?: string };
-  };
-};
+import { PrismaService } from '../prisma/prisma.service';
+import { GeoipService } from '../geoip/geoip.service';
+import { isBot } from 'ua-parser-js/bot-detection';
+import { normalizeIp, isPrivateOrLocalIp } from './ip-utils';
+import { getDeviceAndBrowser } from '../common/ua';
 
 const KEY_PREFIX = 'analytics';
 const KEY_RECENT_SESSIONS = `${KEY_PREFIX}:recent_sessions`;
@@ -35,20 +40,37 @@ const DURATION_BUCKETS: Array<{ max: number; label: string }> = [
   { max: Number.POSITIVE_INFINITY, label: '1800_plus' },
 ];
 
+/** Server-side event types emitted by feature modules (not from the frontend). */
+export type ServerSideEvent =
+  | 'review_created'
+  | 'vote_cast'
+  | 'comment_created'
+  | 'complaint_created'
+  | 'user_follow'
+  | 'user_unfollow'
+  | 'search_performed'
+  | 'user_login'
+  | 'user_register'
+  | 'user_logout'
+  | 'password_change';
+
 export interface TrackPayload {
   path?: string;
   device?: string; // userAgent
   timezone?: string;
-  event?: 'page_view' | 'page_leave' | FunnelEvent | 'like';
+  event?: 'page_view' | 'page_leave' | FunnelEvent | 'like' | ServerSideEvent;
   sessionId?: string;
+  userId?: string;
   enteredAt?: string; // ISO date
   leftAt?: string; // ISO date
   referrer?: string;
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
-  /** When false, do not store (user declined cookies). When true or omitted, store. */
+  /** When explicitly true, store. When false, undefined, or omitted, do not store (GDPR opt-in). */
   consent?: boolean;
+  /** Arbitrary properties for server-side events (stored in PG only). */
+  properties?: Record<string, unknown>;
 }
 
 export interface TimeSeriesPoint {
@@ -121,9 +143,80 @@ export const dynamic = 'force-dynamic';
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
 
+/** Days older than this are read from PG (4-day buffer vs 32-day Redis TTL). */
+const PG_CUTOFF_DAYS = 28;
+
+/**
+ * Accumulator shape returned by readDayRangeFromPg().
+ * Mirrors the variables accumulated in the Redis day loop of getStats().
+ */
+export interface PgPartialStats {
+  totalPageviews: number;
+  totalBounces: number;
+  durationSum: number;
+  durationCount: number;
+  totalLikes: number;
+  /** Sum of per-day PFCOUNT snapshots (approximate, may overcount 3-20%). */
+  totalUniques: number;
+  totalSessions: number;
+  byCountry: Record<string, number>;
+  byDevice: Record<string, number>;
+  byBrowser: Record<string, number>;
+  byOs: Record<string, number>;
+  byReferrer: Record<string, number>;
+  byUtmSource: Record<string, number>;
+  byUtmMedium: Record<string, number>;
+  byUtmCampaign: Record<string, number>;
+  byHour: Record<string, number>;
+  byWeekday: Record<string, number>;
+  pathCounts: Record<string, number>;
+  byHourTz: Record<string, number>;
+  durationHistogram: Record<string, number>;
+  funnelEventCounts: Record<string, number>;
+  funnelBySourceRaw: Record<string, number>;
+  funnelByPathRaw: Record<string, number>;
+  timeSeries: TimeSeriesPoint[];
+}
+
+const RETENTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const ANONYMIZE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour (daily guard in Redis)
+const ANONYMIZE_RETENTION_DAYS = 90;
+const ANONYMIZE_BATCH_THRESHOLD = 200_000;
+
 @Injectable()
-export class AnalyticsService {
-  constructor(private readonly redisService: RedisService) {}
+export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
+  private retentionTimer: NodeJS.Timeout | null = null;
+  private anonymizeTimer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly geoipService: GeoipService,
+    @Optional()
+    @Inject(forwardRef(() => AnalyticsBufferService))
+    private readonly bufferService?: AnalyticsBufferService,
+    @Optional()
+    private readonly prisma?: PrismaService,
+  ) {}
+
+  onModuleInit(): void {
+    this.retentionTimer = setInterval(() => {
+      void this.computeRetention();
+    }, RETENTION_INTERVAL_MS);
+    this.anonymizeTimer = setInterval(() => {
+      void this.anonymizeExpiredUsers();
+    }, ANONYMIZE_CHECK_INTERVAL_MS);
+  }
+
+  onModuleDestroy(): void {
+    if (this.retentionTimer) {
+      clearInterval(this.retentionTimer);
+      this.retentionTimer = null;
+    }
+    if (this.anonymizeTimer) {
+      clearInterval(this.anonymizeTimer);
+      this.anonymizeTimer = null;
+    }
+  }
 
   private get redis(): Redis | null {
     return this.redisService.getClient();
@@ -215,7 +308,8 @@ export class AnalyticsService {
         return part;
       })
       .join('/');
-    return normalized.startsWith('/') ? normalized : `/${normalized}`;
+    const result = normalized.startsWith('/') ? normalized : `/${normalized}`;
+    return result.slice(0, 512);
   }
 
   private sanitizeLabel(raw?: string, fallback = 'none'): string {
@@ -284,50 +378,10 @@ export class AnalyticsService {
 
   /**
    * Resolve country code for an IP:
-   * 1) Try local geoip-lite database
-   * 2) If unknown, optionally call external IP->country API
-   * 3) Cache successful lookups in Redis to avoid repeated API calls
+   * 1) Use CDN country hint if available
+   * 2) Check Redis cache
+   * 3) Fall back to local GeoIP database
    */
-  private normalizeIp(rawIp: string): string {
-    const ip = (rawIp || '').trim();
-    if (!ip) return '';
-
-    // Bracketed IPv6 with optional port: [2001:db8::1]:443
-    const bracketed = ip.match(/^\[([^\]]+)\](?::\d+)?$/);
-    if (bracketed?.[1]) {
-      const candidate = bracketed[1].split('%')[0];
-      return isIP(candidate) ? candidate : '';
-    }
-
-    // IPv4 with port: 1.2.3.4:1234
-    const ipv4Port = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
-    if (ipv4Port?.[1]) {
-      return isIP(ipv4Port[1]) ? ipv4Port[1] : '';
-    }
-
-    const deMapped = ip.replace(/^::ffff:/i, '').split('%')[0];
-    return isIP(deMapped) ? deMapped : '';
-  }
-
-  private isPrivateOrLocalIp(ip: string): boolean {
-    if (!ip) return true;
-    if (ip === '::1') return true;
-
-    // Common private/local IPv4 ranges.
-    if (/^127\./.test(ip)) return true;
-    if (/^10\./.test(ip)) return true;
-    if (/^192\.168\./.test(ip)) return true;
-    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
-    if (/^169\.254\./.test(ip)) return true;
-
-    // Private/link-local/unique-local IPv6 ranges.
-    const v6 = ip.toLowerCase();
-    if (v6.startsWith('fc') || v6.startsWith('fd')) return true;
-    if (v6.startsWith('fe80:')) return true;
-
-    return false;
-  }
-
   private isValidCountryCode(code?: string): boolean {
     return /^[A-Z]{2}$/.test((code || '').trim().toUpperCase());
   }
@@ -339,9 +393,8 @@ export class AnalyticsService {
     const hint = (countryHint || '').trim().toUpperCase();
     if (this.isValidCountryCode(hint)) return hint;
 
-    const normalizedIp = this.normalizeIp(ip);
-    if (!normalizedIp || this.isPrivateOrLocalIp(normalizedIp))
-      return 'unknown';
+    const normalizedIp = normalizeIp(ip);
+    if (!normalizedIp || isPrivateOrLocalIp(normalizedIp)) return 'XX';
 
     const cacheKey = `${KEY_PREFIX}:ip_country:${normalizedIp}`;
     if (this.redis) {
@@ -353,34 +406,13 @@ export class AnalyticsService {
       }
     }
 
-    // First try local geoip-lite
-    const { country } = this.getGeo(normalizedIp);
-    let countryCode = (country || '').toUpperCase();
+    const { country } = this.geoipService.lookup(normalizedIp);
+    const countryCode = (country || '').toUpperCase();
 
-    // Fallback to external API only if still unknown
-    if (!countryCode || countryCode === 'UNKNOWN') {
-      try {
-        const res = await fetch(
-          `https://ipwho.is/${encodeURIComponent(normalizedIp)}?fields=success,country_code`,
-        );
-        if (res.ok) {
-          const json = (await res.json()) as {
-            success?: boolean;
-            country_code?: string;
-          };
-          if (json.success === true && json.country_code) {
-            countryCode = json.country_code.toUpperCase();
-          }
-        }
-      } catch {
-        // ignore external lookup errors, keep unknown
-      }
-    }
-
-    if (!this.isValidCountryCode(countryCode)) countryCode = 'unknown';
+    if (!this.isValidCountryCode(countryCode)) return 'XX';
 
     // Cache non-unknown results for 30 days
-    if (this.redis && countryCode !== 'unknown') {
+    if (this.redis && countryCode !== 'XX') {
       try {
         await this.redis.set(cacheKey, countryCode, 'EX', 30 * 24 * 60 * 60);
       } catch {
@@ -391,40 +423,15 @@ export class AnalyticsService {
     return countryCode;
   }
 
-  private getGeo(ip: string): {
-    country?: string;
-    city?: string;
-    region?: string;
-  } {
-    const geo = geoip.lookup(ip);
-    if (!geo) return {};
-    return {
-      country: geo.country || undefined,
-      city: geo.city,
-      region: geo.region,
-    };
+  private hashIp(ip: string): string | undefined {
+    if (!ip) return undefined;
+    return createHash('sha256').update(ip).digest('hex');
   }
 
-  private getDeviceAndBrowser(userAgent: string): {
-    device: string;
-    browser: string;
-    os: string;
-  } {
-    const parser = new UAParser(userAgent || '');
-    const result = parser.getResult() as {
-      device?: { type?: string };
-      browser?: { name?: string };
-      os?: { name?: string };
-    };
-    const d = (result.device?.type || 'desktop').toLowerCase();
-    const deviceType = d === 'mobile' || d === 'tablet' ? d : 'desktop';
-    return {
-      device: deviceType,
-      browser: (result.browser?.name || 'unknown')
-        .toLowerCase()
-        .replace(/\s+/g, '_'),
-      os: (result.os?.name || 'unknown').toLowerCase().replace(/\s+/g, '_'),
-    };
+  private pushToBuffer(event: BufferedEvent): void {
+    if (this.bufferService) {
+      this.bufferService.push(event);
+    }
   }
 
   private referrerLabel(referrer?: string): string {
@@ -432,13 +439,13 @@ export class AnalyticsService {
     try {
       const u = new URL(referrer);
       const hostname = (u.hostname || '').toLowerCase().replace(/^www\./, '');
-      return hostname || 'direct';
+      return (hostname || 'direct').slice(0, 128);
     } catch {
       return 'direct';
     }
   }
 
-  /** Non-blocking: enqueue track and return immediately. Only store when consent is not explicitly false. */
+  /** Non-blocking: enqueue track and return immediately. Only store when consent is explicitly true (GDPR opt-in). */
   async track(
     ip: string,
     userAgent: string,
@@ -446,12 +453,13 @@ export class AnalyticsService {
     countryHint?: string,
   ): Promise<void> {
     if (!this.redisService.isReady() || !this.redis) return;
-    if (body.consent === false) return;
+    if (!body.consent) return;
+    if (userAgent && isBot(userAgent)) return;
 
     const now = new Date();
     const day = this.dayKey(now);
     const countryCode = await this.resolveCountry(ip, countryHint);
-    const { device, browser, os } = this.getDeviceAndBrowser(
+    const { device, browser, os } = getDeviceAndBrowser(
       userAgent || body.device || '',
     );
     const path = this.normalizePath(body.path);
@@ -462,48 +470,67 @@ export class AnalyticsService {
     const utmCampaign = this.sanitizeLabel(body.utm_campaign, 'none');
     const hour = String(now.getHours());
     const weekday = String(now.getDay()); // 0-6
+    const ttl = TTL_DAYS * 24 * 60 * 60;
 
     if (body.event === 'page_view' || !body.event) {
       const nowMs = now.getTime();
       const member = `${sessionId}:${countryCode}`;
-      const promises: Promise<void>[] = [
-        this.incr(`${KEY_PREFIX}:pageviews:${day}`),
-        this.pfadd(`${KEY_PREFIX}:hll:uniques:${day}`, sessionId),
-        this.pfadd(`${KEY_PREFIX}:hll:sessions:${day}`, sessionId),
-        this.hincrby(`${KEY_PREFIX}:country:${day}`, countryCode, 1),
-        this.hincrby(`${KEY_PREFIX}:device:${day}`, device, 1),
-        this.hincrby(`${KEY_PREFIX}:browser:${day}`, browser, 1),
-        this.hincrby(`${KEY_PREFIX}:os:${day}`, os, 1),
-        this.hincrby(`${KEY_PREFIX}:referrer:${day}`, referrer, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_source:${day}`, utmSource, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_medium:${day}`, utmMedium, 1),
-        this.hincrby(`${KEY_PREFIX}:utm_campaign:${day}`, utmCampaign, 1),
-        this.hincrby(`${KEY_PREFIX}:hour:${day}`, hour, 1),
-        this.hincrby(`${KEY_PREFIX}:weekday:${day}`, weekday, 1),
-        this.hincrby(`${KEY_PREFIX}:path:${day}`, path, 1),
-        this.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1),
-        this.addRecentSession(nowMs, member),
-      ];
       const cohortTtl = 35 * 24 * 60 * 60;
-      this.redis
-        .set(
-          `${KEY_PREFIX}:first_visit:${sessionId}`,
-          day,
-          'EX',
-          cohortTtl,
-          'NX',
-        )
-        .then((reply) => {
-          if (reply === 'OK' && this.redis) {
-            this.redis
-              .sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId)
-              .catch(() => {});
-            this.redis
-              .expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl)
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
+      const recentTtl = Math.ceil(RECENT_WINDOW_MS / 1000) + 60;
+
+      const pipe = this.redis.pipeline();
+
+      // Core pageview metrics
+      pipe.incr(`${KEY_PREFIX}:pageviews:${day}`);
+      pipe.expire(`${KEY_PREFIX}:pageviews:${day}`, ttl);
+      pipe.pfadd(`${KEY_PREFIX}:hll:uniques:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:hll:uniques:${day}`, ttl);
+      pipe.pfadd(`${KEY_PREFIX}:hll:sessions:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:hll:sessions:${day}`, ttl);
+
+      // Dimensional breakdowns
+      pipe.hincrby(`${KEY_PREFIX}:country:${day}`, countryCode, 1);
+      pipe.expire(`${KEY_PREFIX}:country:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:device:${day}`, device, 1);
+      pipe.expire(`${KEY_PREFIX}:device:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:browser:${day}`, browser, 1);
+      pipe.expire(`${KEY_PREFIX}:browser:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:os:${day}`, os, 1);
+      pipe.expire(`${KEY_PREFIX}:os:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:referrer:${day}`, referrer, 1);
+      pipe.expire(`${KEY_PREFIX}:referrer:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_source:${day}`, utmSource, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_source:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_medium:${day}`, utmMedium, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_medium:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:utm_campaign:${day}`, utmCampaign, 1);
+      pipe.expire(`${KEY_PREFIX}:utm_campaign:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:hour:${day}`, hour, 1);
+      pipe.expire(`${KEY_PREFIX}:hour:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:weekday:${day}`, weekday, 1);
+      pipe.expire(`${KEY_PREFIX}:weekday:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:path:${day}`, path, 1);
+      pipe.expire(`${KEY_PREFIX}:path:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:session_pages:${day}`, sessionId, 1);
+      pipe.expire(`${KEY_PREFIX}:session_pages:${day}`, ttl);
+
+      // Recent sessions sorted set
+      pipe.zadd(KEY_RECENT_SESSIONS, nowMs, member);
+      pipe.zremrangebyscore(
+        KEY_RECENT_SESSIONS,
+        '-inf',
+        nowMs - RECENT_WINDOW_MS,
+      );
+      pipe.expire(KEY_RECENT_SESSIONS, recentTtl);
+
+      // Cohort tracking — per-day hash instead of per-session key (Fix 3: key scaling)
+      pipe.hsetnx(`${KEY_PREFIX}:first_visit:${day}`, sessionId, '1');
+      pipe.expire(`${KEY_PREFIX}:first_visit:${day}`, cohortTtl);
+      // SADD is unconditional (idempotent)
+      pipe.sadd(`${KEY_PREFIX}:cohort:${day}`, sessionId);
+      pipe.expire(`${KEY_PREFIX}:cohort:${day}`, cohortTtl);
+
+      // Timezone-adjusted hour
       if (
         body.timezone &&
         typeof body.timezone === 'string' &&
@@ -521,14 +548,14 @@ export class AnalyticsService {
           const localHour = hourPart
             ? String(parseInt(hourPart.value, 10) % 24)
             : hour;
-          promises.push(
-            this.hincrby(`${KEY_PREFIX}:hour_tz:${day}`, localHour, 1),
-          );
+          pipe.hincrby(`${KEY_PREFIX}:hour_tz:${day}`, localHour, 1);
+          pipe.expire(`${KEY_PREFIX}:hour_tz:${day}`, ttl);
         } catch {
           // invalid timezone, skip
         }
       }
-      void Promise.all(promises).catch((error: unknown) => {
+
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -539,11 +566,30 @@ export class AnalyticsService {
           this.redisService.getLastError(),
         );
       });
+      this.pushToBuffer({
+        eventType: 'page_view',
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        timezone: body.timezone?.slice(0, 64),
+        path,
+        referrer,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        createdAt: now,
+      });
       return;
     }
 
     if (body.event === LIKE_EVENT) {
-      void this.incr(`${KEY_PREFIX}:like:${day}`).catch((error: unknown) => {
+      const pipe = this.redis.pipeline();
+      pipe.incr(`${KEY_PREFIX}:like:${day}`);
+      pipe.expire(`${KEY_PREFIX}:like:${day}`, ttl);
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -554,20 +600,33 @@ export class AnalyticsService {
           this.redisService.getLastError(),
         );
       });
+      this.pushToBuffer({
+        eventType: 'like',
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        createdAt: now,
+      });
       return;
     }
 
     if (body.event && FUNNEL_EVENTS.includes(body.event as FunnelEvent)) {
       const event = body.event as FunnelEvent;
-      void Promise.all([
-        this.hincrby(`${KEY_PREFIX}:funnel:event:${day}`, event, 1),
-        this.hincrby(
-          `${KEY_PREFIX}:funnel:source:${day}`,
-          `${utmSource}|${event}`,
-          1,
-        ),
-        this.hincrby(`${KEY_PREFIX}:funnel:path:${day}`, `${path}|${event}`, 1),
-      ]).catch((error: unknown) => {
+      const pipe = this.redis.pipeline();
+      pipe.hincrby(`${KEY_PREFIX}:funnel:event:${day}`, event, 1);
+      pipe.expire(`${KEY_PREFIX}:funnel:event:${day}`, ttl);
+      pipe.hincrby(
+        `${KEY_PREFIX}:funnel:source:${day}`,
+        `${utmSource}|${event}`,
+        1,
+      );
+      pipe.expire(`${KEY_PREFIX}:funnel:source:${day}`, ttl);
+      pipe.hincrby(`${KEY_PREFIX}:funnel:path:${day}`, `${path}|${event}`, 1);
+      pipe.expire(`${KEY_PREFIX}:funnel:path:${day}`, ttl);
+      void pipe.exec().catch((error: unknown) => {
         this.redisService.setLastError(
           error instanceof Error
             ? error.message
@@ -577,6 +636,20 @@ export class AnalyticsService {
           'Analytics write error (funnel):',
           this.redisService.getLastError(),
         );
+      });
+      this.pushToBuffer({
+        eventType: event,
+        sessionId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        path,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        createdAt: now,
       });
       return;
     }
@@ -589,15 +662,14 @@ export class AnalyticsService {
         if (durationSec >= 0 && durationSec <= 86400) {
           // max 24h
           const durationBucket = this.durationBucket(durationSec);
-          void Promise.all([
-            this.hincrby(
-              `${KEY_PREFIX}:duration_hist:${day}`,
-              durationBucket,
-              1,
-            ),
-            this.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec),
-            this.incr(`${KEY_PREFIX}:duration_count:${day}`),
-          ]).catch((error: unknown) => {
+          const pipe = this.redis.pipeline();
+          pipe.hincrby(`${KEY_PREFIX}:duration_hist:${day}`, durationBucket, 1);
+          pipe.expire(`${KEY_PREFIX}:duration_hist:${day}`, ttl);
+          pipe.incrby(`${KEY_PREFIX}:duration_sum:${day}`, durationSec);
+          pipe.expire(`${KEY_PREFIX}:duration_sum:${day}`, ttl);
+          pipe.incr(`${KEY_PREFIX}:duration_count:${day}`);
+          pipe.expire(`${KEY_PREFIX}:duration_count:${day}`, ttl);
+          void pipe.exec().catch((error: unknown) => {
             this.redisService.setLastError(
               error instanceof Error
                 ? error.message
@@ -608,19 +680,134 @@ export class AnalyticsService {
               this.redisService.getLastError(),
             );
           });
-          // Bounce: single pageview + left within 30s
+          this.pushToBuffer({
+            eventType: 'page_leave',
+            sessionId,
+            ipHash: this.hashIp(ip),
+            country: countryCode,
+            device,
+            browser,
+            os,
+            path,
+            durationSeconds: durationSec,
+            createdAt: now,
+          });
+          // Bounce: single pageview + left within 30s — two-step, not pipelined (not idempotent)
           if (durationSec < 30) {
             this.hget(`${KEY_PREFIX}:session_pages:${day}`, sessionId)
               .then((count) => {
                 if (count === '1' && this.redis) {
                   void this.incr(`${KEY_PREFIX}:bounces:${day}`).catch(
-                    () => {},
+                    (error: unknown) => {
+                      this.redisService.setLastError(
+                        error instanceof Error
+                          ? error.message
+                          : 'Failed writing bounce incr',
+                      );
+                      console.error(
+                        'Analytics write error (bounce incr):',
+                        this.redisService.getLastError(),
+                      );
+                    },
                   );
                 }
               })
-              .catch(() => {});
+              .catch((error: unknown) => {
+                this.redisService.setLastError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed reading session pages for bounce',
+                );
+                console.error(
+                  'Analytics write error (bounce hget):',
+                  this.redisService.getLastError(),
+                );
+              });
           }
         }
+      }
+      return;
+    }
+
+    // Catch-all: server-side events (review_created, vote_cast, etc.)
+    // No Redis counters — PG buffer only.
+    if (body.event) {
+      this.pushToBuffer({
+        eventType: body.event,
+        sessionId,
+        userId: body.userId,
+        ipHash: this.hashIp(ip),
+        country: countryCode,
+        device,
+        browser,
+        os,
+        path,
+        properties: body.properties,
+        createdAt: now,
+      });
+    }
+  }
+
+  /**
+   * Pre-compute cohort retention for the last 35 days and store as
+   * SET analytics:retention:{day} JSON. Runs hourly via setInterval.
+   * Replaces the O(N*SMEMBERS) call that was in getStats().
+   */
+  private async computeRetention(): Promise<void> {
+    if (!this.redisService.isReady() || !this.redis) return;
+
+    const now = new Date();
+    const days: string[] = [];
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() - i);
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    for (const day of days) {
+      try {
+        const cohortMembers = await this.redis.smembers(
+          `${KEY_PREFIX}:cohort:${day}`,
+        );
+        if (cohortMembers.length === 0) continue;
+
+        const day1 = this.addDays(day, 1);
+        const day7 = this.addDays(day, 7);
+        const day30 = this.addDays(day, 30);
+        const [pages1, pages7, pages30] = await Promise.all([
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day1}`),
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day7}`),
+          this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day30}`),
+        ]);
+        const set1 = new Set(Object.keys(pages1 || {}));
+        const set7 = new Set(Object.keys(pages7 || {}));
+        const set30 = new Set(Object.keys(pages30 || {}));
+
+        let returned1 = 0;
+        let returned7 = 0;
+        let returned30 = 0;
+        for (const sid of cohortMembers) {
+          if (set1.has(sid)) returned1 += 1;
+          if (set7.has(sid)) returned7 += 1;
+          if (set30.has(sid)) returned30 += 1;
+        }
+
+        const cohortSize = cohortMembers.length;
+        const result = {
+          day1Pct: Math.round((returned1 / cohortSize) * 1000) / 10,
+          day7Pct: Math.round((returned7 / cohortSize) * 1000) / 10,
+          day30Pct: Math.round((returned30 / cohortSize) * 1000) / 10,
+          cohortSize,
+        };
+
+        await this.redis.set(
+          `${KEY_PREFIX}:retention:${day}`,
+          JSON.stringify(result),
+          'EX',
+          48 * 60 * 60, // 48h TTL
+        );
+      } catch {
+        // non-fatal, continue with next day
       }
     }
   }
@@ -681,6 +868,136 @@ export class AnalyticsService {
   }
 
   /**
+   * Read historical days from the AnalyticsDailySummary EAV table in PostgreSQL.
+   * Reconstructs the same accumulator shape used by the Redis day loop in getStats().
+   * Returns null if PrismaService is not injected.
+   */
+  async readDayRangeFromPg(days: string[]): Promise<PgPartialStats | null> {
+    if (!this.prisma || days.length === 0) return null;
+
+    const fromDate = new Date(days[0] + 'T00:00:00Z');
+    const toDate = new Date(days[days.length - 1] + 'T00:00:00Z');
+
+    const rows = await this.prisma.analyticsDailySummary.findMany({
+      where: {
+        date: { gte: fromDate, lte: toDate },
+      },
+    });
+
+    // Initialize accumulator
+    const acc: PgPartialStats = {
+      totalPageviews: 0,
+      totalBounces: 0,
+      durationSum: 0,
+      durationCount: 0,
+      totalLikes: 0,
+      totalUniques: 0,
+      totalSessions: 0,
+      byCountry: {},
+      byDevice: {},
+      byBrowser: {},
+      byOs: {},
+      byReferrer: {},
+      byUtmSource: {},
+      byUtmMedium: {},
+      byUtmCampaign: {},
+      byHour: {},
+      byWeekday: {},
+      pathCounts: {},
+      byHourTz: {},
+      durationHistogram: {},
+      funnelEventCounts: {},
+      funnelBySourceRaw: {},
+      funnelByPathRaw: {},
+      timeSeries: [],
+    };
+
+    // Group rows by date for timeSeries construction
+    const perDay = new Map<string, { pageviews: number; uniques: number }>();
+
+    // Dimension → accumulator hash mapping
+    const hashMap: Record<string, Record<string, number>> = {
+      country: acc.byCountry,
+      device: acc.byDevice,
+      browser: acc.byBrowser,
+      os: acc.byOs,
+      referrer: acc.byReferrer,
+      utm_source: acc.byUtmSource,
+      utm_medium: acc.byUtmMedium,
+      utm_campaign: acc.byUtmCampaign,
+      hour: acc.byHour,
+      weekday: acc.byWeekday,
+      path: acc.pathCounts,
+      hour_tz: acc.byHourTz,
+      duration_bucket: acc.durationHistogram,
+      funnel_event: acc.funnelEventCounts,
+      funnel_by_source: acc.funnelBySourceRaw,
+      funnel_by_path: acc.funnelByPathRaw,
+    };
+
+    for (const row of rows) {
+      const dayStr =
+        row.date instanceof Date
+          ? row.date.toISOString().slice(0, 10)
+          : String(row.date).slice(0, 10);
+
+      if (row.dimension === '_total_') {
+        // Scalar metrics
+        switch (row.dimensionValue) {
+          case 'pageviews':
+            acc.totalPageviews += row.count;
+            // Track per-day for timeSeries
+            if (!perDay.has(dayStr))
+              perDay.set(dayStr, { pageviews: 0, uniques: 0 });
+            perDay.get(dayStr)!.pageviews += row.count;
+            break;
+          case 'bounces':
+            acc.totalBounces += row.count;
+            break;
+          case 'duration_sum':
+            acc.durationSum += row.count;
+            break;
+          case 'duration_count':
+            acc.durationCount += row.count;
+            break;
+          case 'likes':
+            acc.totalLikes += row.count;
+            break;
+          case 'uniques_approx':
+            acc.totalUniques += row.count;
+            // Track per-day for timeSeries
+            if (!perDay.has(dayStr))
+              perDay.set(dayStr, { pageviews: 0, uniques: 0 });
+            perDay.get(dayStr)!.uniques += row.count;
+            break;
+          case 'sessions_approx':
+            acc.totalSessions += row.count;
+            break;
+        }
+      } else {
+        // Hash/breakdown dimensions
+        const target = hashMap[row.dimension];
+        if (target) {
+          target[row.dimensionValue] =
+            (target[row.dimensionValue] || 0) + row.count;
+        }
+      }
+    }
+
+    // Build timeSeries from per-day data, sorted by date
+    for (const day of days) {
+      const entry = perDay.get(day);
+      acc.timeSeries.push({
+        date: day,
+        pageviews: entry?.pageviews ?? 0,
+        uniques: entry?.uniques ?? 0,
+      });
+    }
+
+    return acc;
+  }
+
+  /**
    * Returns aggregated analytics for the full date range [from, to].
    * All metrics (pageviews, uniques, sessions, avg duration, bounce rate, likes, funnel, etc.)
    * are computed over this range. Only activeToday is for the single day "today".
@@ -703,9 +1020,22 @@ export class AnalyticsService {
       return null;
 
     const days: string[] = [];
-    for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
-      days.push(this.dayKey(d));
+    const toStr = this.dayKey(toDate);
+    let cursor = this.dayKey(fromDate);
+    while (cursor <= toStr) {
+      days.push(cursor);
+      cursor = this.addDays(cursor, 1);
     }
+
+    // Partition days: pgDays (>= PG_CUTOFF_DAYS ago) read from PG, redisDays from Redis
+    const cutoffDate = new Date();
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - PG_CUTOFF_DAYS);
+    const cutoffStr = this.dayKey(cutoffDate);
+    const pgDays = days.filter((d) => d < cutoffStr);
+    const redisDays = days.filter((d) => d >= cutoffStr);
+
+    // Read historical data from PG (returns null if Prisma not injected or no pgDays)
+    const pgStats = await this.readDayRangeFromPg(pgDays);
 
     let totalPageviews = 0;
     let totalBounces = 0;
@@ -753,7 +1083,7 @@ export class AnalyticsService {
     };
 
     try {
-      for (const day of days) {
+      for (const day of redisDays) {
         const [
           pv,
           countries,
@@ -855,42 +1185,34 @@ export class AnalyticsService {
         });
       }
 
+      // Read pre-computed retention from background job (avoids SMEMBERS in hot path)
       try {
         let totalCohort = 0;
-        let totalReturned1 = 0;
-        let totalReturned7 = 0;
-        let totalReturned30 = 0;
+        let weightedDay1 = 0;
+        let weightedDay7 = 0;
+        let weightedDay30 = 0;
         let cohortDaysCount = 0;
-        for (const day of days) {
-          const cohortMembers = await this.redis.smembers(
-            `${KEY_PREFIX}:cohort:${day}`,
-          );
-          const cohortSize = cohortMembers.length;
-          if (cohortSize === 0) continue;
+        for (const day of redisDays) {
+          const raw = await this.redis.get(`${KEY_PREFIX}:retention:${day}`);
+          if (!raw) continue;
+          const parsed = JSON.parse(raw) as {
+            day1Pct: number;
+            day7Pct: number;
+            day30Pct: number;
+            cohortSize: number;
+          };
+          if (!parsed.cohortSize) continue;
           cohortDaysCount += 1;
-          totalCohort += cohortSize;
-          const day1 = this.addDays(day, 1);
-          const day7 = this.addDays(day, 7);
-          const day30 = this.addDays(day, 30);
-          const [pages1, pages7, pages30] = await Promise.all([
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day1}`),
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day7}`),
-            this.redis.hgetall(`${KEY_PREFIX}:session_pages:${day30}`),
-          ]);
-          const set1 = new Set(Object.keys(pages1 || {}));
-          const set7 = new Set(Object.keys(pages7 || {}));
-          const set30 = new Set(Object.keys(pages30 || {}));
-          for (const sid of cohortMembers) {
-            if (set1.has(sid)) totalReturned1 += 1;
-            if (set7.has(sid)) totalReturned7 += 1;
-            if (set30.has(sid)) totalReturned30 += 1;
-          }
+          totalCohort += parsed.cohortSize;
+          weightedDay1 += parsed.day1Pct * parsed.cohortSize;
+          weightedDay7 += parsed.day7Pct * parsed.cohortSize;
+          weightedDay30 += parsed.day30Pct * parsed.cohortSize;
         }
         if (totalCohort > 0 && cohortDaysCount > 0) {
           retention = {
-            day1Pct: Math.round((totalReturned1 / totalCohort) * 1000) / 10,
-            day7Pct: Math.round((totalReturned7 / totalCohort) * 1000) / 10,
-            day30Pct: Math.round((totalReturned30 / totalCohort) * 1000) / 10,
+            day1Pct: Math.round((weightedDay1 / totalCohort) * 10) / 10,
+            day7Pct: Math.round((weightedDay7 / totalCohort) * 10) / 10,
+            day30Pct: Math.round((weightedDay30 / totalCohort) * 10) / 10,
             cohortDays: cohortDaysCount,
           };
         }
@@ -907,16 +1229,70 @@ export class AnalyticsService {
       return this.emptyStats(days[0] || from, days[days.length - 1] || to);
     }
 
-    const uniqueHllKeys = days.map((day) => `${KEY_PREFIX}:hll:uniques:${day}`);
-    const sessionHllKeys = days.map(
+    // Merge PG historical stats into Redis accumulators (item 2.21)
+    if (pgStats) {
+      const mergeHash = (
+        target: Record<string, number>,
+        source: Record<string, number>,
+      ) => {
+        for (const [k, v] of Object.entries(source)) {
+          target[k] = (target[k] || 0) + v;
+        }
+      };
+
+      // Additive scalars
+      totalPageviews += pgStats.totalPageviews;
+      totalBounces += pgStats.totalBounces;
+      durationSum += pgStats.durationSum;
+      durationCount += pgStats.durationCount;
+      totalLikes += pgStats.totalLikes;
+
+      // Additive hash dimensions
+      mergeHash(byCountry, pgStats.byCountry);
+      mergeHash(byDevice, pgStats.byDevice);
+      mergeHash(byBrowser, pgStats.byBrowser);
+      mergeHash(byOs, pgStats.byOs);
+      mergeHash(byReferrer, pgStats.byReferrer);
+      mergeHash(byUtmSource, pgStats.byUtmSource);
+      mergeHash(byUtmMedium, pgStats.byUtmMedium);
+      mergeHash(byUtmCampaign, pgStats.byUtmCampaign);
+      mergeHash(byHour, pgStats.byHour);
+      mergeHash(byWeekday, pgStats.byWeekday);
+      mergeHash(pathCounts, pgStats.pathCounts);
+      mergeHash(byHourTz, pgStats.byHourTz);
+
+      // Histogram merge for percentiles (sum bucket counts, recompute later)
+      mergeHash(durationHistogram, pgStats.durationHistogram);
+
+      // Funnel merges (cast needed: funnelEventCounts is Record<FunnelEvent, number>)
+      mergeHash(
+        funnelEventCounts as Record<string, number>,
+        pgStats.funnelEventCounts,
+      );
+      mergeHash(funnelBySourceRaw, pgStats.funnelBySourceRaw);
+      mergeHash(funnelByPathRaw, pgStats.funnelByPathRaw);
+
+      // TimeSeries: prepend PG entries before Redis entries (already sorted by date)
+      timeSeries.unshift(...pgStats.timeSeries);
+    }
+
+    // Redis HLL PFCOUNT for exact cross-day uniques/sessions (Redis window only)
+    const uniqueHllKeys = redisDays.map(
+      (day) => `${KEY_PREFIX}:hll:uniques:${day}`,
+    );
+    const sessionHllKeys = redisDays.map(
       (day) => `${KEY_PREFIX}:hll:sessions:${day}`,
     );
-    const totalUniques =
+    // Redis provides exact HLL union; PG provides summed per-day snapshots
+    const redisUniques =
       uniqueHllKeys.length > 0 ? await this.redis.pfcount(...uniqueHllKeys) : 0;
-    const totalSessions =
+    const redisSessions =
       sessionHllKeys.length > 0
         ? await this.redis.pfcount(...sessionHllKeys)
         : 0;
+    // Combine: PG sum (approximate) + Redis HLL union (exact for Redis window)
+    const totalUniques = redisUniques + (pgStats?.totalUniques ?? 0);
+    const totalSessions = redisSessions + (pgStats?.totalSessions ?? 0);
 
     const topPages = Object.entries(pathCounts)
       .sort((a, b) => b[1] - a[1])
@@ -1086,6 +1462,90 @@ export class AnalyticsService {
     }
   }
 
+  /**
+   * GDPR: Nullify userId on all analytics_events for a deleted user.
+   * Preparatory hook — called by user account deletion when implemented.
+   */
+  async anonymizeUserAnalytics(userId: string): Promise<number> {
+    if (!this.prisma) return 0;
+    const result = await this.prisma
+      .$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id = ${userId}`;
+    return result;
+  }
+
+  /**
+   * GDPR 90-day retention: nullify userId on analytics_events older than 90 days.
+   * Runs on an hourly timer but uses Redis guards to ensure only one run per day.
+   */
+  async anonymizeExpiredUsers(): Promise<void> {
+    if (!this.prisma || !this.redisService.isReady()) return;
+    const redis = this.redis;
+    if (!redis) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const ranKey = `analytics:anonymize:ran:${today}`;
+    const runningKey = 'analytics:anonymize:running';
+
+    // Guard 1: already ran today?
+    const alreadyRan = await redis.get(ranKey);
+    if (alreadyRan) return;
+
+    // Guard 2: acquire running lock (2h TTL safety valve)
+    const acquired = await redis.set(runningKey, '1', 'EX', 7200, 'NX');
+    if (!acquired) return;
+
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - ANONYMIZE_RETENTION_DAYS);
+
+      // Count rows to decide batch vs single
+      const countResult: { count: bigint }[] = await this.prisma
+        .$queryRaw`SELECT COUNT(*) as count FROM analytics_events WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+      const rowCount = Number(countResult[0]?.count ?? 0);
+
+      if (rowCount === 0) {
+        await redis.set(ranKey, '1', 'EX', 86400);
+        return;
+      }
+
+      if (rowCount <= ANONYMIZE_BATCH_THRESHOLD) {
+        // Single UPDATE for steady-state
+        await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
+          await tx.$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+        });
+      } else {
+        // Batch by calendar day for large backfills
+        const oldestResult: { min_date: Date | null }[] = await this.prisma
+          .$queryRaw`SELECT MIN(created_at) as min_date FROM analytics_events WHERE user_id IS NOT NULL AND created_at < ${cutoff}`;
+        const oldestDate = oldestResult[0]?.min_date;
+        if (oldestDate) {
+          const dayStart = new Date(oldestDate);
+          dayStart.setUTCHours(0, 0, 0, 0);
+
+          while (dayStart < cutoff) {
+            const dayEnd = new Date(dayStart);
+            dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+            await this.prisma.$transaction(async (tx) => {
+              await tx.$executeRaw`SET LOCAL synchronous_commit = off`;
+              await tx.$executeRaw`UPDATE analytics_events SET user_id = NULL WHERE user_id IS NOT NULL AND created_at >= ${dayStart} AND created_at < ${dayEnd}`;
+            });
+
+            dayStart.setUTCDate(dayStart.getUTCDate() + 1);
+          }
+        }
+      }
+
+      // Mark today as done
+      await redis.set(ranKey, '1', 'EX', 86400);
+    } catch (err) {
+      console.error('GDPR anonymization error:', err);
+    } finally {
+      await redis.del(runningKey);
+    }
+  }
+
   isEnabled(): boolean {
     return this.redisService.isReady();
   }
@@ -1099,6 +1559,21 @@ export class AnalyticsService {
       configured: Boolean(process.env.REDIS_URL?.trim()),
       connected: this.redisService.isReady(),
       lastError: this.redisService.getLastError(),
+    };
+  }
+
+  async getRollupHealth(): Promise<{
+    lastSuccessDate: string | null;
+    stale: boolean;
+  }> {
+    if (!this.redis) return { lastSuccessDate: null, stale: true };
+    const lastSuccess = await this.redis.get('analytics:rollup:last_success');
+    if (!lastSuccess) return { lastSuccessDate: null, stale: true };
+    const lastDate = new Date(lastSuccess + 'T00:00:00Z');
+    const hoursSince = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60);
+    return {
+      lastSuccessDate: lastSuccess,
+      stale: hoursSince >= 48,
     };
   }
 }

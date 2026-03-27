@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createComplaintSchema, createReplySchema } from '../common/utils';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 function buildVoteCounterDelta(
   previousVoteType: 'UP' | 'DOWN' | null,
@@ -17,7 +19,10 @@ function buildVoteCounterDelta(
 
 @Injectable()
 export class ComplaintsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
+  ) {}
 
   async list(
     page: number,
@@ -107,7 +112,11 @@ export class ComplaintsService {
     };
   }
 
-  async create(body: unknown, authorId: string) {
+  async create(
+    body: unknown,
+    authorId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const validated = createComplaintSchema.parse(body);
     const complaint = await this.prisma.complaint.create({
       data: {
@@ -152,6 +161,25 @@ export class ComplaintsService {
         },
       },
     });
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'complaint_created',
+          consent: true,
+          userId: authorId,
+          properties: {
+            complaintId: complaint.id,
+            companyId: validated.companyId,
+            productId: validated.productId,
+          },
+        },
+        analyticsCtx.country,
+      );
+    }
+
     return complaint;
   }
 
@@ -223,12 +251,17 @@ export class ComplaintsService {
     return { ...complaint, userVote };
   }
 
-  async vote(complaintId: string, voteType: string, userId: string) {
+  async vote(
+    complaintId: string,
+    voteType: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     if (!voteType || (voteType !== 'UP' && voteType !== 'DOWN')) {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const complaint = await tx.complaint.findUnique({
         where: { id: complaintId },
         select: { id: true },
@@ -295,6 +328,25 @@ export class ComplaintsService {
         downVoteCount: updatedComplaint.downVoteCount ?? 0,
       };
     });
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId,
+          properties: {
+            complaintId,
+            voteType: result.voteType,
+          },
+        },
+        analyticsCtx.country,
+      );
+    }
+
+    return result;
   }
 
   async reply(complaintId: string, content: string) {

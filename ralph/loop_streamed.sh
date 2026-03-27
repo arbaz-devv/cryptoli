@@ -1,62 +1,28 @@
 #!/bin/bash
 set -o pipefail
-# Usage: ./ralph/loop_streamed.sh [plan|build|specs|reverse-specs] [max_iterations]
+# Usage: ./ralph/loop_streamed.sh [max_iterations]
 # Examples:
-#   ./ralph/loop_streamed.sh              # Build mode, unlimited iterations
-#   ./ralph/loop_streamed.sh 20           # Build mode, max 20 iterations
-#   ./ralph/loop_streamed.sh build 20     # Build mode, max 20 iterations
-#   ./ralph/loop_streamed.sh plan         # Plan mode, unlimited iterations
-#   ./ralph/loop_streamed.sh plan 5       # Plan mode, max 5 iterations
-#   ./ralph/loop_streamed.sh specs        # Spec creation mode
-#   ./ralph/loop_streamed.sh reverse-specs # Reverse-engineer specs from code
+#   ./ralph/loop_streamed.sh              # Unlimited iterations
+#   ./ralph/loop_streamed.sh 20           # Max 20 iterations
 
 # Parse arguments
-case "$1" in
-    plan)
-        MODE="plan"
-        PROMPT_FILE="ralph/PROMPT_plan.md"
-        MAX_ITERATIONS=${2:-0}
-        ;;
-    specs)
-        MODE="specs"
-        PROMPT_FILE="ralph/PROMPT_specs.md"
-        MAX_ITERATIONS=${2:-2}
-        ;;
-    reverse-specs)
-        MODE="reverse-specs"
-        PROMPT_FILE="ralph/PROMPT_reverse_engineer_specs.md"
-        MAX_ITERATIONS=${2:-2}
-        ;;
-    build)
-        MODE="build"
-        PROMPT_FILE="ralph/PROMPT_build.md"
-        MAX_ITERATIONS=${2:-0}
-        ;;
-    *[0-9]*)
-        MODE="build"
-        PROMPT_FILE="ralph/PROMPT_build.md"
-        MAX_ITERATIONS=$1
-        ;;
-    *)
-        MODE="build"
-        PROMPT_FILE="ralph/PROMPT_build.md"
-        MAX_ITERATIONS=0
-        ;;
-esac
+if [[ "$1" =~ ^[0-9]+$ ]]; then
+    MAX_ITERATIONS=$1
+else
+    MAX_ITERATIONS=0
+fi
 
 ITERATION=0
 CURRENT_BRANCH=$(git branch --show-current)
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Mode:   $MODE"
-echo "Prompt: $PROMPT_FILE"
+echo "Prompt: ralph/PROMPT_build.md"
 echo "Branch: $CURRENT_BRANCH"
 [ $MAX_ITERATIONS -gt 0 ] && echo "Max:    $MAX_ITERATIONS iterations"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Verify prompt file exists
-if [ ! -f "$PROMPT_FILE" ]; then
-    echo "Error: $PROMPT_FILE not found"
+if [ ! -f "ralph/PROMPT_build.md" ]; then
+    echo "Error: ralph/PROMPT_build.md not found"
     exit 1
 fi
 
@@ -66,13 +32,12 @@ while true; do
         break
     fi
 
-    # In build mode, check if any unchecked items remain
-    if [ "$MODE" = "build" ] && ! grep -q '\- \[ \]' "ralph/IMPLEMENTATION_PLAN.md" 2>/dev/null; then
+    if ! grep -q '\- \[ \]' "ralph/IMPLEMENTATION_PLAN.md" 2>/dev/null; then
         echo "All items in IMPLEMENTATION_PLAN.md are complete. Exiting loop."
         break
     fi
 
-    FULL_PROMPT="$(cat "$PROMPT_FILE")
+    FULL_PROMPT="$(cat "ralph/PROMPT_build.md")
 
 Execute the instructions above."
 
@@ -90,11 +55,16 @@ Execute the instructions above."
     echo ""
     echo "Claude iteration complete"
 
-    # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
+
+    # Push sibling repos if they have new commits
+    git -C /home/scrip/Code/cryptoi-admin diff --quiet HEAD 2>/dev/null || \
+        git -C /home/scrip/Code/cryptoi-admin push origin "$(git -C /home/scrip/Code/cryptoi-admin branch --show-current)" 2>/dev/null
+    git -C /home/scrip/Code/cryptoli-frontend diff --quiet HEAD 2>/dev/null || \
+        git -C /home/scrip/Code/cryptoli-frontend push origin "$(git -C /home/scrip/Code/cryptoli-frontend branch --show-current)" 2>/dev/null
 
     ITERATION=$((ITERATION + 1))
     echo -e "\n\n======================== LOOP $ITERATION ========================\n"

@@ -4,6 +4,8 @@ import {
   ConflictException,
   Controller,
   Get,
+  Inject,
+  Optional,
   Patch,
   Post,
   Query,
@@ -11,13 +13,14 @@ import {
   Res,
   UnauthorizedException,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { CookieOptions } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
-import { AuthService } from './auth.service';
+import { AuthService, SessionMetadata } from './auth.service';
 import {
   changePasswordSchema,
   loginSchema,
@@ -26,13 +29,55 @@ import {
 } from '../common/utils';
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { getClientIp, getCountryHint } from '../analytics/ip-utils';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly notificationsService: NotificationsService,
+    @Optional()
+    @Inject(AnalyticsService)
+    private readonly analyticsService?: AnalyticsService,
   ) {}
+
+  private extractSessionMeta(
+    req: Request,
+    trigger: SessionMetadata['trigger'],
+  ): SessionMetadata {
+    return {
+      ip: getClientIp(req),
+      userAgent: req.headers['user-agent'] || '',
+      country: getCountryHint(req) || undefined,
+      trigger,
+    };
+  }
+
+  private trackAuthEvent(
+    req: Request,
+    event: 'user_login' | 'user_register' | 'user_logout' | 'password_change',
+    userId?: string,
+    properties?: Record<string, unknown>,
+  ): void {
+    if (!this.analyticsService) return;
+    const ctx = getAnalyticsCtx(req);
+    if (!ctx) return;
+    void this.analyticsService.track(
+      ctx.ip,
+      ctx.userAgent,
+      {
+        event,
+        consent: true,
+        userId,
+        properties,
+      },
+      ctx.country,
+    );
+  }
 
   private sessionCookieOptions(): CookieOptions {
     const corsOrigin = process.env.CORS_ORIGIN ?? '';
@@ -165,6 +210,7 @@ export class AuthController {
   @Post('register')
   async register(
     @Body() body: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     let parsed: {
@@ -211,12 +257,15 @@ export class AuthController {
     }
 
     const passwordHash = await this.authService.hashPassword(password);
+    const meta = this.extractSessionMeta(req, 'register');
     let user: Awaited<ReturnType<AuthService['createUser']>>;
     try {
       user = await this.authService.createUser({
         email,
         username,
         passwordHash,
+        registrationIp: meta.ip || undefined,
+        registrationCountry: meta.country,
       });
     } catch (err) {
       if (
@@ -234,8 +283,12 @@ export class AuthController {
       throw err;
     }
 
-    const token = await this.authService.createSession(user.id);
+    const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
+
+    this.trackAuthEvent(req, 'user_register', user.id, {
+      username: user.username,
+    });
 
     return {
       user,
@@ -250,6 +303,7 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() body: unknown,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     let parsed: { email: string; password: string };
@@ -290,8 +344,13 @@ export class AuthController {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = await this.authService.createSession(user.id);
+    const meta = this.extractSessionMeta(req, 'login');
+    const token = await this.authService.createSession(user.id, meta);
     res.cookie('session', token, this.sessionCookieOptions());
+
+    this.trackAuthEvent(req, 'user_login', user.id, {
+      username: user.username,
+    });
 
     return {
       user: {
@@ -320,6 +379,9 @@ export class AuthController {
       sameSite: opts.sameSite,
       secure: opts.secure,
     });
+
+    this.trackAuthEvent(req, 'user_logout');
+
     return { message: 'Logout successful' };
   }
 
@@ -372,7 +434,11 @@ export class AuthController {
     );
     await this.authService.updatePassword(req.user.id, nextPasswordHash);
 
-    const newToken = await this.authService.createSession(req.user.id);
+    const changeMeta = this.extractSessionMeta(req, 'password_change');
+    const newToken = await this.authService.createSession(
+      req.user.id,
+      changeMeta,
+    );
     await this.authService.deleteOtherSessions(req.user.id, newToken);
     res.cookie('session', newToken, this.sessionCookieOptions());
 
@@ -383,6 +449,8 @@ export class AuthController {
       message: 'Your account password was updated successfully.',
       link: `/${req.user.username}`,
     });
+
+    this.trackAuthEvent(req, 'password_change', req.user.id);
 
     return { message: 'Password changed successfully' };
   }

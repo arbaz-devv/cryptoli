@@ -7,13 +7,17 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { CommentsService } from './comments.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/comments')
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
@@ -46,7 +50,7 @@ export class CommentsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.commentsService.create(body, req.user.id);
+    return this.commentsService.create(body, req.user.id, getAnalyticsCtx(req));
   }
 
   @Get('list')
@@ -99,6 +103,11 @@ export class CommentsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.commentsService.vote(id, body.voteType, req.user.id);
+    return this.commentsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      getAnalyticsCtx(req),
+    );
   }
 }

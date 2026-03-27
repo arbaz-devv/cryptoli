@@ -7,15 +7,19 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ReviewsService } from './reviews.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 const REVIEW_LIST_LIMIT_MAX = 50;
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/reviews')
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
@@ -52,7 +56,7 @@ export class ReviewsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.reviewsService.create(body, req.user.id);
+    return this.reviewsService.create(body, req.user.id, getAnalyticsCtx(req));
   }
 
   @Get(':id')
@@ -67,7 +71,12 @@ export class ReviewsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.reviewsService.vote(id, body.voteType, req.user.id);
+    return this.reviewsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      getAnalyticsCtx(req),
+    );
   }
 
   @Post(':id/helpful')
@@ -76,6 +85,6 @@ export class ReviewsController {
     @Param('id') id: string,
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.reviewsService.helpful(id, req.user.id);
+    return this.reviewsService.helpful(id, req.user.id, getAnalyticsCtx(req));
   }
 }

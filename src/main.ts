@@ -128,7 +128,9 @@ async function bootstrap() {
       'Authorization',
       'X-Admin-Key',
       'X-CSRF-Token',
+      'X-Analytics-Key'
     ],
+    exposedHeaders: ['Content-Disposition'],
   });
 
   const allowedOrigins =

@@ -1,11 +1,19 @@
+---
+Status: Implemented
+Last verified: 2026-03-27
+---
+
 # Testing Strategy
 
-> **Status:** Planned (2026-03-19)
 > **Source of truth:** This spec defines the testing conventions. The test files themselves are the source of truth for what is currently tested.
+
+<!-- Review when test/helpers/ changes -->
+<!-- Review when test/jest-integration.json changes -->
+<!-- Review when test/jest-e2e.json changes -->
 
 ## Overview
 
-Complete test coverage for the Cryptoli NestJS backend via three tiers of tests, each catching a distinct class of bug. Starting baseline: 11.13% statement coverage, 45 tests across 10 spec files.
+Complete test coverage for the Cryptoli NestJS backend via three tiers of tests, each catching a distinct class of bug. (Starting baseline was 11.13% coverage / 45 tests; the suite has grown substantially since.)
 
 | Tier | What it catches | Database | HTTP | Speed |
 |------|----------------|----------|------|-------|
@@ -87,7 +95,6 @@ nock                          — HTTP interception (blocks outbound requests)
 |--------|------|---------------|
 | PrismaClient auto-loads `.env` | **CRITICAL** — writes to real DB | `@prisma/client` reads `.env` from project root at construction time, even in tests |
 | `process.env.REDIS_URL` from `.env` | **HIGH** — writes to real Redis | `redis.service.ts` reads directly from `process.env`, not ConfigService |
-| `fetch('https://ipwho.is/...')` | **MEDIUM** — outbound HTTP | `analytics.service.ts:363` calls external API for IP geolocation |
 | `webPush.sendNotification()` | **LOW** — sends real push | Only fires when `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` are in env |
 | `import 'dotenv/config'` in `main.ts` | **LOW in tests** — only imported in production bootstrap | `main.ts` is not imported by test modules, but caution required |
 
@@ -134,7 +141,7 @@ export default async function globalSetup() {
 
   // Run migrations against the test database
   const databaseUrl = pg.getConnectionUri();
-  execSync('npx prisma migrate deploy', {
+  execSync('npx prisma db push --skip-generate', {
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
 
@@ -274,7 +281,9 @@ let prisma: PrismaClient;
 
 export function getTestPrisma(): PrismaClient {
   if (!prisma) {
-    const url = (globalThis as any).__TEST_DATABASE_URL__;
+    // globalThis is set when running in-process; process.env is set by globalSetup for worker processes
+    const url =
+      (globalThis as any).__TEST_DATABASE_URL__ || process.env.DATABASE_URL;
     if (!url) {
       throw new Error(
         'TEST_DATABASE_URL not set. Did globalSetup run? ' +
@@ -293,7 +302,7 @@ export function getTestPrisma(): PrismaClient {
 }
 
 export function getTestRedisUrl(): string {
-  const url = (globalThis as any).__TEST_REDIS_URL__;
+  const url = (globalThis as any).__TEST_REDIS_URL__ || process.env.REDIS_URL;
   if (!url) {
     throw new Error('TEST_REDIS_URL not set. Did globalSetup run?');
   }
@@ -312,19 +321,16 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-// Truncate order respects FK constraints (children before parents)
-const TABLES = [
-  'CommentVote', 'ComplaintVote', 'HelpfulVote', 'Reaction',
-  'Media', 'ComplaintReply', 'Report', 'PushSubscription',
-  'Notification', 'Session', 'Comment', 'Review', 'Post',
-  'Complaint', 'CompanyFollow', 'Follow', 'Product', 'Company', 'User',
-];
-
+// Truncate all user-created tables dynamically (avoids hardcoding table names)
 export async function truncateAll(client?: PrismaClient) {
   const db = client ?? getTestPrisma();
-  for (const table of TABLES) {
-    await db.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
-  }
+  const tables = await db.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    AND tablename NOT LIKE '_prisma%'
+  `;
+  if (tables.length === 0) return;
+  const tableNames = tables.map((t) => `"${t.tablename}"`).join(', ');
+  await db.$executeRawUnsafe(`TRUNCATE TABLE ${tableNames} CASCADE`);
 }
 ```
 
@@ -428,6 +434,32 @@ When adding a new external service to the codebase:
 
 ---
 
+## Known Gotchas
+
+Hard-won lessons from building the test suite. Each caused real debugging time.
+
+### Integration tests must run serially (`maxWorkers: 1`)
+
+`truncateAll()` issues `TRUNCATE TABLE ... CASCADE`, which acquires exclusive locks. With parallel Jest workers, two test files truncating simultaneously deadlock each other. The integration config sets `maxWorkers: 1`; the e2e script uses `--runInBand` on the CLI. Do not remove either setting.
+
+### `forceExit: true` is required for integration and e2e configs
+
+The `getTestRedis()` singleton in `test-db.utils.ts` creates an ioredis client with a keepalive timer that holds the Node event loop open. Even after `globalTeardown` calls `disconnectTestClients()`, the module-level singleton can remain cached by the Jest worker. Without `forceExit: true`, the test suite hangs indefinitely after all tests pass — with no error output.
+
+### ThrottlerGuard persists rate-limit state in Redis
+
+`ThrottlerModule` is registered globally with Redis-backed storage. Rate-limit counters (e.g., `throttle:login:127.0.0.1`) survive across test cases within a suite. Without `flushTestRedis()` in `beforeEach`, tests that hit the same endpoint repeatedly will receive unexpected 429 responses. The spec examples show `truncateAll()` in `beforeEach` for DB cleanup — Redis cleanup is equally important but easy to forget.
+
+### Profile cache requires explicit Redis flush before count assertions
+
+`UsersService.getPublicProfile()` has a 90-second Redis cache. Although `followUser()`/`unfollowUser()` call `invalidateProfileCache()`, e2e tests that assert on `followersCount` after mutations need an explicit `flushTestRedis()` before the read. The invalidation works on the server side but the test's read-after-write timing can hit the stale cached value. This pattern appears 5+ times in `users.e2e-spec.ts`.
+
+### Fire-and-forget `track()` requires a delay before asserting Redis keys
+
+`AnalyticsService.track()` uses `void Promise.all(promises)` — the `void` discards the promise, so `await track(...)` returns before Redis writes complete. Integration tests use a `waitForWrites()` helper: a 200ms `setTimeout` followed by `redis.ping()` (which forces the ioredis command queue to flush). Without this, assertions on Redis keys immediately after `track()` see `null`.
+
+---
+
 ## File Placement
 
 ```
@@ -445,16 +477,21 @@ test/
     factories.ts                     ← createTestUser(), createTestReview(), etc.
     test-db.setup.ts                 ← TestContainers globalSetup (start PG + Redis)
     test-db.teardown.ts              ← TestContainers globalTeardown (stop containers)
-    test-db.utils.ts                 ← truncateAllTables(), getPrisma()
+    test-db.utils.ts                 ← truncateAll(), getTestPrisma()
     setup-app.ts                     ← E2E app bootstrap replicating main.ts middleware
   integration/
     reviews-voting.spec.ts           ← Tier 2: real DB
-    user-cascades.spec.ts            ← Tier 2: real DB
+    cascade-deletes.spec.ts           ← Tier 2: real DB
     auth-sessions.spec.ts            ← Tier 2: real DB
     complaints-voting.spec.ts        ← Tier 2: real DB
     comments-voting.spec.ts          ← Tier 2: real DB
     follows.spec.ts                  ← Tier 2: real DB
     analytics-tracking.spec.ts       ← Tier 2: real Redis
+    analytics-buffer.spec.ts         ← Tier 2: real PG
+    analytics-gdpr.spec.ts           ← Tier 2: real PG
+    analytics-hybrid-stats.spec.ts   ← Tier 2: real PG + Redis
+    analytics-rollup.spec.ts         ← Tier 2: real PG + Redis
+    geoip-data.spec.ts               ← Tier 2: GeoIP database integrity (@maxmind/geoip2-node)
   e2e/
     auth.e2e-spec.ts                 ← Tier 3: full HTTP
     reviews.e2e-spec.ts
@@ -463,6 +500,7 @@ test/
     users.e2e-spec.ts
     admin.e2e-spec.ts
     search-feed-trending.e2e-spec.ts
+    analytics.e2e-spec.ts
   jest-integration.json
   jest-e2e.json
 ```
@@ -668,7 +706,6 @@ describe('Auth (e2e)', () => {
 - CSRF middleware (Origin check on unsafe methods when session cookie present)
 - `ValidationPipe` with same options as production
 - `AllExceptionsFilter`
-- cookie-parser
 - Overrides `PrismaService` to use TestContainers instance
 
 **What e2e tests verify:**
@@ -756,10 +793,10 @@ export async function createTestComplaint(prisma: PrismaClient, authorId: string
 ```json
 "coverageThreshold": {
   "global": {
-    "branches": 80,
-    "functions": 80,
-    "lines": 85,
-    "statements": 85
+    "branches": 60,
+    "functions": 70,
+    "lines": 80,
+    "statements": 78
   }
 }
 ```

@@ -21,7 +21,7 @@ export class TrackDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(64)
   timezone?: string;
 
   @IsOptional()

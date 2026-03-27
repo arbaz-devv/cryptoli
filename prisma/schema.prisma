@@ -10,6 +10,9 @@ datasource db {
 
 enum Role {
   USER
+  MODERATOR
+  ADMIN
+  VERIFIED_EXPERT
 }
 
 enum SubscriptionTier {
@@ -54,6 +57,11 @@ enum NotificationType {
   REVIEW_REJECTED
   NEW_FOLLOWER
   MENTION
+  ACCOUNT_CREATED
+  PROFILE_UPDATED
+  REVIEW_CREATED
+  REVIEW_LIKED
+  COMMENT_ADDED
 }
 
 enum ReportStatus {
@@ -84,9 +92,11 @@ model User {
   verified     Boolean          @default(false)
   role         Role             @default(USER)
   reputation   Int              @default(0)
-  subscription SubscriptionTier @default(FREE)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  subscription        SubscriptionTier @default(FREE)
+  registrationIp      String?          @map("registration_ip") @db.VarChar(45)
+  registrationCountry String?          @map("registration_country") @db.Char(2)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   reviews        Review[]
   comments       Comment[]
@@ -95,8 +105,9 @@ model User {
   followers      Follow[]        @relation("Follower")
   following      Follow[]        @relation("Following")
   sessions       Session[]
-  notifications  Notification[]
-  pushSubscriptions PushSubscription[]
+  notifications      Notification[]
+  actedNotifications Notification[]     @relation("NotificationActor")
+  pushSubscriptions  PushSubscription[]
   helpfulVotes   HelpfulVote[]
   companyFollows CompanyFollow[]
   complaints     Complaint[]
@@ -260,18 +271,39 @@ model Session {
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  // Request context captured at login/register/password-change
+  ip        String?  @db.VarChar(45)
+  ipHash    String?  @db.Char(64)
+  userAgent String?  @db.VarChar(512)
+  device    String?  @db.VarChar(16)
+  browser   String?  @db.VarChar(64)
+  os        String?  @db.VarChar(64)
+  country   String?  @db.Char(2)
+  timezone  String?  @db.VarChar(64)
+  trigger   String?  @db.VarChar(20)
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Notification {
   id        String           @id @default(cuid())
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?            @relation("NotificationActor", fields: [actorId], references: [id])
   type      NotificationType
   title     String
   message   String
   link      String?
+  data      Json?
   read      Boolean          @default(false)
+  pushedAt  DateTime?
   createdAt DateTime         @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, read, createdAt])
 }
 
 model PushSubscription {
@@ -281,9 +313,11 @@ model PushSubscription {
   endpoint  String   @unique
   p256dh    String
   auth      String
+  userAgent String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
 
-  @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model Follow {
@@ -399,4 +433,56 @@ model Report {
   reason      String
   status      ReportStatus @default(PENDING)
   createdAt   DateTime     @default(now())
+}
+
+model AnalyticsEvent {
+  id              String   @id @default(cuid())
+  eventType       String   @map("event_type")
+
+  // Identity (no FK constraints — avoids cascade risk on high-write table)
+  sessionId       String?  @map("session_id") @db.VarChar(128)
+  userId          String?  @map("user_id")
+
+  // Request context
+  ipHash          String?  @map("ip_hash") @db.Char(64)
+  country         String?  @db.Char(2)
+  device          String?  @db.VarChar(16)
+  browser         String?  @db.VarChar(64)
+  os              String?  @db.VarChar(64)
+  timezone        String?  @db.VarChar(64)
+
+  // Page/navigation
+  path            String?  @db.VarChar(512)
+  referrer        String?  @db.VarChar(128)
+  utmSource       String?  @map("utm_source") @db.VarChar(80)
+  utmMedium       String?  @map("utm_medium") @db.VarChar(80)
+  utmCampaign     String?  @map("utm_campaign") @db.VarChar(80)
+  durationSeconds Int?     @map("duration_seconds")
+
+  // Event-specific metadata
+  properties      Json?    @default("{}")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([eventType, createdAt])
+  @@index([createdAt])
+
+  @@map("analytics_events")
+}
+
+model AnalyticsDailySummary {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  dimension       String
+  dimensionValue  String   @map("dimension_value") @db.VarChar(128)
+  count           Int
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([date, dimension, dimensionValue])
+  @@index([date])
+  @@index([dimension, date])
+
+  @@map("analytics_daily_summaries")
 }
