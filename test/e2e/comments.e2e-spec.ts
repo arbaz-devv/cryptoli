@@ -90,7 +90,7 @@ describe('Comments E2E', () => {
       expect(res.body._count).toBeDefined();
     });
 
-    it('should create a reply with parentId and appear nested under parent', async () => {
+    it('should create a reply with parentId and fetch it via paginated list', async () => {
       const cookies = await registerAndGetCookies();
       const reviewId = await createReview(cookies);
 
@@ -113,18 +113,27 @@ describe('Comments E2E', () => {
       expect(replyRes.body.id).toBeDefined();
       expect(replyRes.body.content).toBe('Reply to parent.');
 
-      // Fetch the parent comment and verify the reply is nested under it
+      // getById returns the comment with reply count, not inline replies
       const getRes = await request(server).get(
         `/api/comments/${parentId}?reviewId=${reviewId}`,
       );
 
       expect(getRes.status).toBe(200);
       expect(getRes.body.id).toBe(parentId);
-      expect(getRes.body.replies).toBeDefined();
-      expect(Array.isArray(getRes.body.replies)).toBe(true);
-      expect(getRes.body.replies.length).toBe(1);
-      expect(getRes.body.replies[0].id).toBe(replyRes.body.id);
-      expect(getRes.body.replies[0].content).toBe('Reply to parent.');
+      expect(getRes.body._count.replies).toBe(1);
+
+      // Fetch replies via paginated list endpoint with parentId
+      const repliesRes = await request(server).get(
+        `/api/comments?reviewId=${reviewId}&parentId=${parentId}`,
+      );
+
+      expect(repliesRes.status).toBe(200);
+      expect(repliesRes.body.comments).toBeDefined();
+      expect(repliesRes.body.comments.length).toBe(1);
+      expect(repliesRes.body.comments[0].id).toBe(replyRes.body.id);
+      expect(repliesRes.body.comments[0].content).toBe('Reply to parent.');
+      expect(repliesRes.body.pagination).toBeDefined();
+      expect(repliesRes.body.pagination.hasMore).toBe(false);
     });
 
     it('should reject unauthenticated comment creation with 401', async () => {
@@ -207,7 +216,7 @@ describe('Comments E2E', () => {
   });
 
   describe('GET /api/comments/:id', () => {
-    it('should return a single comment with its replies', async () => {
+    it('should return a single comment with reply count', async () => {
       const cookies = await registerAndGetCookies();
       const reviewId = await createReview(cookies);
 
@@ -228,7 +237,8 @@ describe('Comments E2E', () => {
       expect(getRes.body.id).toBe(parentId);
       expect(getRes.body.content).toBe('Top-level comment.');
       expect(getRes.body.author).toBeDefined();
-      expect(Array.isArray(getRes.body.replies)).toBe(true);
+      expect(getRes.body._count).toBeDefined();
+      expect(getRes.body._count.replies).toBe(0);
     });
   });
 

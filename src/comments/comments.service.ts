@@ -482,32 +482,7 @@ export class CommentsService {
       }));
     }
 
-    const comment = commentsWithVotes[0] ?? null;
-    if (!comment) return null;
-
-    const replies = await this.prisma.comment.findMany({
-      where: { parentId: comment.id },
-      include: {
-        author: {
-          select: {
-            id: true,
-            username: true,
-            avatar: true,
-            verified: true,
-          },
-        },
-        _count: {
-          select: {
-            reactions: true,
-            votes: true,
-            replies: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    return { ...comment, replies };
+    return commentsWithVotes[0] ?? null;
   }
 
   async vote(
