@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { Server as HttpServer } from 'http';
 import helmet from 'helmet';
+import compression from 'compression';
 import { NestFactory } from '@nestjs/core';
 import {
   BadRequestException,
@@ -53,10 +54,19 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const authService = app.get(AuthService);
 
+  // Compress JSON/text payloads to reduce bandwidth and mobile latency.
+  app.use(
+    compression({
+      threshold: 1024,
+      level: 6,
+    }),
+  );
+
   initSentry({
     dsn: config.sentryDsn,
     environment: config.nodeEnv,
     tracesSampleRate: config.sentryTracesSampleRate,
+    release: config.sentryRelease,
   });
 
   if (config.trustProxy) {

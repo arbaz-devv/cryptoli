@@ -7,6 +7,18 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import type { AnalyticsContext } from '../analytics/analytics-context';
 
+function buildVoteCounterDelta(
+  previousVoteType: 'UP' | 'DOWN' | null,
+  nextVoteType: 'UP' | 'DOWN' | null,
+) {
+  const helpfulDelta =
+    (nextVoteType === 'UP' ? 1 : 0) - (previousVoteType === 'UP' ? 1 : 0);
+  const downDelta =
+    (nextVoteType === 'DOWN' ? 1 : 0) - (previousVoteType === 'DOWN' ? 1 : 0);
+
+  return { helpfulDelta, downDelta };
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -39,46 +51,25 @@ export class ReviewsService {
         title: true,
         content: true,
         overallScore: true,
-        criteriaScores: true,
-        verified: true,
         helpfulCount: true,
         downVoteCount: true,
-        reportCount: true,
-        status: true,
         createdAt: true,
-        updatedAt: true,
-        authorId: true,
-        companyId: true,
-        productId: true,
         author: {
           select: {
-            id: true,
             username: true,
             avatar: true,
             verified: true,
-            reputation: true,
           },
         },
         company: {
           select: {
-            id: true,
             name: true,
-            slug: true,
-            logo: true,
-          },
-        },
-        product: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
           },
         },
         _count: {
           select: {
             helpfulVotes: true,
             comments: true,
-            reactions: true,
           },
         },
       },
@@ -286,14 +277,28 @@ export class ReviewsService {
         });
       }
 
-      const [helpfulCount, downVoteCount] = await Promise.all([
-        tx.helpfulVote.count({ where: { reviewId, voteType: 'UP' } }),
-        tx.helpfulVote.count({ where: { reviewId, voteType: 'DOWN' } }),
-      ]);
+      const previousVoteType = existingVote
+        ? (existingVote.voteType as 'UP' | 'DOWN')
+        : null;
+      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+        previousVoteType,
+        nextVoteType,
+      );
 
-      await tx.review.update({
+      const updatedReview = await tx.review.update({
         where: { id: reviewId },
-        data: { helpfulCount, downVoteCount },
+        data: {
+          ...(helpfulDelta !== 0
+            ? { helpfulCount: { increment: helpfulDelta } }
+            : {}),
+          ...(downDelta !== 0
+            ? { downVoteCount: { increment: downDelta } }
+            : {}),
+        },
+        select: {
+          helpfulCount: true,
+          downVoteCount: true,
+        },
       });
 
       return {
@@ -301,8 +306,8 @@ export class ReviewsService {
         reviewTitle: review.title,
         actorUsername: actor?.username ?? 'Someone',
         voteType: nextVoteType,
-        helpfulCount,
-        downVoteCount,
+        helpfulCount: updatedReview.helpfulCount ?? 0,
+        downVoteCount: updatedReview.downVoteCount ?? 0,
       };
     });
 
@@ -369,17 +374,36 @@ export class ReviewsService {
         helpful = true;
       }
 
-      const [helpfulCount, downVoteCount] = await Promise.all([
-        tx.helpfulVote.count({ where: { reviewId, voteType: 'UP' } }),
-        tx.helpfulVote.count({ where: { reviewId, voteType: 'DOWN' } }),
-      ]);
+      const previousVoteType = existing
+        ? ((existing.voteType as 'UP' | 'DOWN' | null) ?? 'UP')
+        : null;
+      const nextVoteType: 'UP' | 'DOWN' | null = helpful ? 'UP' : null;
+      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+        previousVoteType,
+        nextVoteType,
+      );
 
-      await tx.review.update({
+      const updatedReview = await tx.review.update({
         where: { id: reviewId },
-        data: { helpfulCount, downVoteCount },
+        data: {
+          ...(helpfulDelta !== 0
+            ? { helpfulCount: { increment: helpfulDelta } }
+            : {}),
+          ...(downDelta !== 0
+            ? { downVoteCount: { increment: downDelta } }
+            : {}),
+        },
+        select: {
+          helpfulCount: true,
+          downVoteCount: true,
+        },
       });
 
-      return { helpful, helpfulCount, downVoteCount };
+      return {
+        helpful,
+        helpfulCount: updatedReview.helpfulCount ?? 0,
+        downVoteCount: updatedReview.downVoteCount ?? 0,
+      };
     });
 
     this.socketService.emitReviewVoteUpdated(

@@ -17,6 +17,7 @@ const envSchema = z
     ADMIN_PASSWORD_HASH: z.string().optional(),
     TRUST_PROXY: z.string().optional(),
     SENTRY_DSN: z.string().url().optional(),
+    SENTRY_RELEASE: z.string().optional(),
     SENTRY_TRACES_SAMPLE_RATE: z
       .string()
       .optional()
@@ -57,6 +58,7 @@ export function validateEnv(): EnvConfig {
     ADMIN_PASSWORD_HASH: process.env.ADMIN_PASSWORD_HASH,
     TRUST_PROXY: process.env.TRUST_PROXY,
     SENTRY_DSN: process.env.SENTRY_DSN,
+    SENTRY_RELEASE: process.env.SENTRY_RELEASE,
     SENTRY_TRACES_SAMPLE_RATE: process.env.SENTRY_TRACES_SAMPLE_RATE,
   });
 

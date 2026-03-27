@@ -32,17 +32,16 @@ describe('ComplaintsService', () => {
       const txMock = {
         complaint: {
           findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         complaintVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.complaintVote.count
-        .mockResolvedValueOnce(1) // UP
-        .mockResolvedValueOnce(0); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
@@ -53,7 +52,8 @@ describe('ComplaintsService', () => {
       });
       expect(txMock.complaint.update).toHaveBeenCalledWith({
         where: { id: 'c1' },
-        data: { helpfulCount: 1, downVoteCount: 0 },
+        data: { helpfulCount: { increment: 1 } },
+        select: { helpfulCount: true, downVoteCount: true },
       });
       expect(result).toEqual({
         voteType: 'UP',
@@ -66,12 +66,14 @@ describe('ComplaintsService', () => {
       const txMock = {
         complaint: {
           findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 0,
+            downVoteCount: 0,
+          }),
         },
         complaintVote: {
           findUnique: jest.fn().mockResolvedValue({ id: 'v1', voteType: 'UP' }),
           delete: jest.fn(),
-          count: jest.fn().mockResolvedValue(0),
         },
       };
 
@@ -89,17 +91,16 @@ describe('ComplaintsService', () => {
       const txMock = {
         complaint: {
           findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 0,
+            downVoteCount: 1,
+          }),
         },
         complaintVote: {
           findUnique: jest.fn().mockResolvedValue({ id: 'v1', voteType: 'UP' }),
           update: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.complaintVote.count
-        .mockResolvedValueOnce(0) // UP
-        .mockResolvedValueOnce(1); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 
@@ -331,17 +332,16 @@ describe('ComplaintsService', () => {
       const txMock = {
         complaint: {
           findUnique: jest.fn().mockResolvedValue({ id: 'c1' }),
-          update: jest.fn(),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
         },
         complaintVote: {
           findUnique: jest.fn().mockResolvedValue(null),
           create: jest.fn(),
-          count: jest.fn(),
         },
       };
-      txMock.complaintVote.count
-        .mockResolvedValueOnce(1) // UP
-        .mockResolvedValueOnce(0); // DOWN
 
       prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
 

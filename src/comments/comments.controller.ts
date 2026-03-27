@@ -28,13 +28,22 @@ export class CommentsController {
     @Query('reviewId') reviewId?: string,
     @Query('postId') postId?: string,
     @Query('complaintId') complaintId?: string,
+    @Query('parentId') parentId?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
     @Req() req?: Request & { user?: SessionUser | null },
   ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
     return this.commentsService.list(
       reviewId,
       postId,
       complaintId,
       req?.user ?? null,
+      {
+        parentId,
+        limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+        cursor,
+      },
     );
   }
 
@@ -50,13 +59,22 @@ export class CommentsController {
     @Query('reviewId') reviewId?: string,
     @Query('postId') postId?: string,
     @Query('complaintId') complaintId?: string,
+    @Query('parentId') parentId?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
     @Req() req?: Request & { user?: SessionUser | null },
   ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : undefined;
     return this.commentsService.list(
       reviewId,
       postId,
       complaintId,
       req?.user ?? null,
+      {
+        parentId,
+        limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+        cursor,
+      },
     );
   }
 

@@ -4,6 +4,7 @@ type SentryInitOptions = {
   dsn?: string;
   environment: string;
   tracesSampleRate: number;
+  release?: string;
 };
 
 let initialized = false;
@@ -17,6 +18,7 @@ export function initSentry(options: SentryInitOptions): void {
     dsn: options.dsn,
     environment: options.environment,
     tracesSampleRate: options.tracesSampleRate,
+    release: options.release,
     enabled: options.environment !== 'test',
     sendDefaultPii: false,
   });
