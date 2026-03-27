@@ -122,7 +122,13 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+    // Next.js client (cryptoi) sends NextAuth CSRF on mutations; browser preflight requires this.
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Admin-Key',
+      'X-CSRF-Token',
+    ],
   });
 
   const allowedOrigins =

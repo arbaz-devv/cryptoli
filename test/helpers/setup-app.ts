@@ -91,7 +91,12 @@ export async function setupTestApp(): Promise<{
     origin: ['http://localhost:3000'],
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Admin-Key',
+      'X-CSRF-Token',
+    ],
   });
 
   // CSRF middleware — same logic as main.ts
