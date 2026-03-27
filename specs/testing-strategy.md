@@ -491,7 +491,7 @@ test/
     analytics-gdpr.spec.ts           ← Tier 2: real PG
     analytics-hybrid-stats.spec.ts   ← Tier 2: real PG + Redis
     analytics-rollup.spec.ts         ← Tier 2: real PG + Redis
-    geoip-data.spec.ts               ← Tier 2: geoip-lite data
+    geoip-data.spec.ts               ← Tier 2: GeoIP database integrity (@maxmind/geoip2-node)
   e2e/
     auth.e2e-spec.ts                 ← Tier 3: full HTTP
     reviews.e2e-spec.ts

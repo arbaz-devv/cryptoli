@@ -42,6 +42,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# GeoIP database files
+data/geoip/*.mmdb
+
 # temp directory
 .temp
 .tmp

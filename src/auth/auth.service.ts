@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcryptjs';
-import * as geoip from 'geoip-lite';
+import { GeoipService } from '../geoip/geoip.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
 import { getDeviceAndBrowser } from '../common/ua';
@@ -32,6 +32,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly geoipService: GeoipService,
   ) {}
 
   async findUserByEmailOrUsername(email: string, username: string) {
@@ -248,7 +249,7 @@ export class AuthService {
 
     if (meta) {
       const { device, browser, os } = getDeviceAndBrowser(meta.userAgent);
-      const geoResult = meta.ip ? geoip.lookup(meta.ip) : null;
+      const geoResult = meta.ip ? this.geoipService.lookup(meta.ip) : null;
       const timezone = geoResult?.timezone || meta.timezone || null;
 
       data.ip = meta.ip || null;

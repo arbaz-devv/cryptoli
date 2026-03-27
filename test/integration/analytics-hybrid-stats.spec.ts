@@ -7,6 +7,7 @@ import {
   flushTestRedis,
 } from '../helpers/test-db.utils';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
+import { createGeoipMock } from '../helpers/geoip.mock';
 
 /**
  * Integration tests for hybrid getStats() with real PG + Redis.
@@ -52,6 +53,7 @@ describe('AnalyticsService hybrid getStats() (Integration)', () => {
     await flushTestRedis();
     service = new AnalyticsService(
       makeRedisService(redis) as any,
+      createGeoipMock() as any,
       undefined, // bufferService (optional)
       prisma as any, // prismaService (optional)
     );

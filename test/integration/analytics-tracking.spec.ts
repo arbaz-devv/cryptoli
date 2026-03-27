@@ -6,6 +6,7 @@ import {
 } from '../helpers/test-db.utils';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { RedisService } from '../../src/redis/redis.service';
+import { createGeoipMock } from '../helpers/geoip.mock';
 
 /**
  * Integration tests for AnalyticsService against a real Redis container.
@@ -37,7 +38,10 @@ describe('Analytics Tracking (Integration)', () => {
       check();
     });
 
-    analyticsService = new AnalyticsService(redisService);
+    analyticsService = new AnalyticsService(
+      redisService,
+      createGeoipMock() as any,
+    );
   });
 
   beforeEach(async () => {
@@ -150,7 +154,10 @@ describe('Analytics Tracking (Integration)', () => {
     // Create an AnalyticsService with a disconnected RedisService
     const disconnectedRedis = new RedisService();
     // Don't call onModuleInit → isReady() returns false
-    const isolatedService = new AnalyticsService(disconnectedRedis);
+    const isolatedService = new AnalyticsService(
+      disconnectedRedis,
+      createGeoipMock() as any,
+    );
 
     // track() should silently return without throwing
     await expect(

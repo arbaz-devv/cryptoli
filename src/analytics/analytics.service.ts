@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
-import * as geoip from 'geoip-lite';
+import { GeoipService } from '../geoip/geoip.service';
 import { isBot } from 'ua-parser-js/bot-detection';
 import { normalizeIp, isPrivateOrLocalIp } from './ip-utils';
 import { getDeviceAndBrowser } from '../common/ua';
@@ -190,6 +190,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly redisService: RedisService,
+    private readonly geoipService: GeoipService,
     @Optional()
     @Inject(forwardRef(() => AnalyticsBufferService))
     private readonly bufferService?: AnalyticsBufferService,
@@ -377,9 +378,9 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Resolve country code for an IP:
-   * 1) Try local geoip-lite database
-   * 2) If unknown, optionally call external IP->country API
-   * 3) Cache successful lookups in Redis to avoid repeated API calls
+   * 1) Use CDN country hint if available
+   * 2) Check Redis cache
+   * 3) Fall back to local GeoIP database
    */
   private isValidCountryCode(code?: string): boolean {
     return /^[A-Z]{2}$/.test((code || '').trim().toUpperCase());
@@ -405,8 +406,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Use local geoip-lite only — no external API calls (GDPR)
-    const { country } = this.getGeo(normalizedIp);
+    const { country } = this.geoipService.lookup(normalizedIp);
     const countryCode = (country || '').toUpperCase();
 
     if (!this.isValidCountryCode(countryCode)) return 'XX';
@@ -421,20 +421,6 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     }
 
     return countryCode;
-  }
-
-  private getGeo(ip: string): {
-    country?: string;
-    city?: string;
-    region?: string;
-  } {
-    const geo = geoip.lookup(ip);
-    if (!geo) return {};
-    return {
-      country: geo.country || undefined,
-      city: geo.city,
-      region: geo.region,
-    };
   }
 
   private hashIp(ip: string): string | undefined {

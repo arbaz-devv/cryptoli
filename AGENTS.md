@@ -59,6 +59,7 @@ src/
 ├── prisma/              # PrismaModule (global) — PrismaService singleton
 ├── redis/               # RedisModule (global) — graceful no-op when REDIS_URL absent
 ├── socket/              # SocketModule (global) — manual Socket.IO on globalThis.__socketIO
+├── geoip/               # GeoipModule (global) — @maxmind/geoip2-node, no-op when .mmdb absent
 ├── auth/                # JWT cookies, session management, guards, rate-limited 5/60s
 ├── admin/               # Admin CRUD, AdminGuard, class-validator DTOs, in-process caching
 ├── analytics/           # Redis-backed analytics, AnalyticsGuard (fail-closed)
@@ -80,8 +81,8 @@ Entry: `src/main.ts` | Schema: `prisma/schema.prisma` | Config: `src/config/env.
 
 ## Conventions
 
-**Global modules** — ConfigModule, PrismaModule, RedisModule, SocketModule are
-available everywhere. Never import them in feature modules. If your module
+**Global modules** — ConfigModule, PrismaModule, RedisModule, SocketModule,
+GeoipModule are available everywhere. Never import them in feature modules. If your module
 needs AuthGuard/OptionalAuthGuard, import AuthModule. If it needs
 NotificationsService, import NotificationsModule.
 
@@ -166,4 +167,5 @@ Format: `type(scope): description` — e.g., `feat(reviews): add pagination`,
 Copy `.env.example` to `.env`. Required: `DATABASE_URL`, `JWT_SECRET` (32+
 chars in prod), `CORS_ORIGIN`. Optional: `REDIS_URL` (Redis features no-op
 when absent), `ADMIN_API_KEY`, `ANALYTICS_API_KEY`, `ADMIN_EMAIL`,
-`ADMIN_PASSWORD_HASH`, `TRUST_PROXY`, `PORT`.
+`ADMIN_PASSWORD_HASH`, `TRUST_PROXY`, `PORT`, `MAXMIND_ACCOUNT_ID`,
+`MAXMIND_LICENSE_KEY` (GeoIP database updates — lookups no-op when absent).

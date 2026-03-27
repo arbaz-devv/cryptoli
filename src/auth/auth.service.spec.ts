@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
+import { createGeoipMock } from '../../test/helpers/geoip.mock';
 
 function sha256(input: string): string {
   return createHash('sha256').update(input).digest('hex');
@@ -24,7 +25,11 @@ describe('AuthService — passwordHash exclusion', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('findUserByEmailOrUsername should use select without passwordHash', async () => {
@@ -102,7 +107,11 @@ describe('AuthService — session token hashing', () => {
       },
     };
     const config = { jwtSecret: 'test-secret-key-for-jwt' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('createSession should store a SHA-256 hash, not the raw JWT', async () => {
@@ -229,7 +238,11 @@ describe('AuthService — deleteOtherSessions', () => {
       session: { deleteMany: jest.fn(), create: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should delete all sessions for user except the given token (hashed)', async () => {
@@ -274,7 +287,11 @@ describe('AuthService — createUser', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should create user and return profile without passwordHash', async () => {
@@ -357,7 +374,11 @@ describe('AuthService — hashPassword / comparePassword', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should hash and verify password round-trip', async () => {
@@ -397,7 +418,11 @@ describe('AuthService — getSessionFromToken edge cases', () => {
       },
     };
     const config = { jwtSecret: 'test-secret-key-for-jwt' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should return null for undefined token', async () => {
@@ -482,7 +507,11 @@ describe('AuthService — getSessionTokenFromRequest', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should prefer Bearer header over cookie', () => {
@@ -545,7 +574,11 @@ describe('AuthService — updateProfile', () => {
       user: { findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should trim bio and convert empty to null', async () => {
@@ -600,7 +633,11 @@ describe('AuthService — generateUsernameSuggestions', () => {
       },
     };
     const config = { jwtSecret: 'test-secret' } as ConfigService;
-    service = new AuthService(prisma as unknown as PrismaService, config);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      createGeoipMock() as any,
+    );
   });
 
   it('should return available candidates', async () => {

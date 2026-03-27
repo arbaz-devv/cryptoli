@@ -7,6 +7,7 @@ import {
   flushTestRedis,
 } from '../helpers/test-db.utils';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
+import { createGeoipMock } from '../helpers/geoip.mock';
 
 /**
  * Integration tests for GDPR anonymization against real PostgreSQL + Redis.
@@ -36,6 +37,7 @@ describe('GDPR Anonymization (Integration)', () => {
     await flushTestRedis();
     service = new AnalyticsService(
       makeRedisService(redis) as any,
+      createGeoipMock() as any,
       undefined,
       prisma as any,
     );

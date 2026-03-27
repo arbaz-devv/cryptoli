@@ -1,15 +1,17 @@
 import { AnalyticsService } from './analytics.service';
 import { createRedisMock } from '../../test/helpers/redis.mock';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
+import { createGeoipMock } from '../../test/helpers/geoip.mock';
 import { normalizeIp } from './ip-utils';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
   let redisMock: ReturnType<typeof createRedisMock>;
+  const geoipMock = createGeoipMock();
 
   beforeEach(() => {
     redisMock = createRedisMock(false);
-    service = new AnalyticsService(redisMock as any);
+    service = new AnalyticsService(redisMock as any, geoipMock as any);
   });
 
   describe('track()', () => {
@@ -20,7 +22,7 @@ describe('AnalyticsService', () => {
 
     it('should no-op when consent is false', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
         consent: false,
@@ -30,7 +32,7 @@ describe('AnalyticsService', () => {
 
     it('should no-op when consent is undefined (GDPR opt-in required)', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
       });
@@ -39,7 +41,7 @@ describe('AnalyticsService', () => {
 
     it('should no-op when userAgent is a bot (Googlebot)', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await service.track(
         '1.2.3.4',
         'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
@@ -50,7 +52,7 @@ describe('AnalyticsService', () => {
 
     it('should no-op when userAgent is a bot (bingbot)', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await service.track(
         '1.2.3.4',
         'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
@@ -61,7 +63,7 @@ describe('AnalyticsService', () => {
 
     it('should still track when userAgent is empty (not a bot)', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await service.track('1.2.3.4', '', {
         event: 'page_view',
         consent: true,
@@ -71,7 +73,7 @@ describe('AnalyticsService', () => {
 
     it('should write page_view keys when Redis is ready', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
@@ -93,7 +95,7 @@ describe('AnalyticsService', () => {
 
     it('should write like key for like event', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', { event: 'like', consent: true });
 
@@ -105,7 +107,7 @@ describe('AnalyticsService', () => {
 
     it('should write funnel keys for signup_started', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', {
         event: 'signup_started',
@@ -125,7 +127,7 @@ describe('AnalyticsService', () => {
       redisMock = createRedisMock(true);
       // Need hget to return '1' for session_pages for bounce detection
       redisMock._clientMock.hget.mockResolvedValue('1');
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', {
         event: 'page_leave',
@@ -155,7 +157,7 @@ describe('AnalyticsService', () => {
 
     it('should return null for invalid dates', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       const result = await service.getStats('invalid', '2026-03-01');
       expect(result).toBeNull();
@@ -168,7 +170,7 @@ describe('AnalyticsService', () => {
       client.hgetall.mockResolvedValue({});
       client.pfcount.mockResolvedValue(10);
       client.smembers.mockResolvedValue([]);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       const result = await service.getStats('2026-03-19', '2026-03-19');
 
@@ -193,7 +195,7 @@ describe('AnalyticsService', () => {
         'sess2:GB',
         'sess1:US', // duplicate session
       ]);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       const result = await service.getRealtime();
 
@@ -211,7 +213,7 @@ describe('AnalyticsService', () => {
     it('should return true on successful PING', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.ping.mockResolvedValue('PONG');
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       expect(await service.isHealthy()).toBe(true);
     });
@@ -219,7 +221,7 @@ describe('AnalyticsService', () => {
     it('should return false when PING fails', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.ping.mockRejectedValue(new Error('fail'));
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       expect(await service.isHealthy()).toBe(false);
     });
@@ -229,7 +231,7 @@ describe('AnalyticsService', () => {
     it('should return Redis ready state', () => {
       expect(service.isEnabled()).toBe(false);
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       expect(service.isEnabled()).toBe(true);
     });
   });
@@ -251,7 +253,7 @@ describe('AnalyticsService', () => {
     it('should return stale when key absent', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.get.mockResolvedValue(null);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       const result = await service.getRollupHealth();
       expect(result).toEqual({ lastSuccessDate: null, stale: true });
     });
@@ -262,7 +264,7 @@ describe('AnalyticsService', () => {
       yesterday.setDate(yesterday.getDate() - 1);
       const day = yesterday.toISOString().slice(0, 10);
       redisMock._clientMock.get.mockResolvedValue(day);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       const result = await service.getRollupHealth();
       expect(result).toEqual({ lastSuccessDate: day, stale: false });
     });
@@ -273,7 +275,7 @@ describe('AnalyticsService', () => {
       old.setDate(old.getDate() - 3);
       const day = old.toISOString().slice(0, 10);
       redisMock._clientMock.get.mockResolvedValue(day);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       const result = await service.getRollupHealth();
       expect(result.lastSuccessDate).toBe(day);
       expect(result.stale).toBe(true);
@@ -521,7 +523,12 @@ describe('AnalyticsService', () => {
 
     it('should return null for empty days array', async () => {
       const prismaMock = createPrismaMock();
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const result = await svc.readDayRangeFromPg([]);
       expect(result).toBeNull();
     });
@@ -642,7 +649,12 @@ describe('AnalyticsService', () => {
         },
       ]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const result = await svc.readDayRangeFromPg([day]);
 
       expect(result).not.toBeNull();
@@ -705,7 +717,12 @@ describe('AnalyticsService', () => {
         { date: d2, dimension: 'country', dimensionValue: 'GB', count: 10 },
       ]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const result = await svc.readDayRangeFromPg([day1, day2]);
 
       expect(result!.totalPageviews).toBe(125);
@@ -721,7 +738,12 @@ describe('AnalyticsService', () => {
       const prismaMock = createPrismaMock();
       prismaMock.analyticsDailySummary.findMany.mockResolvedValue([]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const result = await svc.readDayRangeFromPg(['2026-01-15']);
 
       expect(result!.totalPageviews).toBe(0);
@@ -740,7 +762,7 @@ describe('AnalyticsService', () => {
       client.hgetall.mockResolvedValue({});
       client.pfcount.mockResolvedValue(5);
 
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       const today = new Date().toISOString().slice(0, 10);
       const result = await service.getStats(today, today);
 
@@ -820,7 +842,12 @@ describe('AnalyticsService', () => {
         },
       ]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const today = new Date().toISOString().slice(0, 10);
       const result = await svc.getStats(oldDay, today);
 
@@ -885,7 +912,12 @@ describe('AnalyticsService', () => {
         },
       ]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const today = new Date().toISOString().slice(0, 10);
       const result = await svc.getStats(oldDay, today);
 
@@ -932,7 +964,12 @@ describe('AnalyticsService', () => {
         },
       ]);
 
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       const today = new Date().toISOString().slice(0, 10);
       const result = await svc.getStats(oldDay, today);
 
@@ -956,7 +993,7 @@ describe('AnalyticsService', () => {
   describe('track() pipeline details', () => {
     it('should include expire commands for TTL in page_view pipeline', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
@@ -973,7 +1010,7 @@ describe('AnalyticsService', () => {
 
     it('should include hsetnx for per-day first_visit hash in page_view pipeline', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
@@ -996,7 +1033,7 @@ describe('AnalyticsService', () => {
 
     it('should include source and path composite keys for funnel event', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', {
         event: 'signup_completed',
@@ -1027,7 +1064,7 @@ describe('AnalyticsService', () => {
       redisMock = createRedisMock(true);
       // Return '1' for session_pages HGET → triggers bounce increment
       redisMock._clientMock.hget.mockResolvedValue('1');
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', {
         event: 'page_leave',
@@ -1054,7 +1091,7 @@ describe('AnalyticsService', () => {
     it('should NOT trigger bounce detection when duration >= 30s', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.hget.mockResolvedValue('1');
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', '', {
         event: 'page_leave',
@@ -1080,7 +1117,11 @@ describe('AnalyticsService', () => {
 
     it('should push page_view event to buffer after pipeline', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any, bufferMock as any);
+      service = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        bufferMock as any,
+      );
 
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
@@ -1099,7 +1140,11 @@ describe('AnalyticsService', () => {
 
     it('should push like event to buffer', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any, bufferMock as any);
+      service = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        bufferMock as any,
+      );
 
       await service.track('1.2.3.4', '', { event: 'like', consent: true });
 
@@ -1109,7 +1154,11 @@ describe('AnalyticsService', () => {
 
     it('should push funnel event to buffer with utm fields', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any, bufferMock as any);
+      service = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        bufferMock as any,
+      );
 
       await service.track('1.2.3.4', '', {
         event: 'signup_started',
@@ -1127,7 +1176,11 @@ describe('AnalyticsService', () => {
 
     it('should push page_leave event to buffer with durationSeconds', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any, bufferMock as any);
+      service = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        bufferMock as any,
+      );
 
       await service.track('1.2.3.4', '', {
         event: 'page_leave',
@@ -1146,7 +1199,7 @@ describe('AnalyticsService', () => {
     it('should not push to buffer when bufferService is not injected', async () => {
       redisMock = createRedisMock(true);
       // No bufferService injected (undefined)
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await service.track('1.2.3.4', 'Mozilla/5.0', {
         event: 'page_view',
@@ -1159,7 +1212,11 @@ describe('AnalyticsService', () => {
 
     it('should produce deterministic SHA256 ipHash', async () => {
       redisMock = createRedisMock(true);
-      service = new AnalyticsService(redisMock as any, bufferMock as any);
+      service = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        bufferMock as any,
+      );
 
       await service.track('8.8.8.8', 'Mozilla/5.0', {
         event: 'page_view',
@@ -1189,7 +1246,7 @@ describe('AnalyticsService', () => {
     it('should skip days with empty cohorts', async () => {
       redisMock = createRedisMock(true);
       redisMock._clientMock.smembers.mockResolvedValue([]);
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
 
       await (service as any).computeRetention();
 
@@ -1212,7 +1269,7 @@ describe('AnalyticsService', () => {
         return Promise.resolve({ sess_a: '3' });
       });
 
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await (service as any).computeRetention();
 
       // Should write retention keys
@@ -1245,7 +1302,7 @@ describe('AnalyticsService', () => {
       });
       client.hgetall.mockResolvedValue({});
 
-      service = new AnalyticsService(redisMock as any);
+      service = new AnalyticsService(redisMock as any, geoipMock as any);
       await (service as any).computeRetention();
 
       // Despite first day failing, subsequent days still processed
@@ -1261,7 +1318,7 @@ describe('AnalyticsService', () => {
       try {
         redisMock = createRedisMock(true);
         redisMock._clientMock.smembers.mockResolvedValue([]);
-        service = new AnalyticsService(redisMock as any);
+        service = new AnalyticsService(redisMock as any, geoipMock as any);
         service.onModuleInit();
 
         // Timer should be set (we verify by checking it fires)
@@ -1279,7 +1336,7 @@ describe('AnalyticsService', () => {
       jest.useFakeTimers();
       try {
         redisMock = createRedisMock(true);
-        service = new AnalyticsService(redisMock as any);
+        service = new AnalyticsService(redisMock as any, geoipMock as any);
         service.onModuleInit();
         service.onModuleDestroy();
 
@@ -1297,7 +1354,12 @@ describe('AnalyticsService', () => {
     it('should nullify userId on analytics_events for the given user', async () => {
       const prismaMock = createPrismaMock();
       prismaMock.$executeRaw.mockResolvedValue(5);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       const result = await svc.anonymizeUserAnalytics('user-123');
 
@@ -1306,7 +1368,7 @@ describe('AnalyticsService', () => {
     });
 
     it('should return 0 when PrismaService is not injected', async () => {
-      const svc = new AnalyticsService(redisMock as any);
+      const svc = new AnalyticsService(redisMock as any, geoipMock as any);
       const result = await svc.anonymizeUserAnalytics('user-123');
       expect(result).toBe(0);
     });
@@ -1321,21 +1383,31 @@ describe('AnalyticsService', () => {
     });
 
     it('should skip when Prisma is not injected', async () => {
-      const svc = new AnalyticsService(redisMock as any);
+      const svc = new AnalyticsService(redisMock as any, geoipMock as any);
       await svc.anonymizeExpiredUsers();
       expect(redisMock._clientMock.get).not.toHaveBeenCalled();
     });
 
     it('should skip when Redis is not ready', async () => {
       redisMock = createRedisMock(false);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       await svc.anonymizeExpiredUsers();
       expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('should skip when already ran today (daily guard)', async () => {
       redisMock._clientMock.get.mockResolvedValue('1');
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       await svc.anonymizeExpiredUsers();
       expect(redisMock._clientMock.set).not.toHaveBeenCalled();
       expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
@@ -1344,7 +1416,12 @@ describe('AnalyticsService', () => {
     it('should skip when running lock is held (concurrent guard)', async () => {
       redisMock._clientMock.get.mockResolvedValue(null);
       redisMock._clientMock.set.mockResolvedValue(null); // NX failed
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
       await svc.anonymizeExpiredUsers();
       expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
     });
@@ -1353,7 +1430,12 @@ describe('AnalyticsService', () => {
       redisMock._clientMock.get.mockResolvedValue(null);
       redisMock._clientMock.set.mockResolvedValue('OK');
       prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       await svc.anonymizeExpiredUsers();
 
@@ -1371,7 +1453,12 @@ describe('AnalyticsService', () => {
       redisMock._clientMock.set.mockResolvedValue('OK');
       prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(100) }]);
       prismaMock.$executeRaw.mockResolvedValue(100);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       await svc.anonymizeExpiredUsers();
 
@@ -1387,7 +1474,12 @@ describe('AnalyticsService', () => {
         .mockResolvedValueOnce([{ count: BigInt(300_000) }])
         .mockResolvedValueOnce([{ min_date: new Date('2024-01-01') }]);
       prismaMock.$executeRaw.mockResolvedValue(1000);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       await svc.anonymizeExpiredUsers();
 
@@ -1400,7 +1492,12 @@ describe('AnalyticsService', () => {
       redisMock._clientMock.get.mockResolvedValue(null);
       redisMock._clientMock.set.mockResolvedValue('OK');
       prismaMock.$queryRaw.mockRejectedValue(new Error('DB error'));
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       await svc.anonymizeExpiredUsers();
 
@@ -1415,7 +1512,12 @@ describe('AnalyticsService', () => {
       redisMock._clientMock.set.mockResolvedValue('OK');
       prismaMock.$queryRaw.mockResolvedValue([{ count: BigInt(10) }]);
       prismaMock.$executeRaw.mockResolvedValue(10);
-      const svc = new AnalyticsService(redisMock as any, undefined, prismaMock);
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
 
       await svc.anonymizeExpiredUsers();
 
