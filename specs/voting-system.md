@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-19
+Last verified: 2026-03-27
 ---
 
 # Voting System
@@ -9,6 +9,8 @@ Last verified: 2026-03-19
 > If this spec contradicts the code, the code is correct — update this spec.
 
 <!-- Review when src/reviews/ changes -->
+<!-- Review when src/comments/comments.service.ts changes -->
+<!-- Review when src/complaints/complaints.service.ts changes -->
 
 ## Overview
 
@@ -21,31 +23,49 @@ counters. The canonical implementation is `ReviewsService.vote()`.
 
 - Weighted votes (all votes are equal regardless of user reputation)
 - Vote history or audit log
-- Changing the legacy `/helpful` endpoint behavior (backwards compat)
+- Shared/importable vote utility (delta function is intentionally file-local)
 
 ## Key Patterns
 
-### Transaction-Recount Pattern
+### Transaction-Delta Pattern
 
-The critical invariant: **recount from DB inside the transaction**. Never use
-`{ increment: 1 }` — it drifts under concurrent writes.
+The critical invariant: **compute the counter delta from the vote state
+transition, then apply via `{ increment: delta }` inside
+`prisma.$transaction()`**. Never hardcode `{ increment: 1 }` or
+`{ increment: -1 }` directly.
+
+Each voting service defines a file-local `buildVoteCounterDelta(previousVoteType,
+nextVoteType)` function (not a shared import) that returns `{ helpfulDelta,
+downDelta }`. The math: `(next === 'UP' ? 1 : 0) - (prev === 'UP' ? 1 : 0)`.
 
 The sequence inside `prisma.$transaction()`:
 
 1. Verify entity exists
 2. Find existing vote
 3. Delete/update/create vote as needed (toggle: same vote = remove, different = switch)
-4. **Recount** from DB (e.g., `tx.helpfulVote.count({ where: { reviewId, type: 'UP' } })`)
-5. Update denormalized counter on parent entity with the recount result
+4. Compute delta via `buildVoteCounterDelta(previousVoteType, nextVoteType)`
+5. Update denormalized counter with `{ increment: helpfulDelta }` / `{ increment: downDelta }`
 
-All new vote endpoints (for any entity) must follow this pattern.
+All three services (reviews, comments, complaints) follow this identical pattern.
 
-### Legacy vs Current Endpoints
+### Endpoints
 
-- **`POST /reviews/:id/helpful`** — LEGACY. No transaction, UP-only, uses raw
-  increment. Kept for backwards compatibility. Do not replicate this pattern.
-- **`POST /reviews/:id/vote`** — CURRENT. Full transaction, UP/DOWN toggle,
-  recount pattern.
+- **`POST /reviews/:id/helpful`** — UP-only toggle. Uses the same transaction +
+  delta pattern as `vote()`. Maintained for backwards compatibility.
+- **`POST /reviews/:id/vote`** — Full UP/DOWN toggle with delta pattern.
+- **`POST /comments/:id/vote`** — Full UP/DOWN toggle with delta pattern.
+- **`POST /complaints/:id/vote`** — Full UP/DOWN toggle with delta pattern.
+
+### Post-Vote Side Effects
+
+After the `$transaction` completes (never inside it):
+
+- **Socket:** `ReviewsService.vote()` emits `emitReviewVoteUpdated()`. Comments
+  and complaints do NOT emit socket events after voting.
+- **Notifications:** Reviews and comments create a `NEW_REACTION` notification
+  for the entity author. Complaints do NOT create vote notifications.
+- **Analytics:** All three services call `analyticsService.track('vote_cast', ...)`
+  when an optional `analyticsCtx` parameter is provided.
 
 ### Reaction System (Separate)
 
@@ -59,8 +79,9 @@ See `specs/data-model.md` for the polymorphic model structure.
 ## Verification
 
 ```
+grep -rn 'buildVoteCounterDelta' src/reviews/ src/comments/ src/complaints/
 grep -rn 'vote(' src/reviews/reviews.service.ts
-grep -rn '\$transaction' src/reviews/
-grep -rn 'helpfulCount\|downVoteCount' src/reviews/
-grep -rn 'POST.*helpful\|POST.*vote' src/reviews/reviews.controller.ts
+grep -rn '\$transaction' src/reviews/ src/comments/ src/complaints/
+grep -rn 'helpfulCount\|downVoteCount' src/reviews/ src/comments/ src/complaints/
+grep -rn 'analyticsCtx' src/reviews/ src/comments/ src/complaints/
 ```

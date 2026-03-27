@@ -1,11 +1,19 @@
+---
+Status: Implemented
+Last verified: 2026-03-27
+---
+
 # Testing Strategy
 
-> **Status:** Planned (2026-03-19)
 > **Source of truth:** This spec defines the testing conventions. The test files themselves are the source of truth for what is currently tested.
+
+<!-- Review when test/helpers/ changes -->
+<!-- Review when test/jest-integration.json changes -->
+<!-- Review when test/jest-e2e.json changes -->
 
 ## Overview
 
-Complete test coverage for the Cryptoli NestJS backend via three tiers of tests, each catching a distinct class of bug. Starting baseline: 11.13% statement coverage, 45 tests across 10 spec files.
+Complete test coverage for the Cryptoli NestJS backend via three tiers of tests, each catching a distinct class of bug. (Starting baseline was 11.13% coverage / 45 tests; the suite has grown substantially since.)
 
 | Tier | What it catches | Database | HTTP | Speed |
 |------|----------------|----------|------|-------|
@@ -133,7 +141,7 @@ export default async function globalSetup() {
 
   // Run migrations against the test database
   const databaseUrl = pg.getConnectionUri();
-  execSync('npx prisma migrate deploy', {
+  execSync('npx prisma db push --skip-generate', {
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
 
@@ -473,12 +481,17 @@ test/
     setup-app.ts                     ← E2E app bootstrap replicating main.ts middleware
   integration/
     reviews-voting.spec.ts           ← Tier 2: real DB
-    user-cascades.spec.ts            ← Tier 2: real DB
+    cascade-deletes.spec.ts           ← Tier 2: real DB
     auth-sessions.spec.ts            ← Tier 2: real DB
     complaints-voting.spec.ts        ← Tier 2: real DB
     comments-voting.spec.ts          ← Tier 2: real DB
     follows.spec.ts                  ← Tier 2: real DB
     analytics-tracking.spec.ts       ← Tier 2: real Redis
+    analytics-buffer.spec.ts         ← Tier 2: real PG
+    analytics-gdpr.spec.ts           ← Tier 2: real PG
+    analytics-hybrid-stats.spec.ts   ← Tier 2: real PG + Redis
+    analytics-rollup.spec.ts         ← Tier 2: real PG + Redis
+    geoip-data.spec.ts               ← Tier 2: geoip-lite data
   e2e/
     auth.e2e-spec.ts                 ← Tier 3: full HTTP
     reviews.e2e-spec.ts
@@ -487,6 +500,7 @@ test/
     users.e2e-spec.ts
     admin.e2e-spec.ts
     search-feed-trending.e2e-spec.ts
+    analytics.e2e-spec.ts
   jest-integration.json
   jest-e2e.json
 ```
@@ -692,7 +706,6 @@ describe('Auth (e2e)', () => {
 - CSRF middleware (Origin check on unsafe methods when session cookie present)
 - `ValidationPipe` with same options as production
 - `AllExceptionsFilter`
-- cookie-parser
 - Overrides `PrismaService` to use TestContainers instance
 
 **What e2e tests verify:**
@@ -780,10 +793,10 @@ export async function createTestComplaint(prisma: PrismaClient, authorId: string
 ```json
 "coverageThreshold": {
   "global": {
-    "branches": 80,
-    "functions": 80,
-    "lines": 85,
-    "statements": 85
+    "branches": 60,
+    "functions": 70,
+    "lines": 80,
+    "statements": 78
   }
 }
 ```

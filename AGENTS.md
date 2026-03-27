@@ -4,16 +4,8 @@ NestJS 11 backend for a cryptocurrency/fintech platform. TypeScript, Prisma ORM 
 
 ## Specifications
 
-**IMPORTANT:** Before implementing any feature, consult the specifications
-in [specs/README.md](specs/README.md).
-
-- **Assume NOT implemented.** Many specs describe planned features that may
-  not yet exist in the codebase.
-- **Check the codebase first.** Before concluding something is or isn't
-  implemented, search the actual code. Specs describe intent; code
-  describes reality.
-- **Use specs as guidance.** When implementing a feature, follow the design
-  patterns, types, and architecture defined in the relevant spec.
+Read [specs/README.md](specs/README.md) before implementing features. Specs
+describe intent; code describes reality — check both. Assume NOT implemented.
 
 ## Commands
 
@@ -62,7 +54,7 @@ src/
 ├── auth/                # JWT cookies, session management, guards, rate-limited 5/60s
 ├── admin/               # Admin CRUD, AdminGuard, class-validator DTOs, in-process caching
 ├── analytics/           # Redis-backed analytics, AnalyticsGuard (fail-closed)
-├── reviews/             # Review CRUD, voting with $transaction recount, socket events
+├── reviews/             # Review CRUD, voting with $transaction delta, socket events
 ├── comments/            # One-level threaded comments (self-relation via parentId)
 ├── complaints/          # Complaints, voting, company replies
 ├── companies/           # Company/Product CRUD, follows, slug-based lookup
@@ -70,7 +62,8 @@ src/
 ├── feed/                # Aggregated social feed
 ├── search/              # Full-text search
 ├── trending/            # Time-windowed rankings
-└── notifications/       # DB notifications, socket emit, web push (forwardRef with AuthModule)
+├── notifications/       # DB notifications, socket emit, web push (forwardRef with AuthModule)
+└── monitoring/          # Sentry integration
 prisma/
 └── schema.prisma        # Database schema — PostgreSQL
 ```
@@ -92,8 +85,8 @@ live in `src/common/utils.ts`. Check which pattern the target module uses.
 **Errors** — Use `NotFoundError` from `src/common/errors.ts` for 404s. Use
 NestJS built-in exceptions for others. Never throw `AppError` directly.
 
-**Votes** — Must use `prisma.$transaction` with recount from DB. Never use
-`{ increment: 1 }` — it drifts under concurrency. See `ReviewsService.vote()`.
+**Votes** — Must use file-local `buildVoteCounterDelta()` inside
+`prisma.$transaction`. Never hardcode `{ increment: 1 }`. See `ReviewsService.vote()`.
 
 **Socket emit ordering** — Emit AFTER the DB transaction, never inside it.
 Create notifications AFTER socket emissions. SocketService no-ops when
@@ -111,48 +104,27 @@ UsersService, call `invalidateProfileCache(username)`.
 
 ## Specs Index
 
-> When working on a topic below, read the corresponding spec before changes.
-
 | When you're working on...              | Read                            |
 |----------------------------------------|---------------------------------|
 | Auth, guards, sessions, CSRF           | `specs/auth-system.md`          |
 | Database schema, relations, cascades   | `specs/data-model.md`           |
 | Voting, reactions, helpful marks       | `specs/voting-system.md`        |
 | Socket.IO, real-time events            | `specs/socket-architecture.md`  |
+| Analytics, tracking, consent, rollup   | `specs/analytics-system.md`     |
 | Testing, coverage, isolation           | `specs/testing-strategy.md`     |
-
-Full index with summaries: [specs/README.md](specs/README.md)
 
 ## Testing
 
-**Three-tier test architecture.** Every feature or modification must include
-tests at all applicable tiers. Read `specs/testing-strategy.md` for full
-conventions, patterns, and isolation guarantees.
+**Three tiers.** Read `specs/testing-strategy.md` for conventions and patterns.
 
-| Tier | Location | What it tests | When required |
-|------|----------|--------------|---------------|
-| **Unit** | `src/**/*.spec.ts` (co-located) | Business logic with mocked deps | Every service, guard, pipe, filter, utility |
-| **Integration** | `test/integration/*.spec.ts` | Real DB queries, transactions, constraints | Voting/recount, cascades, session lifecycle, follows |
-| **E2E** | `test/e2e/*.e2e-spec.ts` | Full HTTP stack via supertest | Every new API endpoint or route change |
+| Tier | Location | When required |
+|------|----------|---------------|
+| **Unit** | `src/**/*.spec.ts` | Every service, guard, pipe, filter, utility |
+| **Integration** | `test/integration/*.spec.ts` | Transactions, cascades, sessions, analytics |
+| **E2E** | `test/e2e/*.e2e-spec.ts` | Every new API endpoint or route change |
 
-**When implementing a new feature, you must:**
-1. Write unit tests for the service (mock Prisma, Redis, Socket via `test/helpers/`)
-2. Write integration tests if the feature involves transactions, constraints, or cascades (use real PostgreSQL via TestContainers)
-3. Write or update e2e tests for any new or changed HTTP endpoints
-4. Run `npm run test:all` (unit + integration + e2e) before marking done
-5. Verify `npm run test:cov` passes the coverage thresholds
-
-**Shared test infrastructure** — use the helpers in `test/helpers/`:
-- `prisma.mock.ts` — Prisma mock factory (all 19 models)
-- `redis.mock.ts` — Redis mock with ready/not-ready toggle
-- `socket.mock.ts` — Socket mock with all 7 emit methods
-- `auth.helpers.ts` — session user factory, JWT helpers, mock request/context
-- `factories.ts` — test data factories for integration/e2e (createTestUser, etc.)
-- `setup-app.ts` — e2e app bootstrap replicating main.ts middleware
-
-**Test isolation** — integration and e2e tests use TestContainers (disposable
-PostgreSQL + Redis). Tests must never connect to real services. See
-`specs/testing-strategy.md` → "Isolation Guarantees" for the full safety model.
+Run `npm run test:all` before marking done. Mock factories in `test/helpers/`.
+Integration/e2e use TestContainers — tests never connect to real services.
 
 ## Git
 

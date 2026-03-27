@@ -1,0 +1,57 @@
+{
+  "specs/auth-system.md": {
+    "spec_hash": "a666bb0c53083843dbf5f0af3141f9f1b961544501d2510b2e575b49b5083509",
+    "source_hashes": {
+      "src/auth/auth.service.ts": "67cca26e7eba87b7ecf29eab5c820c729e7152533984945a4c7948b31a22df75",
+      "src/auth/auth.controller.ts": "f732eac216f7c9b8f6bb511127cce0324e081e1031d18f6a086e3c06164b51c2",
+      "src/auth/auth.guard.ts": "76640123e0818925c28bedabf3f030875f594f534821fdefdd1e98a83fd67765",
+      "src/main.ts": "39825854f35381dffb0b032504d204c5e4dcd9611bfef6bbea96326d807f62fc"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  },
+  "specs/data-model.md": {
+    "spec_hash": "2f62a531d2e780a0cf82ee4c5dd4add457bab6cacf9b4bd36d57329b23f77ff4",
+    "source_hashes": {
+      "prisma/schema.prisma": "39d249a15624ae3a182236ceffa1bc857d14d5deb6930bd9624ecfe64566382e"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  },
+  "specs/voting-system.md": {
+    "spec_hash": "14c0b7e0571d64d60ff050d239193ecb8a887c8c584533ce59c9c1b3576fab92",
+    "source_hashes": {
+      "src/reviews/reviews.service.ts": "b87de49d67346ed059490c927c17af4cfcedf227a584fd697eae5f11956506c3",
+      "src/comments/comments.service.ts": "3b318d1de1299ef577b22ab1b03dbe984761ca90ffc3e0f229d4cb0938ac38fa",
+      "src/complaints/complaints.service.ts": "2e68ad17ea37a4a9e32def9ff90ef62acc278f51a75179b725b801da9b49b480"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  },
+  "specs/socket-architecture.md": {
+    "spec_hash": "bf9d042b516e96bfe562bae90dbf4011018c8d83d08baaafe847aae8d768e792",
+    "source_hashes": {
+      "src/socket/socket.service.ts": "122c956b647eee8800d238018e5e8fe95fc900347c6e703f5bdad0441b095be7",
+      "src/main.ts": "39825854f35381dffb0b032504d204c5e4dcd9611bfef6bbea96326d807f62fc"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  },
+  "specs/testing-strategy.md": {
+    "spec_hash": "50e241f3818df2680e5dce9bfba6975ecf97ad7280e937d0d0048ed037a2ecf9",
+    "source_hashes": {
+      "test/helpers/test-db.setup.ts": "e0691167ee61c044774398235c2902b06ad69810f74728c754b4d717baab6883",
+      "test/helpers/test-db.utils.ts": "afbe440066769069f539c0f8248440f05c8b1fd6b579ddb44536d7522b1a5f43",
+      "test/helpers/prisma.mock.ts": "8ff6285e4f8a2858dd22e4420b82b6738f0dc6c00d0ec9960b0b6dee74dc7b25",
+      "test/helpers/redis.mock.ts": "bd66e297fab544e893fe5b4aa06af7e20e39fbe48ec113b26793429b18a2a701",
+      "test/helpers/socket.mock.ts": "67e8997fabb0c7482c6e988fe05f725dd56a4a1e15c3e7a4f39bf54a1eccb372",
+      "test/helpers/setup-app.ts": "121ce49693b0b21c67e3a3cad9994ab74c01eddb4fd752296131ba57cef62fc0",
+      "test/jest-integration.json": "56974f9c5547f710a6d767b7661ecc85885a60abfa77767fd47bd4939e0158ee",
+      "test/jest-e2e.json": "832ad3b02c6e8c406ddd9d56a46f35d6cd1d8882eb5ab55ed3bcea62a0167ccc"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  },
+  "specs/analytics-system.md": {
+    "spec_hash": "d3439ce01e54456343dad51c93c22ceca38ce03698ecc77be3fcefe8c18e9413",
+    "source_hashes": {
+      "src/analytics/analytics.service.ts": "e12d60325c9b13007c0553915be837a58aff074f656b06eeabd6b458aa7d09b6"
+    },
+    "verified_at": "2026-03-27T00:00:00Z"
+  }
+}
