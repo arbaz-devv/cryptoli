@@ -4,21 +4,33 @@ import { ReviewsService } from './reviews.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocketService } from '../socket/socket.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { NotFoundError } from '../common/errors';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createSocketMock } from '../../test/helpers/socket.mock';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 describe('ReviewsService', () => {
   let service: ReviewsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let socketService: ReturnType<typeof createSocketMock>;
   let notificationsMock: { createForUser: jest.Mock };
+  let analyticsMock: { track: jest.Mock };
+
+  const mockCtx: AnalyticsContext = {
+    ip: '1.2.3.4',
+    userAgent: 'Mozilla/5.0 TestBrowser',
+    country: 'US',
+  };
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     socketService = createSocketMock();
     notificationsMock = {
       createForUser: jest.fn().mockResolvedValue(undefined),
+    };
+    analyticsMock = {
+      track: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -27,6 +39,7 @@ describe('ReviewsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: SocketService, useValue: socketService },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: AnalyticsService, useValue: analyticsMock },
       ],
     }).compile();
 
@@ -444,6 +457,131 @@ describe('ReviewsService', () => {
       );
 
       expect((result.reviews[0] as any).userVote).toBeNull();
+    });
+  });
+
+  describe('server-side analytics tracking', () => {
+    it('should track review_created after create()', async () => {
+      const review = {
+        id: 'r1',
+        title: 'Great Exchange',
+        content: 'Detailed review content.',
+        status: 'APPROVED',
+        overallScore: 7.5,
+        author: { id: 'u1', username: 'user1' },
+      };
+      prisma.review.create.mockResolvedValue(review);
+
+      await service.create(
+        {
+          title: 'Great Exchange',
+          content:
+            'This is a detailed review with enough content for validation.',
+          overallScore: 7.5,
+          criteriaScores: { security: 8, easeOfUse: 7 },
+          companyId: 'comp1',
+        },
+        'u1',
+        mockCtx,
+      );
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'Mozilla/5.0 TestBrowser',
+        expect.objectContaining({
+          event: 'review_created',
+          consent: true,
+          userId: 'u1',
+          properties: { reviewId: 'r1', companyId: 'comp1' },
+        }),
+        'US',
+      );
+    });
+
+    it('should track vote_cast after vote()', async () => {
+      const txMock = {
+        review: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            title: 'Test',
+            authorId: 'author1',
+          }),
+          update: jest.fn().mockResolvedValue({
+            helpfulCount: 1,
+            downVoteCount: 0,
+          }),
+        },
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ username: 'voter' }),
+        },
+        helpfulVote: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn(),
+        },
+      };
+
+      prisma.$transaction.mockImplementation(async (fn: any) => fn(txMock));
+
+      await service.vote('r1', 'UP', 'u1', mockCtx);
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'Mozilla/5.0 TestBrowser',
+        expect.objectContaining({
+          event: 'vote_cast',
+          consent: true,
+          userId: 'u1',
+          properties: { reviewId: 'r1', voteType: 'UP' },
+        }),
+        'US',
+      );
+    });
+
+    it('should track vote_cast after helpful()', async () => {
+      prisma.$transaction.mockResolvedValue({
+        helpful: true,
+        helpfulCount: 1,
+        downVoteCount: 0,
+      });
+
+      await service.helpful('review-1', 'user-1', mockCtx);
+
+      expect(analyticsMock.track).toHaveBeenCalledWith(
+        '1.2.3.4',
+        'Mozilla/5.0 TestBrowser',
+        expect.objectContaining({
+          event: 'vote_cast',
+          consent: true,
+          userId: 'user-1',
+          properties: { reviewId: 'review-1', helpful: true },
+        }),
+        'US',
+      );
+    });
+
+    it('should not track when analyticsCtx is not provided', async () => {
+      const review = {
+        id: 'r1',
+        title: 'Great Exchange',
+        content: 'Detailed review content.',
+        status: 'APPROVED',
+        overallScore: 7.5,
+        author: { id: 'u1', username: 'user1' },
+      };
+      prisma.review.create.mockResolvedValue(review);
+
+      await service.create(
+        {
+          title: 'Great Exchange',
+          content:
+            'This is a detailed review with enough content for validation.',
+          overallScore: 7.5,
+          criteriaScores: { security: 8, easeOfUse: 7 },
+        },
+        'u1',
+      );
+
+      expect(analyticsMock.track).not.toHaveBeenCalled();
     });
   });
 });

@@ -7,6 +7,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
@@ -14,9 +15,12 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
 import { SessionUser } from '../auth/auth.service';
 import { ComplaintsService } from './complaints.service';
+import { AnalyticsInterceptor } from '../analytics/analytics.interceptor';
+import { getAnalyticsCtx } from '../analytics/analytics-context';
 
 const COMPLAINTS_LIST_LIMIT_MAX = 50;
 
+@UseInterceptors(AnalyticsInterceptor)
 @Controller('api/complaints')
 export class ComplaintsController {
   constructor(private readonly complaintsService: ComplaintsService) {}
@@ -52,7 +56,11 @@ export class ComplaintsController {
   @Post()
   @UseGuards(AuthGuard)
   create(@Body() body: unknown, @Req() req: Request & { user: SessionUser }) {
-    return this.complaintsService.create(body, req.user.id);
+    return this.complaintsService.create(
+      body,
+      req.user.id,
+      getAnalyticsCtx(req),
+    );
   }
 
   @Get(':id')
@@ -71,7 +79,12 @@ export class ComplaintsController {
     @Body() body: { voteType: string },
     @Req() req: Request & { user: SessionUser },
   ) {
-    return this.complaintsService.vote(id, body.voteType, req.user.id);
+    return this.complaintsService.vote(
+      id,
+      body.voteType,
+      req.user.id,
+      getAnalyticsCtx(req),
+    );
   }
 
   @Post(':id/reply')

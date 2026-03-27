@@ -122,7 +122,13 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Admin-Key',
+      'X-Analytics-Key',
+    ],
+    exposedHeaders: ['Content-Disposition'],
   });
 
   const allowedOrigins =

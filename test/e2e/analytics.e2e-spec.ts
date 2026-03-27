@@ -59,6 +59,60 @@ describe('Analytics E2E', () => {
         expect(res.body).toEqual({ ok: true });
       }
     });
+
+    it('should not write Redis keys when consent is undefined (GDPR opt-in)', async () => {
+      const redis = getTestRedis();
+      const today = new Date().toISOString().slice(0, 10);
+
+      await request(server)
+        .post('/api/analytics/track')
+        .set('Origin', 'http://localhost:3000')
+        .send({ event: 'page_view', path: '/test-no-consent' });
+
+      // Allow any fire-and-forget writes to settle
+      await new Promise((r) => setTimeout(r, 200));
+
+      const pageviews = await redis.get(`analytics:pageviews:${today}`);
+      expect(pageviews).toBeNull();
+    });
+
+    it('should not write Redis keys when consent is false', async () => {
+      const redis = getTestRedis();
+      const today = new Date().toISOString().slice(0, 10);
+
+      await request(server)
+        .post('/api/analytics/track')
+        .set('Origin', 'http://localhost:3000')
+        .send({
+          event: 'page_view',
+          path: '/test-false-consent',
+          consent: false,
+        });
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      const pageviews = await redis.get(`analytics:pageviews:${today}`);
+      expect(pageviews).toBeNull();
+    });
+
+    it('should write Redis keys when consent is true', async () => {
+      const redis = getTestRedis();
+      const today = new Date().toISOString().slice(0, 10);
+
+      await request(server)
+        .post('/api/analytics/track')
+        .set('Origin', 'http://localhost:3000')
+        .send({
+          event: 'page_view',
+          path: '/test-with-consent',
+          consent: true,
+        });
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      const pageviews = await redis.get(`analytics:pageviews:${today}`);
+      expect(Number(pageviews)).toBeGreaterThanOrEqual(1);
+    });
   });
 
   describe('GET /api/analytics/health', () => {
@@ -73,6 +127,9 @@ describe('Analytics E2E', () => {
       expect(typeof res.body.enabled).toBe('boolean');
       expect(typeof res.body.configured).toBe('boolean');
       expect(typeof res.body.connected).toBe('boolean');
+      expect(res.body).toHaveProperty('rollup');
+      expect(res.body.rollup).toHaveProperty('lastSuccessDate');
+      expect(typeof res.body.rollup.stale).toBe('boolean');
     });
   });
 

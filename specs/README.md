@@ -13,7 +13,7 @@ NestJS 11 backend for a cryptocurrency/fintech review platform.
 | Spec | Code | Purpose |
 |------|------|---------|
 | [data-model.md](./data-model.md) | [prisma/](../prisma/) | Schema relationships, cascade rules, polymorphic models |
-| [voting-system.md](./voting-system.md) | [src/reviews/](../src/reviews/) | Transaction-recount pattern, vote and reaction systems |
+| [voting-system.md](./voting-system.md) | [src/reviews/](../src/reviews/), [src/comments/](../src/comments/), [src/complaints/](../src/complaints/) | Transaction-delta pattern, vote and reaction systems |
 
 ## Real-Time & Infrastructure
 
@@ -21,14 +21,15 @@ NestJS 11 backend for a cryptocurrency/fintech review platform.
 |------|------|---------|
 | [socket-architecture.md](./socket-architecture.md) | [src/socket/](../src/socket/) | Socket.IO rooms, event catalog, globalThis pattern |
 
+## Analytics & Observability
+
+| Spec | Code | Purpose |
+|------|------|---------|
+| [analytics-system.md](./analytics-system.md) | [src/analytics/](../src/analytics/) | Consent model, Redis pipeline, PG buffer/rollup, hybrid stats, integration pattern |
+
 ## Testing
 
 | Spec | Code | Purpose |
 |------|------|---------|
 | [testing-strategy.md](./testing-strategy.md) | [src/**/*.spec.ts](../src/), [test/](../test/) | Test conventions, mocking patterns, coverage targets, priority tiers |
 
-## Agent Protocol
-
-| Spec | Code | Purpose |
-|------|------|---------|
-| [scrip-protocol.md](./scrip-protocol.md) | — | DONE/STUCK/LEARNING markers for autonomous agent loops |

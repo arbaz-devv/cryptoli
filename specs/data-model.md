@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-19
+Last verified: 2026-03-27
 ---
 
 # Data Model
@@ -52,9 +52,10 @@ relation fields don't exist.
 ### Denormalized Counters
 
 Several models have denormalized count fields updated via
-`prisma.$transaction()` with a recount pattern. The canonical implementation
-is `ReviewsService.vote()`. Recount from DB inside the transaction — never
-use `{ increment: 1 }`.
+`prisma.$transaction()` with a transactional delta pattern. The canonical
+implementation is `ReviewsService.vote()`. Each voting service defines a
+file-local `buildVoteCounterDelta()` to compute deltas, applied via
+`{ increment: delta }`. Never hardcode `{ increment: 1 }` directly.
 
 Run `grep -rn 'helpfulCount\|downVoteCount\|reportCount' src/` to find all
 denormalized fields and their update sites.
@@ -72,7 +73,41 @@ The `criteriaScores` field on Review is `Json` type. Scoring weights are in
 - **Reaction** — LIKE/DISLIKE/LOVE/HELPFUL enum, polymorphic, no denormalized
   counters (counts computed at query time via `_count`)
 
-See `specs/voting-system.md` for the full transaction-recount pattern.
+See `specs/voting-system.md` for the full transaction-delta pattern.
+
+### Analytics Models
+
+**AnalyticsEvent** — append-only event log, no FK to User (intentional for
+write throughput). Uses `@@map("analytics_events")` with `@map` on columns.
+Fields include eventType, sessionId, userId (nullable), ipHash, country,
+device, browser, os, path, referrer, UTM fields, durationSeconds, properties (Json).
+
+**AnalyticsDailySummary** — EAV design: `(date, dimension, dimensionValue, count)`.
+Unique constraint on `[date, dimension, dimensionValue]`. Uses
+`@@map("analytics_daily_summaries")`. Populated by the rollup service.
+
+These are the only models using `@@map` table/column mapping.
+
+### Additional Models
+
+- **UserModeration** — 1:1 with User (optional). `AdminUserStatus` enum
+  (ACTIVE/SUSPENDED). Cascades from User.
+- **ComplaintReply** — company-authored replies to complaints. Cascades from
+  both Complaint and Company.
+- **PushSubscription** — web push endpoints (endpoint, p256dh, auth).
+  Cascades from User.
+- **CompanyFollow** — `@@unique([userId, companyId])`. Cascades from User
+  and Company.
+
+### Session & User Extensions
+
+**Session** has request-context fields: `ip`, `ipHash`, `userAgent`, `device`,
+`browser`, `os`, `country`, `timezone`, `trigger` — persisted at login.
+
+**User** has `registrationIp` and `registrationCountry` — set at registration.
+
+**Notification.actor** relation has NO `onDelete` cascade (unlike the `user`
+relation which cascades). Deleting an actor preserves notification history.
 
 ### Schema Change Workflow
 

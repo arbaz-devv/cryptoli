@@ -2,9 +2,12 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 const PROFILE_CACHE_PREFIX = 'profile:v2:';
 const PROFILE_CACHE_TTL_SEC = 90;
@@ -14,6 +17,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
   async getPublicProfile(viewerId: string | null, username: string) {
@@ -120,7 +124,11 @@ export class UsersService {
     }
   }
 
-  async followUser(followerId: string, targetUsername: string) {
+  async followUser(
+    followerId: string,
+    targetUsername: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const target = await this.prisma.user.findUnique({
       where: { username: targetUsername },
       select: { id: true },
@@ -144,10 +152,30 @@ export class UsersService {
     }
     await this.invalidateProfileCache(targetUsername);
 
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'user_follow',
+          consent: true,
+          userId: followerId,
+          properties: {
+            targetUserId: target.id,
+            targetUsername,
+          },
+        },
+      );
+    }
+
     return { following: true };
   }
 
-  async unfollowUser(followerId: string, targetUsername: string) {
+  async unfollowUser(
+    followerId: string,
+    targetUsername: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const target = await this.prisma.user.findUnique({
       where: { username: targetUsername },
       select: { id: true },
@@ -166,6 +194,22 @@ export class UsersService {
       },
     });
     await this.invalidateProfileCache(targetUsername);
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'user_unfollow',
+          consent: true,
+          userId: followerId,
+          properties: {
+            targetUserId: target.id,
+            targetUsername,
+          },
+        },
+      );
+    }
 
     return { following: false };
   }

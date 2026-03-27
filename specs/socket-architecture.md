@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-19
+Last verified: 2026-03-27
 ---
 
 # Socket Architecture
@@ -42,13 +42,22 @@ On connection, every socket auto-joins:
 - `'user:{id}'` — per-user private room (only if session cookie validates)
 
 Connection auth reads `session` cookie from `socket.handshake.headers.cookie`,
-then calls `authService.getSessionFromToken()`.
+extracts the token via `authService.getSessionTokenFromRequest()`, then
+validates via `authService.getSessionFromToken(token)`.
 
 ### Event Catalog
 
 All events are server-to-client only. No client-to-server events are defined.
 
-Run `grep -rn 'emit(' src/socket/` to see the current event catalog.
+| Event | Room | Emitted by |
+|-------|------|------------|
+| `review:created` | `reviews` | ReviewsService.create() |
+| `review:updated` | `reviews` | (defined but not called in production) |
+| `review:vote:updated` | `reviews` | ReviewsService.vote(), helpful() |
+| `review:comment:count` | `reviews` | CommentsService.create(), update(), remove() |
+| `notification:created` | `user:{id}` | NotificationsService.create() |
+| `notification:read` | `user:{id}` | NotificationsService.markAsRead() |
+| `notification:all-read` | `user:{id}` | NotificationsService.markAllAsRead() |
 
 ### Emit Ordering
 

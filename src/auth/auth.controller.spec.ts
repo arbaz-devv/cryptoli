@@ -8,14 +8,27 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: Record<string, jest.Mock>;
   let notificationsService: Record<string, jest.Mock>;
+  let analyticsService: Record<string, jest.Mock>;
   let mockRes: any;
+  let mockReq: any;
 
   beforeEach(() => {
+    mockReq = {
+      headers: { 'user-agent': 'TestBrowser/1.0' },
+      cookies: {},
+      socket: { remoteAddress: '203.0.113.50' },
+      analyticsCtx: {
+        ip: '203.0.113.50',
+        userAgent: 'TestBrowser/1.0',
+        country: 'US',
+      },
+    };
     authService = {
       getSessionTokenFromRequest: jest.fn(),
       getSessionFromToken: jest.fn(),
@@ -36,9 +49,13 @@ describe('AuthController', () => {
     notificationsService = {
       createForUser: jest.fn().mockResolvedValue(undefined),
     };
+    analyticsService = {
+      track: jest.fn().mockResolvedValue(undefined),
+    };
     controller = new AuthController(
       authService as unknown as AuthService,
       notificationsService as unknown as NotificationsService,
+      analyticsService as unknown as AnalyticsService,
     );
     mockRes = {
       cookie: jest.fn(),
@@ -68,6 +85,7 @@ describe('AuthController', () => {
           username: 'testuser',
           password: 'password123',
         },
+        mockReq,
         mockRes,
       );
 
@@ -94,6 +112,7 @@ describe('AuthController', () => {
             username: 'newuser',
             password: 'password123',
           },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(ConflictException);
@@ -113,6 +132,7 @@ describe('AuthController', () => {
             username: 'testuser',
             password: 'password123',
           },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(ConflictException);
@@ -122,6 +142,7 @@ describe('AuthController', () => {
       await expect(
         controller.register(
           { email: 'test@test.com', username: 'testuser', password: 'short' },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -135,6 +156,7 @@ describe('AuthController', () => {
             username: 'testuser',
             password: 'password123',
           },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(BadRequestException);
@@ -144,9 +166,83 @@ describe('AuthController', () => {
       await expect(
         controller.register(
           { email: 'test@test.com', username: 'ab', password: 'password123' },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should pass SessionMetadata to createSession with trigger=register', async () => {
+      authService.findUserByEmailOrUsername.mockResolvedValue(null);
+      authService.hashPassword.mockResolvedValue('hashed');
+      authService.createUser.mockResolvedValue({
+        id: 'u1',
+        email: 'test@test.com',
+        username: 'testuser',
+        role: 'USER',
+        avatar: null,
+        verified: false,
+        reputation: 0,
+      });
+      authService.createSession.mockResolvedValue('jwt-token');
+
+      await controller.register(
+        {
+          email: 'test@test.com',
+          username: 'testuser',
+          password: 'password123',
+        },
+        mockReq,
+        mockRes,
+      );
+
+      expect(authService.createSession).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({
+          ip: '203.0.113.50',
+          userAgent: 'TestBrowser/1.0',
+          trigger: 'register',
+        }),
+      );
+    });
+
+    it('should pass registrationIp and registrationCountry to createUser', async () => {
+      const reqWithCountry = {
+        ...mockReq,
+        headers: {
+          ...mockReq.headers,
+          'cf-ipcountry': 'US',
+        },
+      };
+      authService.findUserByEmailOrUsername.mockResolvedValue(null);
+      authService.hashPassword.mockResolvedValue('hashed');
+      authService.createUser.mockResolvedValue({
+        id: 'u1',
+        email: 'test@test.com',
+        username: 'testuser',
+        role: 'USER',
+        avatar: null,
+        verified: false,
+        reputation: 0,
+      });
+      authService.createSession.mockResolvedValue('jwt-token');
+
+      await controller.register(
+        {
+          email: 'test@test.com',
+          username: 'testuser',
+          password: 'password123',
+        },
+        reqWithCountry,
+        mockRes,
+      );
+
+      expect(authService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          registrationIp: '203.0.113.50',
+          registrationCountry: 'US',
+        }),
+      );
     });
 
     it('should have rate limiting metadata (5/60s)', () => {
@@ -174,6 +270,7 @@ describe('AuthController', () => {
 
       const result = await controller.login(
         { email: 'test@test.com', password: 'password123' },
+        mockReq,
         mockRes,
       );
 
@@ -196,6 +293,7 @@ describe('AuthController', () => {
       await expect(
         controller.login(
           { email: 'test@test.com', password: 'wrong' },
+          mockReq,
           mockRes,
         ),
       ).rejects.toThrow(UnauthorizedException);
@@ -206,10 +304,41 @@ describe('AuthController', () => {
 
       const err = controller.login(
         { email: 'noone@test.com', password: 'password123' },
+        mockReq,
         mockRes,
       );
 
       await expect(err).rejects.toThrow('Invalid email or password');
+    });
+
+    it('should pass SessionMetadata to createSession with trigger=login', async () => {
+      authService.findUserByEmail.mockResolvedValue({
+        id: 'u1',
+        email: 'test@test.com',
+        username: 'testuser',
+        role: 'USER',
+        avatar: null,
+        verified: false,
+        reputation: 0,
+        passwordHash: 'hashed',
+      });
+      authService.comparePassword.mockResolvedValue(true);
+      authService.createSession.mockResolvedValue('jwt-token');
+
+      await controller.login(
+        { email: 'test@test.com', password: 'password123' },
+        mockReq,
+        mockRes,
+      );
+
+      expect(authService.createSession).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({
+          ip: '203.0.113.50',
+          userAgent: 'TestBrowser/1.0',
+          trigger: 'login',
+        }),
+      );
     });
 
     it('should have rate limiting metadata (5/60s)', () => {
@@ -415,6 +544,158 @@ describe('AuthController', () => {
       );
       expect(guards).toBeDefined();
       expect(guards).toContainEqual(AuthGuard);
+    });
+  });
+
+  describe('auth event tracking', () => {
+    it('should track user_register after successful registration', async () => {
+      authService.findUserByEmailOrUsername.mockResolvedValue(null);
+      authService.hashPassword.mockResolvedValue('hashed');
+      authService.createUser.mockResolvedValue({
+        id: 'u1',
+        email: 'test@test.com',
+        username: 'testuser',
+        role: 'USER',
+        avatar: null,
+        verified: false,
+        reputation: 0,
+      });
+      authService.createSession.mockResolvedValue('jwt-token');
+
+      await controller.register(
+        {
+          email: 'test@test.com',
+          username: 'testuser',
+          password: 'password123',
+        },
+        mockReq,
+        mockRes,
+      );
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '203.0.113.50',
+        'TestBrowser/1.0',
+        expect.objectContaining({
+          event: 'user_register',
+          consent: true,
+          userId: 'u1',
+          properties: { username: 'testuser' },
+        }),
+        'US',
+      );
+    });
+
+    it('should track user_login after successful login', async () => {
+      authService.findUserByEmail.mockResolvedValue({
+        id: 'u1',
+        email: 'test@test.com',
+        username: 'testuser',
+        role: 'USER',
+        avatar: null,
+        verified: false,
+        reputation: 0,
+        passwordHash: 'hashed',
+      });
+      authService.comparePassword.mockResolvedValue(true);
+      authService.createSession.mockResolvedValue('jwt-token');
+
+      await controller.login(
+        { email: 'test@test.com', password: 'password123' },
+        mockReq,
+        mockRes,
+      );
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '203.0.113.50',
+        'TestBrowser/1.0',
+        expect.objectContaining({
+          event: 'user_login',
+          consent: true,
+          userId: 'u1',
+          properties: { username: 'testuser' },
+        }),
+        'US',
+      );
+    });
+
+    it('should track user_logout after successful logout', async () => {
+      authService.getSessionTokenFromRequest.mockReturnValue('jwt-token');
+      authService.deleteSession.mockResolvedValue(undefined);
+
+      await controller.logout(mockReq, mockRes);
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '203.0.113.50',
+        'TestBrowser/1.0',
+        expect.objectContaining({
+          event: 'user_logout',
+          consent: true,
+        }),
+        'US',
+      );
+    });
+
+    it('should track password_change after successful password change', async () => {
+      authService.getUserById.mockResolvedValue({
+        id: 'u1',
+        passwordHash: 'old-hash',
+      });
+      authService.comparePassword.mockResolvedValue(true);
+      authService.hashPassword.mockResolvedValue('new-hash');
+      authService.updatePassword.mockResolvedValue(undefined);
+      authService.createSession.mockResolvedValue('new-token');
+      authService.deleteOtherSessions.mockResolvedValue(2);
+
+      const req = {
+        ...mockReq,
+        user: { id: 'u1', username: 'testuser' },
+      };
+
+      await controller.changePassword(
+        { currentPassword: 'oldpass123', newPassword: 'newpass123' },
+        req,
+        mockRes,
+      );
+
+      expect(analyticsService.track).toHaveBeenCalledWith(
+        '203.0.113.50',
+        'TestBrowser/1.0',
+        expect.objectContaining({
+          event: 'password_change',
+          consent: true,
+          userId: 'u1',
+        }),
+        'US',
+      );
+    });
+
+    it('should not track when analyticsService is not injected', async () => {
+      const controllerWithout = new AuthController(
+        authService as unknown as AuthService,
+        notificationsService as unknown as NotificationsService,
+      );
+
+      authService.getSessionTokenFromRequest.mockReturnValue('jwt-token');
+      authService.deleteSession.mockResolvedValue(undefined);
+
+      await controllerWithout.logout(mockReq, mockRes);
+
+      expect(analyticsService.track).not.toHaveBeenCalled();
+    });
+
+    it('should not track when analyticsCtx is absent on request', async () => {
+      const reqWithoutCtx = {
+        headers: { 'user-agent': 'TestBrowser/1.0' },
+        cookies: {},
+        socket: { remoteAddress: '203.0.113.50' },
+      };
+
+      authService.getSessionTokenFromRequest.mockReturnValue('jwt-token');
+      authService.deleteSession.mockResolvedValue(undefined);
+
+      await controller.logout(reqWithoutCtx as any, mockRes);
+
+      expect(analyticsService.track).not.toHaveBeenCalled();
     });
   });
 });

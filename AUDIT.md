@@ -158,6 +158,127 @@ These will cause **outages, data loss, or complete system failure** at scale.
 
 ---
 
+## Database Partitioning Strategy (analytics_events)
+
+> **When:** After `analytics_events` exceeds ~50M rows (~4 months at current
+> volume, ~1 month at 10M users). Not needed at launch.
+
+### Why Partition
+
+The `analytics_events` table is append-only with time-range queries
+(`WHERE created_at BETWEEN ...`). At 200M rows/month (10M user scale),
+unpartitioned queries become unacceptably slow. Monthly range partitioning
+on `created_at` enables PostgreSQL to scan only the relevant month's
+partition, reducing I/O by 10-100x.
+
+### Prisma Limitation
+
+Prisma 6.x has **zero native partitioning support**. There is no
+`@@partition`, no `PARTITION BY` syntax in the schema language. All
+partitioning must be done via raw SQL migrations.
+
+### Implementation Steps
+
+1. **Create a blank migration:**
+   ```bash
+   npx prisma migrate dev --create-only --name partition_analytics_events
+   ```
+
+2. **Write raw SQL** in the generated `.sql` file:
+   ```sql
+   -- Rename existing table
+   ALTER TABLE "analytics_events" RENAME TO "analytics_events_old";
+
+   -- Create partitioned parent table (identical schema)
+   CREATE TABLE "analytics_events" (
+     "id" TEXT NOT NULL,
+     "event_type" TEXT NOT NULL,
+     "session_id" VARCHAR(128),
+     "user_id" TEXT,
+     "ip_hash" CHAR(64),
+     "country" CHAR(2),
+     "device" VARCHAR(16),
+     "browser" VARCHAR(64),
+     "os" VARCHAR(64),
+     "timezone" VARCHAR(64),
+     "path" VARCHAR(512),
+     "referrer" VARCHAR(128),
+     "utm_source" VARCHAR(80),
+     "utm_medium" VARCHAR(80),
+     "utm_campaign" VARCHAR(80),
+     "duration_seconds" INTEGER,
+     "properties" JSONB DEFAULT '{}',
+     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "analytics_events_pkey" PRIMARY KEY ("id", "created_at")
+   ) PARTITION BY RANGE ("created_at");
+
+   -- Create initial monthly partitions
+   CREATE TABLE analytics_events_2026_03 PARTITION OF "analytics_events"
+     FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
+   CREATE TABLE analytics_events_2026_04 PARTITION OF "analytics_events"
+     FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
+   -- ... create partitions for the next 3 months
+
+   -- Migrate existing data
+   INSERT INTO "analytics_events" SELECT * FROM "analytics_events_old";
+   DROP TABLE "analytics_events_old";
+
+   -- Recreate indexes on parent (automatically applies to all partitions)
+   CREATE INDEX "analytics_events_user_id_idx" ON "analytics_events" ("user_id");
+   CREATE INDEX "analytics_events_event_type_created_at_idx"
+     ON "analytics_events" ("event_type", "created_at");
+   CREATE INDEX "analytics_events_created_at_idx"
+     ON "analytics_events" ("created_at");
+   ```
+
+3. **Apply:** `npx prisma migrate dev`
+
+### Critical: Partition Key in Primary Key
+
+PostgreSQL requires the partition key (`created_at`) to be part of the
+primary key. This means the PK changes from `(id)` to `(id, created_at)`.
+Prisma's schema would need `@@id([id, createdAt])`. Since `AnalyticsEvent`
+has no foreign keys referencing it (by design), this change does not cascade.
+
+### Critical: New Partitions Must Be Pre-Created
+
+**If a monthly partition does not exist when an INSERT targets that date
+range, PostgreSQL rejects the insert with an error.** Data is silently
+lost. Options for ongoing partition management:
+
+| Approach | Complexity | Reliability |
+|----------|-----------|-------------|
+| **`pg_partman` extension** | Low (install once) | High — auto-creates partitions ahead of time |
+| **Scheduled SQL job** (via `pg_cron` or external cron) | Medium | Medium — depends on cron reliability |
+| **Manual migration per month** | Low code, high ops | Low — human error risk |
+
+**Recommendation:** Use `pg_partman` if your PostgreSQL provider supports
+extensions. Otherwise, a monthly cron job that runs:
+```sql
+SELECT partman.create_parent('public.analytics_events', 'created_at', 'native', 'monthly');
+```
+
+### BRIN Index Optimization
+
+At >100M rows, replace the B-tree index on `created_at` with a BRIN
+(Block Range Index):
+```sql
+DROP INDEX "analytics_events_created_at_idx";
+CREATE INDEX "analytics_events_created_at_brin" ON "analytics_events"
+  USING BRIN ("created_at") WITH (pages_per_range = 128);
+```
+BRIN indexes are ~128 bytes vs ~2 GB for a B-tree at 100M rows. They work
+well on append-only tables where `created_at` values are naturally ordered.
+
+### Prisma Compatibility
+
+Prisma reads and writes transparently through the parent table name
+(`analytics_events`). It is unaware of partitions. All queries, including
+`createMany()` from the BufferService, work without code changes. The
+partitioning is purely a PostgreSQL-level optimization invisible to the ORM.
+
+---
+
 ## Bottom Line
 
 The codebase is **well-organized and thoughtfully designed for a single-instance MVP**. The core business logic (voting, auth, notifications) is sound. But the path to 10M users requires:

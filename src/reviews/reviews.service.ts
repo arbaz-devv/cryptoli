@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocketService } from '../socket/socket.service';
 import { NotFoundError } from '../common/errors';
 import { createReviewSchema, calculateOverallScore } from '../common/utils';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 function buildVoteCounterDelta(
   previousVoteType: 'UP' | 'DOWN' | null,
@@ -23,6 +25,7 @@ export class ReviewsService {
     private readonly prisma: PrismaService,
     private readonly socketService: SocketService,
     private readonly notificationsService: NotificationsService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
   async list(
@@ -104,7 +107,11 @@ export class ReviewsService {
     };
   }
 
-  async create(body: unknown, authorId: string) {
+  async create(
+    body: unknown,
+    authorId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const validated = createReviewSchema.parse(body);
     const overallScore =
       validated.overallScore ?? calculateOverallScore(validated.criteriaScores);
@@ -157,6 +164,21 @@ export class ReviewsService {
     });
 
     this.socketService.emitReviewCreated(review);
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'review_created',
+          consent: true,
+          userId: authorId,
+          properties: { reviewId: review.id, companyId: validated.companyId },
+        },
+        analyticsCtx.country,
+      );
+    }
+
     return review;
   }
 
@@ -205,7 +227,12 @@ export class ReviewsService {
     return review;
   }
 
-  async vote(reviewId: string, voteType: string, userId: string) {
+  async vote(
+    reviewId: string,
+    voteType: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     if (!voteType || (voteType !== 'UP' && voteType !== 'DOWN')) {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
@@ -302,10 +329,28 @@ export class ReviewsService {
       });
     }
 
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId,
+          properties: { reviewId, voteType: result.voteType },
+        },
+        analyticsCtx.country,
+      );
+    }
+
     return result;
   }
 
-  async helpful(reviewId: string, userId: string) {
+  async helpful(
+    reviewId: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const review = await tx.review.findUnique({
         where: { id: reviewId },
@@ -366,6 +411,20 @@ export class ReviewsService {
       result.helpfulCount,
       result.downVoteCount,
     );
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId,
+          properties: { reviewId, helpful: result.helpful },
+        },
+        analyticsCtx.country,
+      );
+    }
 
     return { helpful: result.helpful };
   }

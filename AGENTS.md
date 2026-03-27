@@ -59,10 +59,11 @@ src/
 ├── prisma/              # PrismaModule (global) — PrismaService singleton
 ├── redis/               # RedisModule (global) — graceful no-op when REDIS_URL absent
 ├── socket/              # SocketModule (global) — manual Socket.IO on globalThis.__socketIO
+├── geoip/               # GeoipModule (global) — @maxmind/geoip2-node, no-op when .mmdb absent
 ├── auth/                # JWT cookies, session management, guards, rate-limited 5/60s
 ├── admin/               # Admin CRUD, AdminGuard, class-validator DTOs, in-process caching
 ├── analytics/           # Redis-backed analytics, AnalyticsGuard (fail-closed)
-├── reviews/             # Review CRUD, voting with $transaction recount, socket events
+├── reviews/             # Review CRUD, voting with $transaction delta, socket events
 ├── comments/            # One-level threaded comments (self-relation via parentId)
 ├── complaints/          # Complaints, voting, company replies
 ├── companies/           # Company/Product CRUD, follows, slug-based lookup
@@ -70,7 +71,8 @@ src/
 ├── feed/                # Aggregated social feed
 ├── search/              # Full-text search
 ├── trending/            # Time-windowed rankings
-└── notifications/       # DB notifications, socket emit, web push (forwardRef with AuthModule)
+├── notifications/       # DB notifications, socket emit, web push (forwardRef with AuthModule)
+└── monitoring/          # Sentry integration
 prisma/
 └── schema.prisma        # Database schema — PostgreSQL
 ```
@@ -79,8 +81,8 @@ Entry: `src/main.ts` | Schema: `prisma/schema.prisma` | Config: `src/config/env.
 
 ## Conventions
 
-**Global modules** — ConfigModule, PrismaModule, RedisModule, SocketModule are
-available everywhere. Never import them in feature modules. If your module
+**Global modules** — ConfigModule, PrismaModule, RedisModule, SocketModule,
+GeoipModule are available everywhere. Never import them in feature modules. If your module
 needs AuthGuard/OptionalAuthGuard, import AuthModule. If it needs
 NotificationsService, import NotificationsModule.
 
@@ -92,8 +94,8 @@ live in `src/common/utils.ts`. Check which pattern the target module uses.
 **Errors** — Use `NotFoundError` from `src/common/errors.ts` for 404s. Use
 NestJS built-in exceptions for others. Never throw `AppError` directly.
 
-**Votes** — Must use `prisma.$transaction` with recount from DB. Never use
-`{ increment: 1 }` — it drifts under concurrency. See `ReviewsService.vote()`.
+**Votes** — Must use file-local `buildVoteCounterDelta()` inside
+`prisma.$transaction`. Never hardcode `{ increment: 1 }`. See `ReviewsService.vote()`.
 
 **Socket emit ordering** — Emit AFTER the DB transaction, never inside it.
 Create notifications AFTER socket emissions. SocketService no-ops when
@@ -119,7 +121,7 @@ UsersService, call `invalidateProfileCache(username)`.
 | Database schema, relations, cascades   | `specs/data-model.md`           |
 | Voting, reactions, helpful marks       | `specs/voting-system.md`        |
 | Socket.IO, real-time events            | `specs/socket-architecture.md`  |
-| Scrip orchestration                    | `specs/scrip-protocol.md`       |
+| Analytics, tracking, consent, rollup   | `specs/analytics-system.md`     |
 | Testing, coverage, isolation           | `specs/testing-strategy.md`     |
 
 Full index with summaries: [specs/README.md](specs/README.md)
@@ -165,4 +167,5 @@ Format: `type(scope): description` — e.g., `feat(reviews): add pagination`,
 Copy `.env.example` to `.env`. Required: `DATABASE_URL`, `JWT_SECRET` (32+
 chars in prod), `CORS_ORIGIN`. Optional: `REDIS_URL` (Redis features no-op
 when absent), `ADMIN_API_KEY`, `ANALYTICS_API_KEY`, `ADMIN_EMAIL`,
-`ADMIN_PASSWORD_HASH`, `TRUST_PROXY`, `PORT`.
+`ADMIN_PASSWORD_HASH`, `TRUST_PROXY`, `PORT`, `MAXMIND_ACCOUNT_ID`,
+`MAXMIND_LICENSE_KEY` (GeoIP database updates — lookups no-op when absent).

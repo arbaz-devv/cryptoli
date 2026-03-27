@@ -8,14 +8,16 @@ export interface EdgeCachePolicy {
 
 const AUTH_COOKIE_HINTS = ['session', 'auth', 'token', 'jwt'];
 
-function mergeVaryValues(currentValue: string | string[] | number | undefined): string {
+function mergeVaryValues(
+  currentValue: string | string[] | number | undefined,
+): string {
   const values = new Set<string>();
 
   const normalized = Array.isArray(currentValue)
     ? currentValue.join(',')
     : typeof currentValue === 'number'
       ? String(currentValue)
-      : currentValue ?? '';
+      : (currentValue ?? '');
 
   for (const value of normalized.split(',')) {
     const trimmed = value.trim();
@@ -43,7 +45,7 @@ function formatPublicCacheControl(policy: EdgeCachePolicy): string {
   return parts.join(', ');
 }
 
-function requestHasAuthContext(req: Request & { user?: unknown | null }): boolean {
+function requestHasAuthContext(req: Request & { user?: unknown }): boolean {
   if (req.user) return true;
 
   const authorization = req.headers.authorization;
@@ -64,13 +66,16 @@ function setSharedCacheHeaders(response: Response): void {
   response.setHeader('Vary', mergeVaryValues(response.getHeader('Vary')));
 }
 
-export function applyPublicEdgeCache(response: Response, policy: EdgeCachePolicy): void {
+export function applyPublicEdgeCache(
+  response: Response,
+  policy: EdgeCachePolicy,
+): void {
   setSharedCacheHeaders(response);
   response.setHeader('Cache-Control', formatPublicCacheControl(policy));
 }
 
 export function applyAnonymousEdgeCache(
-  req: Request & { user?: unknown | null },
+  req: Request & { user?: unknown },
   response: Response,
   policy: EdgeCachePolicy,
 ): void {

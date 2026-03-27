@@ -1,11 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 
 @Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
+  ) {}
 
-  async search(query: string, type: string, limit: number) {
+  async search(
+    query: string,
+    type: string,
+    limit: number,
+    analyticsCtx?: AnalyticsContext,
+    userId?: string,
+  ) {
     if (!query) {
       return { results: {} };
     }
@@ -77,6 +88,24 @@ export class SearchService {
           verified: true,
         },
       });
+    }
+
+    if (analyticsCtx && this.analyticsService) {
+      const resultCount = Object.values(results).reduce<number>(
+        (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
+        0,
+      );
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'search_performed',
+          consent: true,
+          userId,
+          properties: { query, type, resultCount },
+        },
+        analyticsCtx.country,
+      );
     }
 
     return { results };

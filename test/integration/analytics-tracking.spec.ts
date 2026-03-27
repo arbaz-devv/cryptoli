@@ -6,6 +6,7 @@ import {
 } from '../helpers/test-db.utils';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { RedisService } from '../../src/redis/redis.service';
+import { createGeoipMock } from '../helpers/geoip.mock';
 
 /**
  * Integration tests for AnalyticsService against a real Redis container.
@@ -37,7 +38,10 @@ describe('Analytics Tracking (Integration)', () => {
       check();
     });
 
-    analyticsService = new AnalyticsService(redisService);
+    analyticsService = new AnalyticsService(
+      redisService,
+      createGeoipMock() as any,
+    );
   });
 
   beforeEach(async () => {
@@ -68,6 +72,7 @@ describe('Analytics Tracking (Integration)', () => {
         path: '/reviews',
         sessionId: 'test-session-abc',
         referrer: 'https://google.com/search?q=crypto',
+        consent: true,
       },
     );
 
@@ -78,8 +83,8 @@ describe('Analytics Tracking (Integration)', () => {
     expect(Number(pageviews)).toBeGreaterThanOrEqual(1);
 
     const country = await redis.hgetall(`analytics:country:${today}`);
-    // 127.0.0.1 is private → resolves to 'unknown'
-    expect(country).toHaveProperty('unknown');
+    // 127.0.0.1 is private → resolves to 'XX' (ISO 3166 user-assigned)
+    expect(country).toHaveProperty('XX');
 
     const device = await redis.hgetall(`analytics:device:${today}`);
     expect(device).toHaveProperty('desktop');
@@ -101,6 +106,7 @@ describe('Analytics Tracking (Integration)', () => {
         event: 'page_view',
         path: '/home',
         sessionId: `session-${i}`,
+        consent: true,
       });
     }
 
@@ -126,27 +132,32 @@ describe('Analytics Tracking (Integration)', () => {
       event: 'page_view',
       path: '/dashboard',
       sessionId: 'realtime-session-1',
+      consent: true,
     });
 
     await analyticsService.track('127.0.0.1', 'Mozilla/5.0 Firefox/115', {
       event: 'page_view',
       path: '/settings',
       sessionId: 'realtime-session-2',
+      consent: true,
     });
 
     await waitForWrites();
 
     const realtime = await analyticsService.getRealtime();
     expect(realtime.activeNow).toBe(2);
-    // Both sessions are from private IPs → country 'unknown'
-    expect(realtime.byCountry).toHaveProperty('unknown');
+    // Both sessions are from private IPs → country 'XX'
+    expect(realtime.byCountry).toHaveProperty('XX');
   });
 
   it('should gracefully no-op when Redis is not ready', async () => {
     // Create an AnalyticsService with a disconnected RedisService
     const disconnectedRedis = new RedisService();
     // Don't call onModuleInit → isReady() returns false
-    const isolatedService = new AnalyticsService(disconnectedRedis);
+    const isolatedService = new AnalyticsService(
+      disconnectedRedis,
+      createGeoipMock() as any,
+    );
 
     // track() should silently return without throwing
     await expect(
@@ -170,7 +181,10 @@ describe('Analytics Tracking (Integration)', () => {
   });
 
   it('should track like events in Redis', async () => {
-    await analyticsService.track('127.0.0.1', 'Chrome', { event: 'like' });
+    await analyticsService.track('127.0.0.1', 'Chrome', {
+      event: 'like',
+      consent: true,
+    });
 
     await waitForWrites();
 

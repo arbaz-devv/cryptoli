@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createCommentSchema } from '../common/utils';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SocketService } from '../socket/socket.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import type { AnalyticsContext } from '../analytics/analytics-context';
 import { RedisService } from '../redis/redis.service';
 
 function buildVoteCounterDelta(
@@ -61,7 +63,8 @@ function decodeCursor(cursor?: string): CursorTokenPayload | null {
 function buildCommentCountCacheKey(target: CommentTarget): string | null {
   if (target.reviewId) return `comments:count:review:${target.reviewId}`;
   if (target.postId) return `comments:count:post:${target.postId}`;
-  if (target.complaintId) return `comments:count:complaint:${target.complaintId}`;
+  if (target.complaintId)
+    return `comments:count:complaint:${target.complaintId}`;
   return null;
 }
 
@@ -72,12 +75,15 @@ export class CommentsService {
     private readonly notificationsService: NotificationsService,
     private readonly socketService: SocketService,
     private readonly redisService: RedisService,
+    @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
   private buildTargetWhere(target: CommentTarget): Record<string, string> {
-    const provided = [target.reviewId, target.postId, target.complaintId].filter(
-      (value): value is string => Boolean(value),
-    );
+    const provided = [
+      target.reviewId,
+      target.postId,
+      target.complaintId,
+    ].filter((value): value is string => Boolean(value));
     if (provided.length > 1) {
       throw new BadRequestException(
         'Provide exactly one of reviewId, postId, complaintId',
@@ -104,7 +110,9 @@ export class CommentsService {
     };
   }
 
-  private async getCachedTopLevelCommentCount(target: CommentTarget): Promise<number> {
+  private async getCachedTopLevelCommentCount(
+    target: CommentTarget,
+  ): Promise<number> {
     const where = {
       ...this.buildTargetWhere(target),
       parentId: null,
@@ -205,7 +213,9 @@ export class CommentsService {
     const pageItems = hasMore ? comments.slice(0, limit) : comments;
     const lastItem = pageItems.at(-1);
     const nextCursor =
-      hasMore && lastItem ? encodeCursor(lastItem.createdAt, lastItem.id) : null;
+      hasMore && lastItem
+        ? encodeCursor(lastItem.createdAt, lastItem.id)
+        : null;
 
     let commentsWithVotes = pageItems;
     if (options.user && pageItems.length > 0) {
@@ -246,7 +256,11 @@ export class CommentsService {
     };
   }
 
-  async create(body: unknown, authorId: string) {
+  async create(
+    body: unknown,
+    authorId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     const validated = createCommentSchema.parse(body);
     const targets = [
       validated.reviewId,
@@ -362,6 +376,25 @@ export class CommentsService {
       );
     }
 
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'comment_created',
+          consent: true,
+          userId: authorId,
+          properties: {
+            commentId: comment.id,
+            reviewId: validated.reviewId,
+            postId: validated.postId,
+            complaintId: validated.complaintId,
+          },
+        },
+        analyticsCtx.country,
+      );
+    }
+
     return comment;
   }
 
@@ -393,12 +426,7 @@ export class CommentsService {
     user?: { id: string } | null,
   ) {
     if (id === 'list') {
-      return this.list(
-        reviewId,
-        postId,
-        complaintId,
-        user,
-      );
+      return this.list(reviewId, postId, complaintId, user);
     }
 
     const where: Record<string, unknown> = { parentId: null };
@@ -432,7 +460,10 @@ export class CommentsService {
     let commentsWithVotes = comments;
     if (user && comments.length > 0) {
       const userVotes = await this.prisma.commentVote.findMany({
-        where: { userId: user.id, commentId: { in: comments.map((c) => c.id) } },
+        where: {
+          userId: user.id,
+          commentId: { in: comments.map((c) => c.id) },
+        },
         select: { commentId: true, voteType: true },
       });
       const voteMap = new Map(userVotes.map((v) => [v.commentId, v.voteType]));
@@ -451,10 +482,40 @@ export class CommentsService {
       }));
     }
 
-    return commentsWithVotes[0] ?? null;
+    const comment = commentsWithVotes[0] ?? null;
+    if (!comment) return null;
+
+    const replies = await this.prisma.comment.findMany({
+      where: { parentId: comment.id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            username: true,
+            avatar: true,
+            verified: true,
+          },
+        },
+        _count: {
+          select: {
+            reactions: true,
+            votes: true,
+            replies: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return { ...comment, replies };
   }
 
-  async vote(commentId: string, voteType: string, userId: string) {
+  async vote(
+    commentId: string,
+    voteType: string,
+    userId: string,
+    analyticsCtx?: AnalyticsContext,
+  ) {
     if (!voteType || (voteType !== 'UP' && voteType !== 'DOWN')) {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
@@ -553,6 +614,20 @@ export class CommentsService {
           ? `/?review=${commentWithReview.reviewId}`
           : '/',
       });
+    }
+
+    if (analyticsCtx && this.analyticsService) {
+      void this.analyticsService.track(
+        analyticsCtx.ip,
+        analyticsCtx.userAgent,
+        {
+          event: 'vote_cast',
+          consent: true,
+          userId,
+          properties: { commentId, voteType: result.voteType },
+        },
+        analyticsCtx.country,
+      );
     }
 
     return {
