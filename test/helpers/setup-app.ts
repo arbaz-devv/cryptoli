@@ -96,7 +96,9 @@ export async function setupTestApp(): Promise<{
       'Authorization',
       'X-Admin-Key',
       'X-CSRF-Token',
+      'X-Analytics-Key',
     ],
+    exposedHeaders: ['Content-Disposition'],
   });
 
   // CSRF middleware — same logic as main.ts
