@@ -341,14 +341,14 @@ describe('AnalyticsRollupService', () => {
   });
 
   describe('checkAndRollup()', () => {
-    it('should check 7 days on first run (startup backfill)', async () => {
+    it('should check 32 days on first run (startup backfill)', async () => {
       const rollupSpy = jest
         .spyOn(service, 'rollupDay')
         .mockResolvedValue(false);
 
       await (service as any).checkAndRollup();
 
-      expect(rollupSpy).toHaveBeenCalledTimes(7);
+      expect(rollupSpy).toHaveBeenCalledTimes(32);
     });
 
     it('should check only 2 days on subsequent runs', async () => {
@@ -383,8 +383,8 @@ describe('AnalyticsRollupService', () => {
 
       await (service as any).checkAndRollup();
 
-      // Should have attempted all 7 days despite first failure
-      expect(rollupSpy).toHaveBeenCalledTimes(7);
+      // Should have attempted all 32 days despite first failure
+      expect(rollupSpy).toHaveBeenCalledTimes(32);
     });
   });
 

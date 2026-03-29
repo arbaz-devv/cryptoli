@@ -11,7 +11,7 @@ const KEY_PREFIX = 'analytics';
 const ROLLUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const INITIAL_DELAY_MS = 10_000; // 10s delay before first check
 const NX_LOCK_TTL = 172_800; // 48 hours in seconds
-const BACKFILL_DAYS = 7;
+const BACKFILL_DAYS = 32;
 
 export interface DaySnapshot {
   pageviews: number;
@@ -259,7 +259,7 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Hourly check: roll up yesterday + day-before-yesterday.
-   * On first run (startup), backfills up to 7 days.
+   * On first run (startup), backfills up to 32 days.
    */
   private async checkAndRollup(): Promise<void> {
     const daysToCheck = this.isFirstRun ? BACKFILL_DAYS : 2;

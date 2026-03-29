@@ -590,7 +590,7 @@ export class AnalyticsRollupService implements OnModuleInit, OnModuleDestroy {
 
 **Rollup flow:**
 1. Hourly `checkAndRollup()` checks yesterday, day-before-yesterday, and
-   up to 7 days back on initial startup (covers multi-day outages)
+   up to 32 days back on initial startup (covers full Redis TTL window)
 2. `rollupDay(day)` — idempotent with correct operation ordering:
    - PostgreSQL check: `findFirst({ where: { date, dimension: '_total_' } })` — skip if exists
    - `readDayFromRedis(day)` — extracted from `getStats()` per-day read loop

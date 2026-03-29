@@ -67,7 +67,7 @@ log warning. Uses `SET LOCAL synchronous_commit = off` for write performance.
 ### Rollup (AnalyticsRollupService)
 
 Hourly timer converts Redis day-snapshots to `AnalyticsDailySummary` EAV rows.
-7-day backfill on first startup, 2-day on subsequent runs.
+32-day backfill on first startup, 2-day on subsequent runs.
 
 Idempotency: Redis NX lock (fast-path) → PG existence check (primary guard) →
 write → set Redis NX lock AFTER PG write. P2002 (unique constraint violation)
