@@ -165,6 +165,7 @@ export class UsersService {
             targetUsername,
           },
         },
+        analyticsCtx.country,
       );
     }
 
@@ -208,6 +209,7 @@ export class UsersService {
             targetUsername,
           },
         },
+        analyticsCtx.country,
       );
     }
 
