@@ -106,10 +106,14 @@ confirmed present with correct type strings, guards, and ordering.
 | `search_performed` | SearchService | `{ query, type, resultCount }` |
 
 **Bug found:** `user_follow` and `user_unfollow` in `users.service.ts:156,199` omit the `country`
-argument when calling `track()`, unlike all other 12 emission sites.
+argument when calling `track()`, unlike all other 12 emission sites. Fix: add `analyticsCtx.country`
+as the 4th argument to both calls (matching the pattern in reviews/comments/complaints/search).
 
 **Storage waste:** ~13M rows/month, ~6-7 GB/month (~76 GB/year) in PG with 3 indexes. The
 `(eventType, createdAt)` composite index is sufficient for all proposed query patterns.
+
+**Resolved by:** Phase B items B1–B3 build read endpoints and admin dashboard components to
+surface this data. The table is not waste once it has consumers — do NOT delete the write path.
 
 ---
 
