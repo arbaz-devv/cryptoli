@@ -7,6 +7,7 @@ import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createSocketMock } from '../../test/helpers/socket.mock';
 import type { AnalyticsContext } from '../analytics/analytics-context';
 import { createRedisMock } from '../../test/helpers/redis.mock';
+import { ObservabilityService } from '../observability/observability.service';
 
 describe('CommentsService', () => {
   let service: CommentsService;
@@ -15,6 +16,7 @@ describe('CommentsService', () => {
   let redisMock: ReturnType<typeof createRedisMock>;
   let notificationsMock: { createForUser: jest.Mock };
   let analyticsMock: { track: jest.Mock };
+  let observability: { recordCacheHit: jest.Mock; recordCacheMiss: jest.Mock };
 
   const mockCtx: AnalyticsContext = {
     ip: '1.2.3.4',
@@ -32,11 +34,16 @@ describe('CommentsService', () => {
     analyticsMock = {
       track: jest.fn().mockResolvedValue(undefined),
     };
+    observability = {
+      recordCacheHit: jest.fn(),
+      recordCacheMiss: jest.fn(),
+    };
     service = new CommentsService(
       prisma as unknown as PrismaService,
       notificationsMock as any,
       socketMock as any,
       redisMock as unknown as RedisService,
+      observability as unknown as ObservabilityService,
       analyticsMock as any,
     );
   });
@@ -606,6 +613,7 @@ describe('CommentsService', () => {
         notificationsMock as any,
         socketMock as any,
         redisMock as unknown as RedisService,
+        observability as unknown as ObservabilityService,
       );
       prisma.comment.create.mockResolvedValue({
         id: 'cm1',

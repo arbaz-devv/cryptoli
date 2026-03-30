@@ -3,18 +3,25 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createRedisMock } from '../../test/helpers/redis.mock';
+import { ObservabilityService } from '../observability/observability.service';
 
 describe('TrendingService', () => {
   let service: TrendingService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let redisService: ReturnType<typeof createRedisMock>;
+  let observability: { recordCacheHit: jest.Mock; recordCacheMiss: jest.Mock };
 
   beforeEach(() => {
     prisma = createPrismaMock();
     redisService = createRedisMock(false);
+    observability = {
+      recordCacheHit: jest.fn(),
+      recordCacheMiss: jest.fn(),
+    };
     service = new TrendingService(
       prisma as unknown as PrismaService,
       redisService as unknown as RedisService,
+      observability as unknown as ObservabilityService,
     );
   });
 

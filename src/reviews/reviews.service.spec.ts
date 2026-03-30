@@ -177,6 +177,49 @@ describe('ReviewsService', () => {
     });
   });
 
+  describe('list()', () => {
+    it('should return paginated reviews with userVote from the main list query', async () => {
+      prisma.review.findMany.mockResolvedValue([
+        { id: 'r1', title: 'One', helpfulVotes: [{ voteType: 'UP' }] },
+        { id: 'r2', title: 'Two', helpfulVotes: [] },
+      ]);
+      prisma.review.count.mockResolvedValue(2);
+
+      const result = await service.list(
+        1,
+        10,
+        undefined,
+        undefined,
+        undefined,
+        'APPROVED',
+        { id: 'u1' },
+      );
+
+      expect(result.reviews).toHaveLength(2);
+      expect((result.reviews[0] as any).userVote).toBe('UP');
+      expect((result.reviews[1] as any).userVote).toBeNull();
+      expect(prisma.helpfulVote.findMany).not.toHaveBeenCalled();
+      expect(result.pagination.total).toBe(2);
+    });
+
+    it('should return null userVote when viewer is anonymous', async () => {
+      prisma.review.findMany.mockResolvedValue([{ id: 'r1', title: 'One' }]);
+      prisma.review.count.mockResolvedValue(1);
+
+      const result = await service.list(
+        1,
+        10,
+        undefined,
+        undefined,
+        undefined,
+        'APPROVED',
+        null,
+      );
+
+      expect((result.reviews[0] as any).userVote).toBeNull();
+    });
+  });
+
   describe('vote()', () => {
     it('should create a new UP vote and recount', async () => {
       const txMock = {
@@ -418,13 +461,10 @@ describe('ReviewsService', () => {
   describe('list()', () => {
     it('should return paginated reviews with userVote enrichment', async () => {
       prisma.review.findMany.mockResolvedValue([
-        { id: 'r1', title: 'Review 1' },
-        { id: 'r2', title: 'Review 2' },
+        { id: 'r1', title: 'Review 1', helpfulVotes: [{ voteType: 'UP' }] },
+        { id: 'r2', title: 'Review 2', helpfulVotes: [] },
       ]);
       prisma.review.count.mockResolvedValue(2);
-      prisma.helpfulVote.findMany.mockResolvedValue([
-        { reviewId: 'r1', voteType: 'UP' },
-      ]);
 
       const result = await service.list(
         1,
@@ -439,6 +479,7 @@ describe('ReviewsService', () => {
       expect(result.reviews).toHaveLength(2);
       expect((result.reviews[0] as any).userVote).toBe('UP');
       expect((result.reviews[1] as any).userVote).toBeNull();
+      expect(prisma.helpfulVote.findMany).not.toHaveBeenCalled();
       expect(result.pagination.total).toBe(2);
     });
 

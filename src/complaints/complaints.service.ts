@@ -51,30 +51,41 @@ export class ComplaintsService {
       }
     }
 
+    const complaintSelect = {
+      id: true,
+      title: true,
+      content: true,
+      status: true,
+      helpfulCount: true,
+      downVoteCount: true,
+      createdAt: true,
+      author: {
+        select: {
+          username: true,
+          avatar: true,
+          verified: true,
+        },
+      },
+      _count: {
+        select: {
+          comments: true,
+        },
+      },
+      ...(user
+        ? {
+            votes: {
+              where: { userId: user.id },
+              select: { voteType: true },
+              take: 1,
+            },
+          }
+        : {}),
+    };
+
     const [complaints, total] = await Promise.all([
       this.prisma.complaint.findMany({
         where,
-        select: {
-          id: true,
-          title: true,
-          content: true,
-          status: true,
-          helpfulCount: true,
-          downVoteCount: true,
-          createdAt: true,
-          author: {
-            select: {
-              username: true,
-              avatar: true,
-              verified: true,
-            },
-          },
-          _count: {
-            select: {
-              comments: true,
-            },
-          },
-        },
+        select: complaintSelect,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -82,26 +93,21 @@ export class ComplaintsService {
       this.prisma.complaint.count({ where }),
     ]);
 
-    let complaintsWithVotes = complaints;
-    if (user && complaints.length > 0) {
-      const complaintIds = complaints.map((c) => c.id);
-      const userVotes = await this.prisma.complaintVote.findMany({
-        where: { userId: user.id, complaintId: { in: complaintIds } },
-        select: { complaintId: true, voteType: true },
-      });
-      const voteMap = new Map(
-        userVotes.map((v) => [v.complaintId, v.voteType]),
-      );
-      complaintsWithVotes = complaints.map((c) => ({
-        ...c,
-        userVote: voteMap.get(c.id) ?? null,
-      }));
-    } else {
-      complaintsWithVotes = complaints.map((c) => ({
-        ...c,
-        userVote: null,
-      }));
-    }
+    const complaintsWithVotes = complaints.map((complaint) => {
+      const viewerVote =
+        user && 'votes' in complaint && Array.isArray(complaint.votes)
+          ? complaint.votes[0]?.voteType ?? null
+          : null;
+      const { votes, ...complaintWithoutVotes } =
+        complaint as typeof complaint & {
+          votes?: Array<{ voteType: 'UP' | 'DOWN' }>;
+        };
+      void votes;
+      return {
+        ...complaintWithoutVotes,
+        userVote: viewerVote,
+      };
+    });
 
     return {
       complaints: complaintsWithVotes,

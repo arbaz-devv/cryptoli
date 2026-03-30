@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { ObservabilityService } from '../observability/observability.service';
 
 const TRENDING_CACHE_PREFIX = 'trending:v1:';
 const TRENDING_CACHE_TTL_SEC = 120;
@@ -10,6 +11,7 @@ export class TrendingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly observability: ObservabilityService,
   ) {}
 
   async getTrending(period: string, limit: number) {
@@ -21,6 +23,7 @@ export class TrendingService {
       try {
         const cached = await redis.get(cacheKey);
         if (cached) {
+          this.observability.recordCacheHit('trending.public');
           return JSON.parse(cached) as {
             trendingNow: Array<{
               id: string;
@@ -40,6 +43,7 @@ export class TrendingService {
             }>;
           };
         }
+        this.observability.recordCacheMiss('trending.public');
       } catch {
         // ignore cache read errors
       }

@@ -8,6 +8,7 @@ import { SocketService } from '../socket/socket.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import type { AnalyticsContext } from '../analytics/analytics-context';
 import { RedisService } from '../redis/redis.service';
+import { ObservabilityService } from '../observability/observability.service';
 
 function buildVoteCounterDelta(
   previousVoteType: 'UP' | 'DOWN' | null,
@@ -76,6 +77,7 @@ export class CommentsService {
     private readonly notificationsService: NotificationsService,
     private readonly socketService: SocketService,
     private readonly redisService: RedisService,
+    private readonly observability: ObservabilityService,
     @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
@@ -127,8 +129,10 @@ export class CommentsService {
       try {
         const raw = await redis.get(cacheKey);
         if (raw && /^\d+$/.test(raw)) {
+          this.observability.recordCacheHit('comments.count');
           return Number(raw);
         }
+        this.observability.recordCacheMiss('comments.count');
       } catch {
         // ignore cache read errors
       }
