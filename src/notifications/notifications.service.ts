@@ -53,11 +53,15 @@ export class NotificationsService {
     });
 
     this.pushService
-      .sendToUser(input.userId, {
-        title: input.title,
-        body: input.message,
-        url: input.link,
-      })
+      .sendToUser(
+        input.userId,
+        {
+          title: input.title,
+          body: input.message,
+          url: input.link,
+        },
+        notification.id,
+      )
       .catch(() => {});
 
     return notification;
