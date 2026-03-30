@@ -258,6 +258,14 @@ describe('AnalyticsController', () => {
   });
 
   describe('health()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.health,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
     it('should return health details with rollup status', async () => {
       const result = await controller.health();
       expect(result.enabled).toBe(true);

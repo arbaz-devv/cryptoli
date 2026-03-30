@@ -116,8 +116,24 @@ describe('Analytics E2E', () => {
   });
 
   describe('GET /api/analytics/health', () => {
-    it('should return 200 with all required status fields', async () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/health');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/health')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with all required status fields when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/health')
+        .set('X-Analytics-Key', 'test-analytics-key');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('enabled');

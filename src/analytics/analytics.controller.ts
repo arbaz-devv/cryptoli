@@ -70,6 +70,7 @@ export class AnalyticsController {
     return { ok: true, data };
   }
 
+  @UseGuards(AnalyticsGuard)
   @Get('health')
   async health(): Promise<{
     enabled: boolean;
