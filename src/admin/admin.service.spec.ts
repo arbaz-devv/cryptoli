@@ -47,6 +47,7 @@ describe('AdminService', () => {
           avatar: null,
           role: 'USER',
           createdAt: new Date('2026-01-15'),
+          updatedAt: new Date('2026-03-20'),
           moderation: null,
           _count: { reviews: 3 },
         },
@@ -59,6 +60,7 @@ describe('AdminService', () => {
       expect((result.users[0] as any).name).toBe('Alice');
       expect((result.users[0] as any).role).toBe('user');
       expect((result.users[0] as any).reviewCount).toBe(3);
+      expect((result.users[0] as any).lastActive).toBe('2026-03-20');
       expect(result.pagination.total).toBe(1);
     });
 

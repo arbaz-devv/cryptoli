@@ -301,6 +301,7 @@ export class AdminService {
           avatar: true,
           role: true,
           createdAt: true,
+          updatedAt: true,
           moderation: {
             select: {
               status: true,
@@ -320,7 +321,7 @@ export class AdminService {
       status: this.mapUserStatus(u.moderation?.status),
       joinedAt: u.createdAt.toISOString().slice(0, 10),
       reviewCount: u._count.reviews,
-      lastActive: '-',
+      lastActive: u.updatedAt.toISOString().slice(0, 10),
     }));
     const result = {
       users: list,
