@@ -233,6 +233,7 @@ describe('AdminService', () => {
           createdAt: yesterday,
           ip: '10.0.0.1',
           ipHash: 'oldhash',
+          userAgent: 'Mozilla/5.0 Firefox/120.0',
           device: 'mobile',
           browser: 'Firefox',
           os: 'Android',
@@ -244,6 +245,7 @@ describe('AdminService', () => {
           createdAt: now,
           ip: '192.168.1.1',
           ipHash: 'newhash',
+          userAgent: 'Mozilla/5.0 Chrome/120.0',
           device: 'desktop',
           browser: 'Chrome',
           os: 'Windows',
@@ -264,6 +266,7 @@ describe('AdminService', () => {
       expect(result.user.os).toBe('Windows');
       expect(result.user.country).toBe('US');
       expect(result.user.timezone).toBe('America/New_York');
+      expect(result.user.userAgent).toBe('Mozilla/5.0 Chrome/120.0');
       expect(result.user.loginCount).toBe(2);
       // registrationIp falls back to earliest session when user field is null
       expect(result.user.registrationIp).toBe('10.0.0.1');
