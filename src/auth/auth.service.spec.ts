@@ -162,6 +162,28 @@ describe('AuthService — session token hashing', () => {
     expect(createCall.data.trigger).toBeUndefined();
   });
 
+  it('createSession should fall back to GeoIP country when meta.country is absent', async () => {
+    prisma.session.create.mockResolvedValue({});
+    const geoipMock = createGeoipMock();
+    geoipMock.lookup.mockReturnValue({ country: 'DE' } as any);
+    const config = { jwtSecret: 'test-secret-key-for-jwt' } as ConfigService;
+    const svcWithGeo = new AuthService(
+      prisma as unknown as PrismaService,
+      config,
+      geoipMock as any,
+    );
+
+    await svcWithGeo.createSession('user-1', {
+      ip: '203.0.113.50',
+      userAgent: 'Mozilla/5.0',
+      trigger: 'login',
+      // country intentionally omitted — should fall back to GeoIP
+    });
+
+    const createCall = prisma.session.create.mock.calls[0][0];
+    expect(createCall.data.country).toBe('DE');
+  });
+
   it('createSession should handle null ip gracefully in metadata', async () => {
     prisma.session.create.mockResolvedValue({});
 

@@ -260,7 +260,7 @@ export class AuthService {
       data.device = device;
       data.browser = browser;
       data.os = os;
-      data.country = meta.country || null;
+      data.country = meta.country || geoResult?.country || null;
       data.timezone = timezone;
       data.trigger = meta.trigger;
     }
