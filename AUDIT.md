@@ -279,6 +279,32 @@ partitioning is purely a PostgreSQL-level optimization invisible to the ORM.
 
 ---
 
+## Deferred Items (from Analytics Phase 2 audit, 2026-03-30)
+
+### Account Deletion + Analytics Anonymization
+
+`anonymizeUserAnalytics(userId)` at `analytics.service.ts:1469` exists as a preparatory hook but
+is never called — no account deletion endpoint exists in the codebase. When user deletion is
+implemented, this method must be wired in. It currently only nullifies `user_id` on
+`analytics_events` rows; consider whether `session_id` should also be nullified.
+
+### Session Table Cleanup Cron
+
+Sessions have `expiresAt` (7 days) but expired rows are **never deleted** — only rejected at
+validation time (`auth.service.ts:297`). A periodic cleanup job should delete expired sessions.
+This should be part of a global retention cron alongside any other table cleanup.
+
+### Admin Auth Consolidation
+
+The admin dashboard currently requires two separate secrets (`ADMIN_API_KEY` + `ANALYTICS_API_KEY`)
+to access the backend. `AdminGuard` accepts either `X-Admin-Key` or admin JWT. `AnalyticsGuard`
+accepts only `X-Analytics-Key`. This is by design (separate blast radius), but once Phase B proxy
+endpoints land (ANALYTICS-02.md), the admin dashboard will only need admin auth. Consider whether
+to keep `AnalyticsGuard` as a separate gate for external BI/monitoring consumers, or consolidate
+into a single auth mechanism.
+
+---
+
 ## Bottom Line
 
 The codebase is **well-organized and thoughtfully designed for a single-instance MVP**. The core business logic (voting, auth, notifications) is sound. But the path to 10M users requires:
