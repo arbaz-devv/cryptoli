@@ -27,9 +27,9 @@ The analytics platform is a **fully operational write machine with a severely un
 
 | Storage | Write Path | Read Path | Utilization |
 |---------|-----------|-----------|-------------|
-| Redis counters (22+ key patterns per day) | `track()` page_view/page_leave/like/funnel | `getStats()`, `getRealtime()` | **Well-utilized** |
+| Redis counters (28+ key patterns per day) | `track()` page_view/page_leave/like/funnel | `getStats()`, `getRealtime()` | **Well-utilized** |
 | `analytics_daily_summaries` (EAV, ~300 rows/day) | Rollup service | `getStats()` historical range | **Well-utilized** |
-| `analytics_events` (17 cols, ~13M rows/month) | Buffer service flush every 2s | **Zero user-facing reads** | **Complete waste — ~76 GB/year** |
+| `analytics_events` (18 cols, ~13M rows/month) | Buffer service flush every 2s | **Zero user-facing reads** | **Complete waste — ~76 GB/year** |
 | Server-side events (14 types, 7 modules) | `track()` → PG buffer only (no Redis) | **No endpoint queries this data** | **Complete waste** |
 | Session enrichment (9 fields) | `createSession()` | Admin user detail, session list, export | **Well-utilized** |
 
@@ -158,18 +158,17 @@ admin dashboard changes.
 | F5 | Use GeoIP country in createSession fallback | ~3 | — | ~5 | `data.country = meta.country \|\| geoResult?.country` |
 | Bug | Add missing `country` arg to follow/unfollow track() | ~2 | — | — | `users.service.ts:156,199` |
 | B5 | Fix `lastActive` in user list | ~10 | — | ~15 | Use `updatedAt` instead of hardcoded `'-'` |
-| B6 | Enrich admin stats (totalComments, totalVotes, totalFollows, totalSessions) | ~15 | ~20 | ~20 | Add 4 counters to `GET /admin/stats` |
 | UD1 | User detail: render missing fields | — | ~20 | — | `username`, `registrationCountry`, `country`, `moderatedAt` — backend returns them, dashboard doesn't display |
 | UD2 | User detail: add dates to reviews + complaints tables | — | ~10 | — | `reviews[].createdAt`, `complaints[].createdAt` — add date columns |
 | UD3 | User detail: render discussions section | — | ~30 | — | Backend returns `discussions[]` (posts with title, commentCount, status, createdAt) — entire section unrendered |
 | UD4 | User detail: return `userAgent` from backend | ~3 | — | ~5 | Dashboard renders `user.userAgent` but backend doesn't include it — add from latest session. (`isCompanyProfile` deferred — no backing field in User schema, needs spec decision) |
 | UL1 | User list: add `joinedAt` column | — | ~5 | — | Backend returns it, no table column renders it |
-| SL1 | Sessions page: render `userAgent` column | — | ~5 | — | Backend returns it in getUserSessions, table omits it |
+| SL1 | User sessions subpage: render `userAgent` column | — | ~5 | — | Backend returns it in getUserSessions, `/users/[id]/sessions` table omits it (admin's own `/sessions` page already shows it) |
 | CL1 | Complaints list: add `createdAt` column | — | ~5 | — | Backend returns it, no date column in table |
 | DS1 | Main dashboard: add stat cards for `totalReviews`, `newThisWeek`, `totalRatings` | — | ~15 | — | Backend already returns these 3 fields, no stat cards render them |
-| **Total** | | **~44** | **~115** | **~75** | |
+| **Total** | | **~29** | **~95** | **~55** | |
 
-**Phase A total: ~234 lines across 2 repos.**
+**Phase A total: ~179 lines across 2 repos.**
 
 ### Phase B — Admin Intelligence
 
@@ -223,12 +222,10 @@ libraries, no new patterns.
 | B7 | Activity timeline page for user detail | 0 | ~80 page + ~10 BFF | Backend `GET /admin/users/:id/activity` already exists, no admin UI |
 | B8 | Manual rollup trigger button + system health status | 0 | ~60 component + ~10 BFF | Backend `POST /admin/analytics/rollup` and `GET /analytics/health` already exist. Surface rollup trigger + `configured`, `connected`, `lastError`, `rollup.lastSuccessDate`, `rollup.stale` in one operations panel |
 | B9 | Sales count + new members in range stat cards | 0 | ~15 component | Data: `sales`, `newMembersInRange` — already in payload, never destructured. Add to OverviewCardsSection or separate row |
-| B10 | Wire `browserUsagePct` + `visitorsByCountryPct` into existing sections | 0 | ~10 | Already computed in `lib/analytics.ts:449-459`, never passed to components. Wire into DeviceAndBrowserSection and CountryTrafficSection as percentage labels |
-
-| | **Phase B Total** | **~220** | **~725** | |
+| | **Phase B Total** | **~220** | **~715** | |
 |---|---|---|---|---|
 
-**Phase B total: ~1,125 lines across 2 repos** (backend ~220 + tests ~180 + dashboard ~725).
+**Phase B total: ~1,115 lines across 2 repos** (backend ~220 + tests ~180 + dashboard ~715).
 
 **Performance notes:** The `(eventType, createdAt)` composite index covers all query patterns.
 At 13M rows/month, 30-day queries scan ~13M rows via index range scan — acceptable with 1-minute
@@ -246,8 +243,8 @@ Phase B (admin intelligence) ── independent of A
 
 | PR | Content | Lines | Repos |
 |----|---------|-------|-------|
-| 1 | Phase A: fixes + stats enrichment + render all existing backend data | ~234 | cryptoli + cryptoi-admin |
-| 2 | Phase B: admin intelligence | ~1,125 | cryptoli + cryptoi-admin |
+| 1 | Phase A: fixes + render all existing backend data | ~179 | cryptoli + cryptoi-admin |
+| 2 | Phase B: admin intelligence | ~1,115 | cryptoli + cryptoi-admin |
 
 ---
 
