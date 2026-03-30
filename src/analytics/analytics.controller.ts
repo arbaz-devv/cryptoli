@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Post,
   Query,
   Req,
@@ -20,6 +21,8 @@ import { AnalyticsInterceptor } from './analytics.interceptor';
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/analytics')
 export class AnalyticsController {
+  private readonly logger = new Logger(AnalyticsController.name);
+
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly prisma: PrismaService,
@@ -141,9 +144,8 @@ export class AnalyticsController {
       });
       return { ok: true, members };
     } catch (e) {
-      const message =
-        e instanceof Error ? e.message : 'Failed to fetch latest members';
-      return { ok: false, error: message };
+      this.logger.error('Failed to fetch latest members', e instanceof Error ? e.stack : e);
+      return { ok: false, error: 'Failed to fetch latest members' };
     }
   }
 }

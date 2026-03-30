@@ -328,5 +328,24 @@ describe('AnalyticsController', () => {
       const call = mockPrisma.user.findMany.mock.calls[0][0];
       expect(call.take).toBe(20);
     });
+
+    it('should return generic error message and log actual error on failure', async () => {
+      const dbError = new Error('connection refused to database');
+      mockPrisma.user.findMany.mockRejectedValue(dbError);
+      const logSpy = jest.spyOn(controller['logger'], 'error').mockImplementation();
+
+      const result = await controller.latestMembers('5');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch latest members');
+      // Must not leak the actual DB error message
+      expect(result.error).not.toContain('connection refused');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch latest members',
+        dbError.stack,
+      );
+
+      logSpy.mockRestore();
+    });
   });
 });

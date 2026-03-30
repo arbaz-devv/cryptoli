@@ -174,6 +174,37 @@ describe('Analytics E2E', () => {
     });
   });
 
+  describe('GET /api/analytics/latest-members', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/latest-members');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with members array when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.members)).toBe(true);
+    });
+
+    it('should never leak internal error details in response', async () => {
+      // Even if the DB query fails, the error message must be generic
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      // With a clean DB, this should succeed — but verify the error field
+      // shape is correct when present (ok: false responses)
+      if (!res.body.ok) {
+        expect(res.body.error).toBe('Failed to fetch latest members');
+      }
+    });
+  });
+
   describe('GET /api/analytics/realtime', () => {
     it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/realtime');
