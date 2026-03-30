@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundError } from '../common/errors';
 import { createComplaintSchema, createReplySchema } from '../common/utils';
@@ -50,36 +51,39 @@ export class ComplaintsService {
       }
     }
 
-    const complaints = await this.prisma.complaint.findMany({
-      where,
-      select: {
-        id: true,
-        title: true,
-        content: true,
-        status: true,
-        helpfulCount: true,
-        downVoteCount: true,
-        createdAt: true,
-        author: {
-          select: {
-            username: true,
-            avatar: true,
-            verified: true,
+    const [complaints, total] = await Promise.all([
+      this.prisma.complaint.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          status: true,
+          helpfulCount: true,
+          downVoteCount: true,
+          createdAt: true,
+          author: {
+            select: {
+              username: true,
+              avatar: true,
+              verified: true,
+            },
+          },
+          _count: {
+            select: {
+              comments: true,
+            },
           },
         },
-        _count: {
-          select: {
-            comments: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.complaint.count({ where }),
+    ]);
 
     let complaintsWithVotes = complaints;
-    if (user) {
+    if (user && complaints.length > 0) {
       const complaintIds = complaints.map((c) => c.id);
       const userVotes = await this.prisma.complaintVote.findMany({
         where: { userId: user.id, complaintId: { in: complaintIds } },
@@ -98,8 +102,6 @@ export class ComplaintsService {
         userVote: null,
       }));
     }
-
-    const total = await this.prisma.complaint.count({ where });
 
     return {
       complaints: complaintsWithVotes,
@@ -261,73 +263,95 @@ export class ComplaintsService {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const complaint = await tx.complaint.findUnique({
-        where: { id: complaintId },
-        select: { id: true },
-      });
-      if (!complaint) throw new NotFoundError('Complaint not found');
+    const runVoteTransaction = async () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const complaint = await tx.complaint.findUnique({
+            where: { id: complaintId },
+            select: { id: true },
+          });
+          if (!complaint) throw new NotFoundError('Complaint not found');
 
-      const existingVote = await tx.complaintVote.findUnique({
-        where: {
-          userId_complaintId: { userId, complaintId },
+          const existingVote = await tx.complaintVote.findUnique({
+            where: {
+              userId_complaintId: { userId, complaintId },
+            },
+          });
+
+          let nextVoteType: 'UP' | 'DOWN' | null = voteType;
+
+          if (existingVote) {
+            if (existingVote.voteType === voteType) {
+              await tx.complaintVote.delete({
+                where: { id: existingVote.id },
+              });
+              nextVoteType = null;
+            } else {
+              await tx.complaintVote.update({
+                where: { id: existingVote.id },
+                data: { voteType },
+              });
+            }
+          } else {
+            await tx.complaintVote.create({
+              data: {
+                userId,
+                complaintId,
+                voteType,
+              },
+            });
+          }
+
+          const previousVoteType = existingVote
+            ? (existingVote.voteType as 'UP' | 'DOWN')
+            : null;
+          const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+            previousVoteType,
+            nextVoteType,
+          );
+
+          const updatedComplaint = await tx.complaint.update({
+            where: { id: complaintId },
+            data: {
+              ...(helpfulDelta !== 0
+                ? { helpfulCount: { increment: helpfulDelta } }
+                : {}),
+              ...(downDelta !== 0
+                ? { downVoteCount: { increment: downDelta } }
+                : {}),
+            },
+            select: {
+              helpfulCount: true,
+              downVoteCount: true,
+            },
+          });
+
+          return {
+            voteType: nextVoteType,
+            helpfulCount: updatedComplaint.helpfulCount ?? 0,
+            downVoteCount: updatedComplaint.downVoteCount ?? 0,
+          };
         },
-      });
-
-      let nextVoteType: 'UP' | 'DOWN' | null = voteType;
-
-      if (existingVote) {
-        if (existingVote.voteType === voteType) {
-          await tx.complaintVote.delete({
-            where: { id: existingVote.id },
-          });
-          nextVoteType = null;
-        } else {
-          await tx.complaintVote.update({
-            where: { id: existingVote.id },
-            data: { voteType },
-          });
-        }
-      } else {
-        await tx.complaintVote.create({
-          data: {
-            userId,
-            complaintId,
-            voteType,
-          },
-        });
-      }
-
-      const previousVoteType = existingVote
-        ? (existingVote.voteType as 'UP' | 'DOWN')
-        : null;
-      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
-        previousVoteType,
-        nextVoteType,
+        { maxWait: 5000, timeout: 10000 },
       );
 
-      const updatedComplaint = await tx.complaint.update({
-        where: { id: complaintId },
-        data: {
-          ...(helpfulDelta !== 0
-            ? { helpfulCount: { increment: helpfulDelta } }
-            : {}),
-          ...(downDelta !== 0
-            ? { downVoteCount: { increment: downDelta } }
-            : {}),
-        },
-        select: {
-          helpfulCount: true,
-          downVoteCount: true,
-        },
-      });
+    let result: Awaited<ReturnType<typeof runVoteTransaction>>;
+    try {
+      result = await runVoteTransaction();
+    } catch (error) {
+      const isRetryable =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2028';
+      const isTransactionNotFound =
+        error instanceof Error &&
+        /Transaction not found/i.test(error.message);
 
-      return {
-        voteType: nextVoteType,
-        helpfulCount: updatedComplaint.helpfulCount ?? 0,
-        downVoteCount: updatedComplaint.downVoteCount ?? 0,
-      };
-    });
+      if (!isRetryable && !isTransactionNotFound) {
+        throw error;
+      }
+
+      result = await runVoteTransaction();
+    }
 
     if (analyticsCtx && this.analyticsService) {
       void this.analyticsService.track(
