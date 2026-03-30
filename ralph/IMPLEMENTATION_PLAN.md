@@ -23,42 +23,45 @@
 
 Security and data-integrity fixes in the cryptoli backend. Priority-ordered by severity.
 
-- [ ] **F1:** Add `@UseGuards(AnalyticsGuard)` to the health endpoint in `src/analytics/analytics.controller.ts:73` — this is the only analytics read endpoint without auth. See deployment note above
+- [x] **F1:** Add `@UseGuards(AnalyticsGuard)` to the health endpoint in `src/analytics/analytics.controller.ts:73` — this is the only analytics read endpoint without auth. See deployment note above
   - Required tests: e2e test for `GET /analytics/health` returns 401 without API key; returns health payload with valid API key; update existing health e2e test that expects 200 without auth
+  > **Learnings:** Single-line change in controller + unit test for guard metadata + e2e tests for 401/200. The test-analytics-key value comes from env in setup-app.ts.
 
-- [ ] **F2:** Replace error leakage in latest-members catch block (`src/analytics/analytics.controller.ts:142-146`) — change to always return generic `'Failed to fetch latest members'` error message instead of `e.message`; add `private readonly logger = new Logger(AnalyticsController.name)` and log actual error with stack trace
-  - Required tests: e2e test for `GET /analytics/latest-members`; unit test verifying error path returns generic message and logs the actual error
+- [x] **F2:** Replace error leakage in latest-members catch block — always return generic error message, log actual error with Logger
+  > **Learnings:** Added Logger to controller, replaced conditional e.message with constant string. Also added e2e tests for latest-members endpoint (auth + success + error shape).
 
-- [ ] **Bug:** Add missing `country` argument (`analyticsCtx.country`) as 4th arg to `track()` calls in `src/users/users.service.ts` for `user_follow` (line ~160) and `user_unfollow` (line ~201), matching the pattern used in reviews/comments/complaints/search
+- [x] **Bug:** Add missing `country` argument (`analyticsCtx.country`) as 4th arg to `track()` calls in users.service.ts for user_follow and user_unfollow
+  > **Learnings:** Only users.service.ts was missing the 4th arg; all other services (reviews, comments, complaints, search) already had it.
 
-- [ ] **F5:** Add GeoIP country fallback in `src/auth/auth.service.ts:263` — change `data.country = meta.country || null` to `data.country = meta.country || geoResult?.country || null`
-  - Required tests: unit test verifying country falls back to geoResult?.country when meta.country is absent
+- [x] **F5:** Add GeoIP country fallback in auth.service.ts — `data.country = meta.country || geoResult?.country || null`
+  > **Learnings:** geoResult was already computed two lines above; just needed to chain it in the fallback.
 
-- [ ] **UD4:** Include `userAgent` from latest session in admin user detail response (`src/admin/admin.service.ts` `getUserDetail()`) — the dashboard renders `user.userAgent` but the backend doesn't include it in the response
-  - Required tests: unit test verifying userAgent is included in getUserDetail response
+- [x] **UD4:** Include `userAgent` from latest session in admin user detail response
+  > **Learnings:** Required adding userAgent to both the session select block and the response object.
 
-- [ ] **B5-fix:** Fix `lastActive` in admin user list (`src/admin/admin.service.ts:323`) — replace hardcoded `'-'` with a real date (e.g., `user.updatedAt`), matching how `getUserDetail()` computes it at lines ~394 and ~555
-  - Required tests: unit test verifying lastActive returns a real date string, not `'-'`
+- [x] **B5-fix:** Fix `lastActive` in admin user list — use `u.updatedAt` instead of hardcoded `'-'`
+  > **Learnings:** Required adding updatedAt to the user select block as well.
 
 ## Phase 2: Dashboard Fixes
 
 Render backend data that is already returned but not displayed in `cryptoi-admin`. Zero backend changes. Priority-ordered by user impact.
 
-- [ ] **F1-dashboard:** Add `X-Analytics-Key` header to `checkAnalyticsHealth()` in `cryptoi-admin/lib/analytics.ts:104-141`, matching the pattern used in `fetchAnalyticsStats` and `fetchLatestMembers`. Deploy this BEFORE the backend F1 guard
+- [x] **F1-dashboard:** Add `X-Analytics-Key` header to `checkAnalyticsHealth()` in cryptoi-admin
+  > **Learnings:** 3-line change matching existing fetchAnalyticsStats pattern. getAnalyticsApiKey() already imported.
 
-- [ ] **UD3:** Render the discussions section in user detail page (`cryptoi-admin/app/dashboard/users/[id]/page.tsx`) — backend returns `discussions[]` with title, commentCount, status, createdAt but the entire section is unrendered (only a JSX comment exists at line ~318)
+- [x] **UD3:** Render discussions section in user detail page — added full section with status styles, empty state, and commentCount/date metadata
 
-- [ ] **UD1:** Render missing fields in user detail page (`cryptoi-admin/app/dashboard/users/[id]/page.tsx`): `username`, `registrationCountry`, `country`, `moderatedAt` — backend returns all four, dashboard doesn't display them
+- [x] **UD1:** Render username, registrationCountry, country, moderatedAt in user detail page
 
-- [ ] **DS1:** Add stat cards for `totalReviews`, `newThisWeek`, `totalRatings` to the main dashboard (`cryptoi-admin/app/dashboard/page.tsx`) — backend already returns these in AdminStats, no stat cards render them. Add entries to the `statCards` array using existing `<StatCard>` component
+- [x] **DS1:** Add stat cards for totalReviews, newThisWeek, totalRatings to main dashboard
 
-- [ ] **UD2:** Add `createdAt` date columns to reviews and complaints tables in user detail page (`cryptoi-admin/app/dashboard/users/[id]/page.tsx`) — both `reviews[].createdAt` and `complaints[].createdAt` exist in type definitions but aren't rendered
+- [x] **UD2:** Add createdAt dates to reviews and complaints in user detail page
 
-- [ ] **UL1:** Add `joinedAt` column to user list table (`cryptoi-admin/app/dashboard/users/page.tsx`) — `AdminUser.joinedAt` exists in type, no table column renders it
+- [x] **UL1:** Add joinedAt column to user list table + UserTableRow component
 
-- [ ] **SL1:** Render `userAgent` column in user sessions subpage (`cryptoi-admin/app/dashboard/users/[id]/sessions/page.tsx`) — `AdminUserSession.userAgent` exists in type but not rendered (admin's own `/sessions` page already shows it as a reference)
+- [x] **SL1:** Render userAgent column in user sessions subpage (truncated with title tooltip)
 
-- [ ] **CL1:** Add `createdAt` column to complaints list table (`cryptoi-admin/app/dashboard/complaints/page.tsx`) — `AdminComplaint.createdAt` exists in type, not rendered
+- [x] **CL1:** Add createdAt column to complaints list table
 
 ## Phase 3: Admin Intelligence — Backend
 
