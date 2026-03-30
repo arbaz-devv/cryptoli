@@ -162,6 +162,36 @@ admin dashboard changes.
 
 **Backend + admin dashboard PR. Make the analytics platform actually useful to admins.**
 
+#### Dashboard Implementation Rules
+
+All new dashboard components MUST reuse the existing UI system in `cryptoi-admin`. No new
+libraries, no new patterns.
+
+| Concern | Use | Source |
+|---------|-----|--------|
+| Charts | `recharts` (LineChart, BarChart, PieChart + ResponsiveContainer) | Already installed |
+| Chart colors | `CHART_COLORS` from `@/lib/constants` + `<Cell>` per item | `lib/constants.ts:39` |
+| Cards | `rounded-lg border border-admin bg-admin-card shadow-sm` with `border-b border-admin px-4 py-3` header | Pattern in every analytics section |
+| Stat cards | `<StatCard>` from `@/components/StatCard` | `components/StatCard.tsx` |
+| Skeletons | `<Skeleton>`, `<SkeletonCard>` from `@/components/Skeleton` | `components/Skeleton.tsx` |
+| Empty states | `<EmptyState>` from `@/components/Skeleton` | `components/Skeleton.tsx` |
+| Lazy render | Wrap below-fold sections in `<DeferredSection>` | `analytics/components/deferred/DeferredSection.tsx` |
+| Tables | Inline `<table>` with standard thead/tbody pattern (no library) | Pattern in TopPagesSection, CountryTrafficSection |
+| Text colors | `text-text-heading dark:text-foreground` (headings), `text-admin-muted` (descriptions), `text-admin-label` (labels) | globals.css tokens |
+| Dark mode | Always pair via CSS vars (`bg-admin-card`, `text-text-dark dark:text-foreground`) | globals.css |
+| Animations | CSS `animate-slide-up` for server components; framer-motion only if needed in client components | globals.css, `components/animations/easings.ts` |
+| New sections | Place in `app/dashboard/analytics/components/`, import in `AnalyticsDashboard.tsx` | Existing pattern |
+| Data flow | Add fields to `AnalyticsDashboardPayload`, compute in `getAnalyticsDashboardPayload()`, pass as props | `lib/analytics.ts` |
+| Maps | `VisitorsFlowMap` component (react-simple-maps) if geographic | `analytics/components/VisitorsFlowMap.tsx` |
+
+**Existing chart components to reference as templates:**
+- BarChart: `PeakAndWeekdaySection.tsx`, `CountryTrafficSection.tsx`
+- LineChart: `TrafficAndGoalsSection.tsx`
+- PieChart/Donut: `DeviceAndBrowserSection.tsx`
+- Table: `TopPagesSection.tsx`
+- Stat cards: `OverviewCardsSection.tsx`
+- Colored dot lists: `ReferrersUtmSection.tsx`
+
 #### B-I: New backend endpoints (analytics_events read paths)
 
 | # | Task | Backend | Dashboard | Tests | Notes |
