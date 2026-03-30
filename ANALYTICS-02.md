@@ -77,10 +77,10 @@ return { ok: false, error: 'Failed to fetch latest members' };
 
 ### F3. Server-Side Events Are Write-Only
 
-**Priority: High** | Impact: 14 event types producing zero consumable output
+**Priority: High** | Impact: 11 distinct event types across 14 emission sites producing zero consumable output
 
-14 server-side event types tracked across 7 modules go to PG buffer **only** — no Redis counters.
-The `analytics_events` table receives every event but no endpoint queries it. All 14 events
+11 server-side event types tracked across 7 modules go to PG buffer **only** — no Redis counters.
+The `analytics_events` table receives every event but no endpoint queries it. All emission sites
 confirmed present with correct type strings, guards, and ordering.
 
 | Event Type | Source | Properties Stored |
