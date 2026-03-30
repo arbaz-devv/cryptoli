@@ -163,9 +163,13 @@ admin dashboard changes.
 | UD2 | User detail: add dates to reviews + complaints tables | — | ~10 | — | `reviews[].createdAt`, `complaints[].createdAt` — add date columns |
 | UD3 | User detail: render discussions section | — | ~30 | — | Backend returns `discussions[]` (posts with title, commentCount, status, createdAt) — entire section unrendered |
 | UD4 | User detail: return `userAgent` + `isCompanyProfile` from backend | ~5 | — | ~10 | Dashboard tries to render these but backend doesn't include them in the response |
-| **Total** | | **~46** | **~85** | **~80** | |
+| UL1 | User list: add `joinedAt` column | — | ~5 | — | Backend returns it, no table column renders it |
+| SL1 | Sessions page: render `userAgent` column | — | ~5 | — | Backend returns it in getUserSessions, table omits it |
+| CL1 | Complaints list: add `createdAt` column | — | ~5 | — | Backend returns it, no date column in table |
+| DS1 | Main dashboard: add stat cards for `totalReviews`, `newThisWeek`, `totalRatings` | — | ~15 | — | Backend already returns these 3 fields, no stat cards render them |
+| **Total** | | **~46** | **~115** | **~80** | |
 
-**Phase A total: ~211 lines across 2 repos.**
+**Phase A total: ~241 lines across 2 repos.**
 
 ### Phase B — Admin Intelligence
 
@@ -205,8 +209,8 @@ libraries, no new patterns.
 
 | # | Task | Backend | Dashboard | Tests | Notes |
 |---|------|---------|-----------|-------|-------|
-| B1 | Event aggregation endpoint | ~80 svc + ~20 ctrl | ~120 component | ~80 | groupBy eventType + daily timeseries + dimensional breakdowns (by country, device, browser, path, referrer, UTM) from analytics_events columns |
-| B2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery |
+| B1 | Event aggregation endpoint | ~80 svc + ~20 ctrl | ~120 component | ~80 | groupBy eventType + daily timeseries + dimensional breakdowns (by country, device, browser, os, path, referrer, UTM) from analytics_events columns |
+| B2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery. **Prereq:** `pushedAt` field on Notification is never written by PushService — push delivery metric requires a small fix in `push.service.ts` to set `pushedAt` after successful `webPush.sendNotification()` |
 | B3 | Search query analytics | ~40 svc + ~15 ctrl | ~80 component | ~40 | Requires raw SQL for JSONB `properties->>'query'` |
 
 #### B-II: Render already-fetched but unused analytics dimensions (dashboard-only, zero backend)
@@ -242,7 +246,7 @@ Phase B (admin intelligence) ── independent of A
 
 | PR | Content | Lines | Repos |
 |----|---------|-------|-------|
-| 1 | Phase A: fixes + stats enrichment + user detail completion | ~211 | cryptoli + cryptoi-admin |
+| 1 | Phase A: fixes + stats enrichment + render all existing backend data | ~241 | cryptoli + cryptoi-admin |
 | 2 | Phase B: admin intelligence | ~1,125 | cryptoli + cryptoi-admin |
 
 ---
