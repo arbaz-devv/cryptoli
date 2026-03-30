@@ -7,6 +7,7 @@ import {
 import { ComplaintStatus, Prisma, ReviewStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsRollupService } from '../analytics/analytics-rollup.service';
+import { ObservabilityService } from '../observability/observability.service';
 
 /**
  * Backend in-memory caches (admin APIs)
@@ -96,6 +97,7 @@ const ratingsListCache = new Map<
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly observability: ObservabilityService,
     @Optional()
     @Inject(AnalyticsRollupService)
     private readonly rollupService?: AnalyticsRollupService,
@@ -186,7 +188,11 @@ export class AdminService {
 
   async getStats() {
     const now = Date.now();
-    if (statsCache && statsCache.expiry > now) return statsCache.data;
+    if (statsCache && statsCache.expiry > now) {
+      this.observability.recordCacheHit('admin.stats');
+      return statsCache.data;
+    }
+    this.observability.recordCacheMiss('admin.stats');
 
     const startOfToday = this.startOfToday();
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -253,11 +259,13 @@ export class AdminService {
     const now = Date.now();
     const hit = usersListCache.get(cacheKey);
     if (hit && hit.expiry > now) {
+      this.observability.recordCacheHit('admin.users');
       return {
         users: [...hit.data.users],
         pagination: { ...hit.data.pagination },
       };
     }
+    this.observability.recordCacheMiss('admin.users');
 
     const where: {
       createdAt?: { gte?: Date; lte?: Date };
@@ -632,11 +640,13 @@ export class AdminService {
     const now = Date.now();
     const hit = complaintsListCache.get(cacheKey);
     if (hit && hit.expiry > now) {
+      this.observability.recordCacheHit('admin.complaints');
       return {
         complaints: [...hit.data.complaints],
         pagination: { ...hit.data.pagination },
       };
     }
+    this.observability.recordCacheMiss('admin.complaints');
 
     const where: Prisma.ComplaintWhereInput = {};
     const createdAtRange = this.buildCreatedAtRange(
@@ -846,8 +856,10 @@ export class AdminService {
     const now = Date.now();
     const hit = reviewsListCache.get(cacheKey);
     if (hit && hit.expiry > now) {
+      this.observability.recordCacheHit('admin.reviews');
       return { ...hit.data, reviews: [...hit.data.reviews] };
     }
+    this.observability.recordCacheMiss('admin.reviews');
 
     const where: Prisma.ReviewWhereInput = {};
     if (params.status) where.status = params.status;
@@ -1080,11 +1092,13 @@ export class AdminService {
     const now = Date.now();
     const hit = ratingsListCache.get(cacheKey);
     if (hit && hit.expiry > now) {
+      this.observability.recordCacheHit('admin.ratings');
       return {
         ratings: [...hit.data.ratings],
         pagination: { ...hit.data.pagination },
       };
     }
+    this.observability.recordCacheMiss('admin.ratings');
 
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [products, total] = await Promise.all([
@@ -1539,5 +1553,9 @@ export class AdminService {
       errors: 0,
       durationMs: Date.now() - start,
     };
+  }
+
+  getObservabilitySnapshot() {
+    return this.observability.getSnapshot();
   }
 }

@@ -37,6 +37,11 @@ export class AdminController {
     return this.admin.getStats();
   }
 
+  @Get('observability')
+  async observability() {
+    return this.admin.getObservabilitySnapshot();
+  }
+
   @Get('users')
   async users(@Query() query: UsersQueryDto) {
     const page = Math.max(1, query.page ?? 1);

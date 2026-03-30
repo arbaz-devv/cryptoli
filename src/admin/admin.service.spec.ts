@@ -2,14 +2,28 @@ import { NotFoundException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
+import { ObservabilityService } from '../observability/observability.service';
 
 describe('AdminService', () => {
   let service: AdminService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let observability: {
+    recordCacheHit: jest.Mock;
+    recordCacheMiss: jest.Mock;
+    getSnapshot: jest.Mock;
+  };
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new AdminService(prisma as unknown as PrismaService);
+    observability = {
+      recordCacheHit: jest.fn(),
+      recordCacheMiss: jest.fn(),
+      getSnapshot: jest.fn().mockReturnValue({ generatedAt: 'now' }),
+    };
+    service = new AdminService(
+      prisma as unknown as PrismaService,
+      observability as unknown as ObservabilityService,
+    );
   });
 
   describe('getStats()', () => {
@@ -33,6 +47,15 @@ describe('AdminService', () => {
       expect(stats.totalRatings).toBe(10);
       expect(stats.openComplaints).toBe(7);
       expect(stats.newThisWeek).toBe(5);
+      expect(observability.recordCacheMiss).toHaveBeenCalledWith('admin.stats');
+    });
+  });
+
+  describe('getObservabilitySnapshot()', () => {
+    it('should delegate to observability service', () => {
+      const snapshot = service.getObservabilitySnapshot();
+      expect(snapshot).toEqual({ generatedAt: 'now' });
+      expect(observability.getSnapshot).toHaveBeenCalled();
     });
   });
 
@@ -945,6 +968,7 @@ describe('AdminService', () => {
       const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
       const svc = new AdminService(
         prisma as unknown as PrismaService,
+        observability as unknown as ObservabilityService,
         mockRollup as any,
       );
 
@@ -960,6 +984,7 @@ describe('AdminService', () => {
       const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
       const svc = new AdminService(
         prisma as unknown as PrismaService,
+        observability as unknown as ObservabilityService,
         mockRollup as any,
       );
 
@@ -977,6 +1002,7 @@ describe('AdminService', () => {
       const mockRollup = { rollupDay: jest.fn().mockResolvedValue(true) };
       const svc = new AdminService(
         prisma as unknown as PrismaService,
+        observability as unknown as ObservabilityService,
         mockRollup as any,
       );
 
@@ -993,6 +1019,7 @@ describe('AdminService', () => {
       const mockRollup = { rollupDay: jest.fn().mockResolvedValue(false) };
       const svc = new AdminService(
         prisma as unknown as PrismaService,
+        observability as unknown as ObservabilityService,
         mockRollup as any,
       );
 
@@ -1018,6 +1045,7 @@ describe('AdminService', () => {
       };
       const svc = new AdminService(
         prisma as unknown as PrismaService,
+        observability as unknown as ObservabilityService,
         mockRollup as any,
       );
 
