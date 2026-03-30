@@ -2,9 +2,8 @@
 
 > **Date:** 2026-03-30
 > **Baseline:** main branches across 3 repos — cryptoli (fa1d85b), cryptoi-admin (5578a61), cryptoli-frontend (be97f28)
-> **Method:** 20 specialized Opus agents audited all 3 codebases against ANALYTICS-GAPS.md and ANALYTICS-ADMIN.md, verifying every claim against actual code with file:line evidence. 875 tool invocations, ~50 min cumulative runtime.
+> **Method:** 20 specialized Opus agents audited all 3 codebases, verifying every claim against actual code with file:line evidence. 875 tool invocations, ~50 min cumulative runtime.
 > **Scope:** Security gaps, admin dashboard underutilization, data flow disconnects, GDPR compliance.
-> **Supersedes:** ANALYTICS-GAPS.md, ANALYTICS-ADMIN.md
 
 ---
 
@@ -470,7 +469,7 @@ The parallel `analytics:cohort:{day}` set serves the same cohort-tracking purpos
 
 ### Effort Estimation Methodology
 
-Original ANALYTICS-ADMIN.md estimates counted only backend service/controller source code. The
+Original estimates counted only backend service/controller source code. The
 corrected estimates below include all layers required by CLAUDE.md: DTOs, unit tests, e2e tests,
 and admin dashboard changes. The multiplier is approximately 3-5x.
 
