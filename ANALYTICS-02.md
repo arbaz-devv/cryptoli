@@ -162,14 +162,14 @@ admin dashboard changes.
 | UD1 | User detail: render missing fields | — | ~20 | — | `username`, `registrationCountry`, `country`, `moderatedAt` — backend returns them, dashboard doesn't display |
 | UD2 | User detail: add dates to reviews + complaints tables | — | ~10 | — | `reviews[].createdAt`, `complaints[].createdAt` — add date columns |
 | UD3 | User detail: render discussions section | — | ~30 | — | Backend returns `discussions[]` (posts with title, commentCount, status, createdAt) — entire section unrendered |
-| UD4 | User detail: return `userAgent` + `isCompanyProfile` from backend | ~5 | — | ~10 | Dashboard tries to render these but backend doesn't include them in the response |
+| UD4 | User detail: return `userAgent` from backend | ~3 | — | ~5 | Dashboard renders `user.userAgent` but backend doesn't include it — add from latest session. (`isCompanyProfile` deferred — no backing field in User schema, needs spec decision) |
 | UL1 | User list: add `joinedAt` column | — | ~5 | — | Backend returns it, no table column renders it |
 | SL1 | Sessions page: render `userAgent` column | — | ~5 | — | Backend returns it in getUserSessions, table omits it |
 | CL1 | Complaints list: add `createdAt` column | — | ~5 | — | Backend returns it, no date column in table |
 | DS1 | Main dashboard: add stat cards for `totalReviews`, `newThisWeek`, `totalRatings` | — | ~15 | — | Backend already returns these 3 fields, no stat cards render them |
-| **Total** | | **~46** | **~115** | **~80** | |
+| **Total** | | **~44** | **~115** | **~75** | |
 
-**Phase A total: ~241 lines across 2 repos.**
+**Phase A total: ~234 lines across 2 repos.**
 
 ### Phase B — Admin Intelligence
 
@@ -246,7 +246,7 @@ Phase B (admin intelligence) ── independent of A
 
 | PR | Content | Lines | Repos |
 |----|---------|-------|-------|
-| 1 | Phase A: fixes + stats enrichment + render all existing backend data | ~241 | cryptoli + cryptoi-admin |
+| 1 | Phase A: fixes + stats enrichment + render all existing backend data | ~234 | cryptoli + cryptoi-admin |
 | 2 | Phase B: admin intelligence | ~1,125 | cryptoli + cryptoi-admin |
 
 ---
