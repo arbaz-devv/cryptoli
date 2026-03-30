@@ -1,14 +1,21 @@
 import { TrendingService } from './trending.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
+import { createRedisMock } from '../../test/helpers/redis.mock';
 
 describe('TrendingService', () => {
   let service: TrendingService;
   let prisma: ReturnType<typeof createPrismaMock>;
+  let redisService: ReturnType<typeof createRedisMock>;
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new TrendingService(prisma as unknown as PrismaService);
+    redisService = createRedisMock(false);
+    service = new TrendingService(
+      prisma as unknown as PrismaService,
+      redisService as unknown as RedisService,
+    );
   });
 
   it('should return trendingNow and topRatedThisWeek', async () => {
