@@ -267,6 +267,117 @@ describe('Analytics E2E', () => {
     });
   });
 
+  describe('GET /api/analytics/notifications', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/notifications');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('readCount');
+      expect(res.body.data).toHaveProperty('pushedCount');
+      expect(res.body.data).toHaveProperty('readRate');
+      expect(res.body.data).toHaveProperty('pushDeliveryRate');
+      expect(res.body.data).toHaveProperty('dateRange');
+      expect(res.body.data).toHaveProperty('byType');
+    });
+
+    it('should accept from/to query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .query({ from: '2026-03-01', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return notification stats with real DB data', async () => {
+      // Seed a notification so we verify the raw query works end-to-end
+      const prisma = getTestPrisma();
+      const user = await prisma.user.create({
+        data: {
+          email: 'notif-test@example.com',
+          username: 'notiftest',
+          passwordHash: 'hash',
+        },
+      });
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: user.id,
+            type: 'NEW_REVIEW',
+            title: 'Test',
+            message: 'msg',
+            read: true,
+            pushedAt: new Date(),
+          },
+          {
+            userId: user.id,
+            type: 'NEW_REVIEW',
+            title: 'Test2',
+            message: 'msg2',
+            read: false,
+          },
+          {
+            userId: user.id,
+            type: 'NEW_COMMENT',
+            title: 'Comment',
+            message: 'cmsg',
+            read: true,
+          },
+        ],
+      });
+
+      // Use explicit date range to avoid in-memory cache collision with prior empty-DB test
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.readCount).toBe(2);
+      expect(data.pushedCount).toBe(1);
+      // 2/3 ≈ 66.67%
+      expect(data.readRate).toBeCloseTo(66.67, 1);
+      // 1/3 ≈ 33.33%
+      expect(data.pushDeliveryRate).toBeCloseTo(33.33, 1);
+      expect(data.byType).toHaveLength(2);
+      // Sorted by total DESC: NEW_REVIEW (2) first
+      const reviewType = data.byType.find(
+        (t: any) => t.type === 'NEW_REVIEW',
+      );
+      expect(reviewType.total).toBe(2);
+      expect(reviewType.read).toBe(1);
+      expect(reviewType.pushed).toBe(1);
+    });
+  });
+
   describe('GET /api/analytics/realtime', () => {
     it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/realtime');

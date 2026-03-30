@@ -1655,4 +1655,119 @@ describe('AnalyticsService', () => {
       expect(result.byEventType).toEqual({ page_view: 5 });
     });
   });
+
+  describe('getNotificationAnalytics()', () => {
+    it('should return empty result when prisma is not available', async () => {
+      const result = await service.getNotificationAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.readCount).toBe(0);
+      expect(result.pushedCount).toBe(0);
+      expect(result.readRate).toBe(0);
+      expect(result.pushDeliveryRate).toBe(0);
+      expect(result.byType).toEqual([]);
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should query notifications and return aggregated type breakdown with rates', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([
+        {
+          type: 'NEW_REVIEW',
+          total: BigInt(100),
+          read_count: BigInt(80),
+          pushed_count: BigInt(60),
+        },
+        {
+          type: 'NEW_COMMENT',
+          total: BigInt(50),
+          read_count: BigInt(10),
+          pushed_count: BigInt(25),
+        },
+      ]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getNotificationAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(150);
+      expect(result.readCount).toBe(90);
+      expect(result.pushedCount).toBe(85);
+      expect(result.readRate).toBe(60); // 90/150 = 0.6 = 60%
+      expect(result.pushDeliveryRate).toBe(56.67); // 85/150 ≈ 56.67%
+      expect(result.byType).toHaveLength(2);
+      expect(result.byType[0]).toEqual({
+        type: 'NEW_REVIEW',
+        total: 100,
+        read: 80,
+        pushed: 60,
+        readRate: 80,
+        pushDeliveryRate: 60,
+      });
+      expect(result.byType[1]).toEqual({
+        type: 'NEW_COMMENT',
+        total: 50,
+        read: 10,
+        pushed: 25,
+        readRate: 20,
+        pushDeliveryRate: 50,
+      });
+    });
+
+    it('should return zero rates when there are no notifications', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      // Use unique date range to avoid hitting the module-level cache from prior test
+      const result = await svc.getNotificationAnalytics(
+        '2026-02-01',
+        '2026-02-28',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.readRate).toBe(0);
+      expect(result.pushDeliveryRate).toBe(0);
+      expect(result.byType).toEqual([]);
+    });
+
+    it('should cache results for 1 minute', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      await svc.getNotificationAnalytics('2026-03-01', '2026-03-05');
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+
+      // Second call with same params returns cached result
+      await svc.getNotificationAnalytics('2026-03-01', '2026-03-05');
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+  });
 });

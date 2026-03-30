@@ -154,6 +154,25 @@ export interface EventAggregationResult {
   byUtmCampaign: Record<string, number>;
 }
 
+export interface NotificationTypeStats {
+  type: string;
+  total: number;
+  read: number;
+  pushed: number;
+  readRate: number;
+  pushDeliveryRate: number;
+}
+
+export interface NotificationAnalyticsResult {
+  total: number;
+  readCount: number;
+  pushedCount: number;
+  readRate: number;
+  pushDeliveryRate: number;
+  dateRange: { from: string; to: string };
+  byType: NotificationTypeStats[];
+}
+
 function emptyEventAggregation(
   from: string,
   to: string,
@@ -175,6 +194,21 @@ function emptyEventAggregation(
   };
 }
 
+function emptyNotificationAnalytics(
+  from: string,
+  to: string,
+): NotificationAnalyticsResult {
+  return {
+    total: 0,
+    readCount: 0,
+    pushedCount: 0,
+    readRate: 0,
+    pushDeliveryRate: 0,
+    dateRange: { from, to },
+    byType: [],
+  };
+}
+
 export const dynamic = 'force-dynamic';
 
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
@@ -182,6 +216,10 @@ const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
 const eventAggregationCache = new Map<
   string,
   { data: EventAggregationResult; expiry: number }
+>();
+const notificationAnalyticsCache = new Map<
+  string,
+  { data: NotificationAnalyticsResult; expiry: number }
 >();
 
 /** Days older than this are read from PG (4-day buffer vs 32-day Redis TTL). */
@@ -1747,6 +1785,87 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     };
 
     eventAggregationCache.set(cacheKey, {
+      data: result,
+      expiry: Date.now() + STATS_CACHE_TTL_MS,
+    });
+
+    return result;
+  }
+
+  async getNotificationAnalytics(
+    from: string,
+    to: string,
+  ): Promise<NotificationAnalyticsResult> {
+    if (!this.prisma) {
+      return emptyNotificationAnalytics(from, to);
+    }
+
+    const cacheKey = `notifications:${from}:${to}`;
+    const cached = notificationAnalyticsCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T23:59:59.999Z');
+
+    // Single raw query: group by type with read/pushed counts using FILTER
+    // Notification model has no @@map — table is "Notification", columns are camelCase
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        type: string;
+        total: bigint;
+        read_count: bigint;
+        pushed_count: bigint;
+      }>
+    >`
+      SELECT type::text,
+        COUNT(*)                                          AS total,
+        COUNT(*) FILTER (WHERE read = true)               AS read_count,
+        COUNT(*) FILTER (WHERE "pushedAt" IS NOT NULL)    AS pushed_count
+      FROM "Notification"
+      WHERE "createdAt" >= ${fromDate} AND "createdAt" <= ${toDate}
+      GROUP BY type
+      ORDER BY total DESC
+    `;
+
+    let grandTotal = 0;
+    let grandRead = 0;
+    let grandPushed = 0;
+
+    const byType: NotificationTypeStats[] = rows.map((row) => {
+      const total = Number(row.total);
+      const read = Number(row.read_count);
+      const pushed = Number(row.pushed_count);
+      grandTotal += total;
+      grandRead += read;
+      grandPushed += pushed;
+      return {
+        type: row.type,
+        total,
+        read,
+        pushed,
+        readRate: total > 0 ? Math.round((read / total) * 10000) / 100 : 0,
+        pushDeliveryRate:
+          total > 0 ? Math.round((pushed / total) * 10000) / 100 : 0,
+      };
+    });
+
+    const result: NotificationAnalyticsResult = {
+      total: grandTotal,
+      readCount: grandRead,
+      pushedCount: grandPushed,
+      readRate:
+        grandTotal > 0
+          ? Math.round((grandRead / grandTotal) * 10000) / 100
+          : 0,
+      pushDeliveryRate:
+        grandTotal > 0
+          ? Math.round((grandPushed / grandTotal) * 10000) / 100
+          : 0,
+      dateRange: { from, to },
+      byType,
+    };
+
+    notificationAnalyticsCache.set(cacheKey, {
       data: result,
       expiry: Date.now() + STATS_CACHE_TTL_MS,
     });

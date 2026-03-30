@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AnalyticsService,
   EventAggregationResult,
+  NotificationAnalyticsResult,
 } from './analytics.service';
 import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
@@ -135,6 +136,38 @@ export class AnalyticsController {
         e instanceof Error ? e.stack : e,
       );
       return { ok: false, error: 'Failed to fetch event aggregation' };
+    }
+  }
+
+  /** Notification analytics: read rates, push delivery rates, grouped by type */
+  @UseGuards(AnalyticsGuard)
+  @Get('notifications')
+  async notifications(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ): Promise<{
+    ok: boolean;
+    data?: NotificationAnalyticsResult;
+    error?: string;
+  }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    try {
+      const data = await this.analyticsService.getNotificationAnalytics(
+        fromDate,
+        toDate,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch notification analytics',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch notification analytics' };
     }
   }
 

@@ -36,6 +36,15 @@ describe('AnalyticsController', () => {
         byUtmMedium: {},
         byUtmCampaign: {},
       }),
+      getNotificationAnalytics: jest.fn().mockResolvedValue({
+        total: 0,
+        readCount: 0,
+        pushedCount: 0,
+        readRate: 0,
+        pushDeliveryRate: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        byType: [],
+      }),
     };
     mockPrisma = {
       user: {
@@ -368,6 +377,53 @@ describe('AnalyticsController', () => {
       expect(result.error).not.toContain('connection lost');
       expect(logSpy).toHaveBeenCalledWith(
         'Failed to fetch event aggregation',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('notifications()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.notifications,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with notification analytics data', async () => {
+      const result = await controller.notifications('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(
+        mockAnalyticsService.getNotificationAnalytics,
+      ).toHaveBeenCalledWith('2026-03-01', '2026-03-30');
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.notifications(undefined as any, undefined as any);
+      const [fromArg, toArg] =
+        mockAnalyticsService.getNotificationAnalytics.mock.calls[0];
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getNotificationAnalytics.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.notifications('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch notification analytics');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch notification analytics',
         dbError.stack,
       );
       logSpy.mockRestore();
