@@ -8,6 +8,7 @@ import { ComplaintStatus, Prisma, ReviewStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnalyticsRollupService } from '../analytics/analytics-rollup.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { RedisService } from '../redis/redis.service';
 
 /**
  * Backend in-memory caches (admin APIs)
@@ -97,11 +98,187 @@ const ratingsListCache = new Map<
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly redisService: RedisService,
     private readonly observability: ObservabilityService,
     @Optional()
     @Inject(AnalyticsRollupService)
     private readonly rollupService?: AnalyticsRollupService,
   ) {}
+
+  private getAdminCacheSnapshot() {
+    const now = Date.now();
+    const summarizeMapCache = <T>(name: string, cache: Map<string, T>, ttlMs: number) => ({
+      name,
+      kind: 'memory',
+      entries: cache.size,
+      ttlMs,
+      activeEntries: [...cache.values()].filter((entry: any) => entry?.expiry > now)
+        .length,
+      expiredEntries: [...cache.values()].filter((entry: any) => entry?.expiry <= now)
+        .length,
+    });
+
+    return {
+      stores: [
+        {
+          name: 'admin.stats',
+          kind: 'memory',
+          entries: statsCache ? 1 : 0,
+          ttlMs: STATS_CACHE_TTL_MS,
+          activeEntries: statsCache && statsCache.expiry > now ? 1 : 0,
+          expiredEntries: statsCache && statsCache.expiry <= now ? 1 : 0,
+        },
+        summarizeMapCache('admin.users', usersListCache, USERS_LIST_CACHE_TTL_MS),
+        summarizeMapCache(
+          'admin.complaints',
+          complaintsListCache,
+          COMPLAINTS_LIST_CACHE_TTL_MS,
+        ),
+        summarizeMapCache(
+          'admin.reviews',
+          reviewsListCache,
+          REVIEWS_LIST_CACHE_TTL_MS,
+        ),
+        summarizeMapCache(
+          'admin.ratings',
+          ratingsListCache,
+          RATINGS_LIST_CACHE_TTL_MS,
+        ),
+      ],
+    };
+  }
+
+  private parseRedisInfoSection(info: string): Record<string, string> {
+    return info
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#') && line.includes(':'))
+      .reduce(
+        (acc, line) => {
+          const idx = line.indexOf(':');
+          const key = line.slice(0, idx);
+          const value = line.slice(idx + 1);
+          acc[key] = value;
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+  }
+
+  private async getDependencySnapshot() {
+    const redisClient = this.redisService.getClient();
+    const redisConfigured = Boolean(process.env.REDIS_URL?.trim());
+
+    const databasePromise = (async () => {
+      try {
+        const startedAt = Date.now();
+        const [pingRows, sizeRows, connectionRows] = await Promise.all([
+          this.prisma.$queryRaw<{ ok: number }[]>(Prisma.sql`SELECT 1 as ok`),
+          this.prisma.$queryRaw<{ size_bytes: bigint }[]>(
+            Prisma.sql`SELECT pg_database_size(current_database()) as size_bytes`,
+          ),
+          this.prisma.$queryRaw<{ count: bigint }[]>(
+            Prisma.sql`SELECT COUNT(*) as count FROM pg_stat_activity WHERE datname = current_database()`,
+          ),
+        ]);
+
+        return {
+          configured: true,
+          ready: Number(pingRows[0]?.ok ?? 0) === 1,
+          latencyMs: Date.now() - startedAt,
+          error: null as string | null,
+          memory: {
+            databaseSizeBytes: Number(sizeRows[0]?.size_bytes ?? 0),
+            databaseSizeMb: Number(
+              (Number(sizeRows[0]?.size_bytes ?? 0) / (1024 * 1024)).toFixed(2),
+            ),
+          },
+          connections: {
+            active: Number(connectionRows[0]?.count ?? 0),
+          },
+        };
+      } catch (error) {
+        return {
+          configured: true,
+          ready: false,
+          latencyMs: 0,
+          error:
+            error instanceof Error ? error.message : 'Database unavailable',
+          memory: null,
+          connections: null,
+        };
+      }
+    })();
+
+    const redisPromise = (async () => {
+      if (!redisConfigured || !redisClient || !this.redisService.isReady()) {
+        return {
+          configured: redisConfigured,
+          ready: false,
+          latencyMs: 0,
+          error: this.redisService.getLastError(),
+          memory: null,
+          clients: null,
+        };
+      }
+
+      try {
+        const startedAt = Date.now();
+        const [pong, memoryInfoRaw, clientsInfoRaw, serverInfoRaw] =
+          await Promise.all([
+            redisClient.ping(),
+            redisClient.info('memory'),
+            redisClient.info('clients'),
+            redisClient.info('server'),
+          ]);
+        const memoryInfo = this.parseRedisInfoSection(memoryInfoRaw);
+        const clientsInfo = this.parseRedisInfoSection(clientsInfoRaw);
+        const serverInfo = this.parseRedisInfoSection(serverInfoRaw);
+
+        return {
+          configured: true,
+          ready: pong === 'PONG',
+          latencyMs: Date.now() - startedAt,
+          error: null as string | null,
+          version: serverInfo.redis_version ?? null,
+          memory: {
+            usedBytes: Number(memoryInfo.used_memory ?? 0),
+            usedMb: Number(
+              (Number(memoryInfo.used_memory ?? 0) / (1024 * 1024)).toFixed(2),
+            ),
+            peakBytes: Number(memoryInfo.used_memory_peak ?? 0),
+            peakMb: Number(
+              (
+                Number(memoryInfo.used_memory_peak ?? 0) /
+                (1024 * 1024)
+              ).toFixed(2),
+            ),
+            usedHuman: memoryInfo.used_memory_human ?? null,
+            peakHuman: memoryInfo.used_memory_peak_human ?? null,
+            fragmentationRatio: Number(
+              memoryInfo.mem_fragmentation_ratio ?? 0,
+            ),
+          },
+          clients: {
+            connected: Number(clientsInfo.connected_clients ?? 0),
+            blocked: Number(clientsInfo.blocked_clients ?? 0),
+          },
+        };
+      } catch (error) {
+        return {
+          configured: true,
+          ready: false,
+          latencyMs: 0,
+          error: error instanceof Error ? error.message : 'Redis unavailable',
+          memory: null,
+          clients: null,
+        };
+      }
+    })();
+
+    const [database, redis] = await Promise.all([databasePromise, redisPromise]);
+    return { database, redis };
+  }
 
   private normalizePagination(page: number, limit: number) {
     const normalizedPage = Math.max(1, page);
@@ -1555,7 +1732,19 @@ export class AdminService {
     };
   }
 
-  getObservabilitySnapshot() {
-    return this.observability.getSnapshot();
+  async getObservabilitySnapshot() {
+    const [snapshot, dependencies] = await Promise.all([
+      Promise.resolve(this.observability.getSnapshot({ scope: 'all' })),
+      this.getDependencySnapshot(),
+    ]);
+
+    return {
+      ...snapshot,
+      cache: {
+        ...snapshot.cache,
+        adminMemoryStores: this.getAdminCacheSnapshot(),
+      },
+      dependencies,
+    };
   }
 }

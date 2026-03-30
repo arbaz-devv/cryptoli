@@ -45,36 +45,47 @@ export class ReviewsService {
       ...(username && { author: { username } }),
     };
 
+    const reviewSelect = {
+      id: true,
+      title: true,
+      content: true,
+      overallScore: true,
+      helpfulCount: true,
+      downVoteCount: true,
+      createdAt: true,
+      author: {
+        select: {
+          username: true,
+          avatar: true,
+          verified: true,
+        },
+      },
+      company: {
+        select: {
+          name: true,
+        },
+      },
+      _count: {
+        select: {
+          helpfulVotes: true,
+          comments: true,
+        },
+      },
+      ...(user
+        ? {
+            helpfulVotes: {
+              where: { userId: user.id },
+              select: { voteType: true },
+              take: 1,
+            },
+          }
+        : {}),
+    };
+
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         where,
-        select: {
-          id: true,
-          title: true,
-          content: true,
-          overallScore: true,
-          helpfulCount: true,
-          downVoteCount: true,
-          createdAt: true,
-          author: {
-            select: {
-              username: true,
-              avatar: true,
-              verified: true,
-            },
-          },
-          company: {
-            select: {
-              name: true,
-            },
-          },
-          _count: {
-            select: {
-              helpfulVotes: true,
-              comments: true,
-            },
-          },
-        },
+        select: reviewSelect,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -82,21 +93,20 @@ export class ReviewsService {
       this.prisma.review.count({ where }),
     ]);
 
-    let reviewsWithVotes = reviews;
-    if (user && reviews.length > 0) {
-      const reviewIds = reviews.map((r) => r.id);
-      const userVotes = await this.prisma.helpfulVote.findMany({
-        where: { userId: user.id, reviewId: { in: reviewIds } },
-        select: { reviewId: true, voteType: true },
-      });
-      const voteMap = new Map(userVotes.map((v) => [v.reviewId, v.voteType]));
-      reviewsWithVotes = reviews.map((r) => ({
-        ...r,
-        userVote: voteMap.get(r.id) ?? null,
-      }));
-    } else {
-      reviewsWithVotes = reviews.map((r) => ({ ...r, userVote: null }));
-    }
+    const reviewsWithVotes = reviews.map((review) => {
+      const viewerVote =
+        user && 'helpfulVotes' in review && Array.isArray(review.helpfulVotes)
+          ? review.helpfulVotes[0]?.voteType ?? null
+          : null;
+      const { helpfulVotes, ...reviewWithoutVotes } = review as typeof review & {
+        helpfulVotes?: Array<{ voteType: 'UP' | 'DOWN' }>;
+      };
+      void helpfulVotes;
+      return {
+        ...reviewWithoutVotes,
+        userVote: viewerVote,
+      };
+    });
 
     return {
       reviews: reviewsWithVotes,

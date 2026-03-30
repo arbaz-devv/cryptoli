@@ -49,6 +49,13 @@ function hitRatio(hits: number, misses: number): number {
   return Number(((hits / total) * 100).toFixed(2));
 }
 
+function toMb(value: number): number {
+  return Number((value / (1024 * 1024)).toFixed(2));
+}
+
+/** `product` = Cryptoi app traffic only (excludes admin API routes and admin cache stores). */
+export type ObservabilitySnapshotScope = 'all' | 'product';
+
 @Injectable()
 export class ObservabilityService {
   private readonly startedAt = Date.now();
@@ -161,22 +168,38 @@ export class ObservabilityService {
     };
   }
 
-  getSnapshot() {
-    const requestRoutes = [...this.requestMetrics.entries()]
+  getSnapshot(options?: { scope?: ObservabilitySnapshotScope }) {
+    const scope = options?.scope ?? 'all';
+
+    const requestEntries = [...this.requestMetrics.entries()].filter(([, metric]) =>
+      scope === 'product' ? !metric.route.startsWith('/api/admin') : true,
+    );
+
+    const allRequestRoutes = requestEntries
       .map(([key, metric]) => ({
         method: metric.method,
         route: metric.route,
         ...this.serializeLatencyMetric(key, metric),
       }))
-      .sort((a, b) => b.p95Ms - a.p95Ms)
-      .slice(0, 20);
+      .sort((a, b) => b.p95Ms - a.p95Ms);
+
+    const requestRoutes = allRequestRoutes.slice(0, 20);
+    const totalRequests = allRequestRoutes.reduce((sum, item) => sum + item.count, 0);
+    const totalRequestErrors = allRequestRoutes.reduce(
+      (sum, item) => sum + item.errorCount,
+      0,
+    );
 
     const dbOperations = [...this.dbMetrics.entries()]
       .map(([key, metric]) => this.serializeLatencyMetric(key, metric))
       .sort((a, b) => b.p95Ms - a.p95Ms)
       .slice(0, 20);
 
-    const cacheStores = [...this.cacheMetrics.entries()]
+    const cacheEntries = [...this.cacheMetrics.entries()].filter(([name]) =>
+      scope === 'product' ? !name.startsWith('admin.') : true,
+    );
+
+    const cacheStores = cacheEntries
       .map(([name, metric]) => ({
         name,
         hits: metric.hits,
@@ -184,12 +207,6 @@ export class ObservabilityService {
         hitRatio: hitRatio(metric.hits, metric.misses),
       }))
       .sort((a, b) => b.hitRatio - a.hitRatio);
-
-    const totalRequests = requestRoutes.reduce((sum, item) => sum + item.count, 0);
-    const totalRequestErrors = requestRoutes.reduce(
-      (sum, item) => sum + item.errorCount,
-      0,
-    );
     const totalDbOps = dbOperations.reduce((sum, item) => sum + item.count, 0);
     const totalDbErrors = dbOperations.reduce(
       (sum, item) => sum + item.errorCount,
@@ -200,6 +217,7 @@ export class ObservabilityService {
       (sum, item) => sum + item.misses,
       0,
     );
+    const memoryUsage = process.memoryUsage();
 
     return {
       generatedAt: new Date().toISOString(),
@@ -225,6 +243,26 @@ export class ObservabilityService {
           hitRatio: hitRatio(totalCacheHits, totalCacheMisses),
         },
         stores: cacheStores,
+      },
+      runtime: {
+        process: {
+          pid: process.pid,
+          nodeVersion: process.version,
+          platform: process.platform,
+          arch: process.arch,
+          memory: {
+            rssBytes: memoryUsage.rss,
+            heapTotalBytes: memoryUsage.heapTotal,
+            heapUsedBytes: memoryUsage.heapUsed,
+            externalBytes: memoryUsage.external,
+            arrayBuffersBytes: memoryUsage.arrayBuffers,
+            rssMb: toMb(memoryUsage.rss),
+            heapTotalMb: toMb(memoryUsage.heapTotal),
+            heapUsedMb: toMb(memoryUsage.heapUsed),
+            externalMb: toMb(memoryUsage.external),
+            arrayBuffersMb: toMb(memoryUsage.arrayBuffers),
+          },
+        },
       },
       websocket: {
         connectedClients: this.socketConnections.size,

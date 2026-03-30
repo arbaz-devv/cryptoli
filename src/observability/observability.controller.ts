@@ -25,54 +25,58 @@ export class ObservabilityController {
   async ready() {
     const startedAt = Date.now();
 
-    let database = {
-      ready: false,
-      latencyMs: 0,
-      error: null as string | null,
-    };
-    try {
-      const dbStartedAt = Date.now();
-      await this.prisma.$queryRaw(Prisma.sql`SELECT 1`);
-      database = {
-        ready: true,
-        latencyMs: Date.now() - dbStartedAt,
-        error: null,
-      };
-    } catch (error) {
-      database = {
-        ready: false,
-        latencyMs: 0,
-        error: error instanceof Error ? error.message : 'Database unavailable',
-      };
-    }
-
     const redisClient = this.redisService.getClient();
-    let redis = {
-      configured: Boolean(process.env.REDIS_URL?.trim()),
-      ready: false,
-      latencyMs: 0,
-      error: this.redisService.getLastError(),
-    };
+    const redisConfigured = Boolean(process.env.REDIS_URL?.trim());
 
-    if (redis.configured && redisClient && this.redisService.isReady()) {
+    const databasePromise = (async () => {
+      try {
+        const dbStartedAt = Date.now();
+        await this.prisma.$queryRaw(Prisma.sql`SELECT 1`);
+        return {
+          ready: true,
+          latencyMs: Date.now() - dbStartedAt,
+          error: null as string | null,
+        };
+      } catch (error) {
+        return {
+          ready: false,
+          latencyMs: 0,
+          error:
+            error instanceof Error ? error.message : 'Database unavailable',
+        };
+      }
+    })();
+
+    const redisPromise = (async () => {
+      if (!redisConfigured || !redisClient || !this.redisService.isReady()) {
+        return {
+          configured: redisConfigured,
+          ready: false,
+          latencyMs: 0,
+          error: this.redisService.getLastError(),
+        };
+      }
+
       try {
         const redisStartedAt = Date.now();
         await redisClient.ping();
-        redis = {
+        return {
           configured: true,
           ready: true,
           latencyMs: Date.now() - redisStartedAt,
-          error: null,
+          error: null as string | null,
         };
       } catch (error) {
-        redis = {
+        return {
           configured: true,
           ready: false,
           latencyMs: 0,
           error: error instanceof Error ? error.message : 'Redis unavailable',
         };
       }
-    }
+    })();
+
+    const [database, redis] = await Promise.all([databasePromise, redisPromise]);
 
     const ready = database.ready && (!redis.configured || redis.ready);
 
