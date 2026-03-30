@@ -318,18 +318,35 @@ admin dashboard changes.
 
 **Phase B total: ~420 lines across 2 repos.**
 
-### Phase C — Event Query Layer
+### Phase C — Event Query Layer + Dashboard Completion
 
-**Backend + admin dashboard PR. The big unlock for write-only data.**
+**Backend + admin dashboard PR. The big unlock for write-only data + rendering already-fetched dimensions.**
+
+#### C-I: New backend endpoints (analytics_events read paths)
 
 | # | Task | Backend | Dashboard | Tests | Notes |
 |---|------|---------|-----------|-------|-------|
 | C1 | Event aggregation endpoint | ~60 svc + ~20 ctrl | ~100 component | ~80 | groupBy eventType + daily timeseries (raw SQL for DATE()) |
 | C2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery |
 | C3 | Search query analytics | ~40 svc + ~15 ctrl | ~80 component | ~40 | Requires raw SQL for JSONB `properties->>'query'` |
-| **Total** | | **~200** | **~280** | **~180** | |
 
-**Phase C total: ~660 lines across 2 repos.**
+#### C-II: Render already-fetched but unused analytics dimensions (dashboard-only, zero backend)
+
+The admin dashboard already fetches these via `getAnalyticsDashboardPayload()` and passes them
+through the payload — they just need components to render them.
+
+| # | Task | Backend | Dashboard | Notes |
+|---|------|---------|-----------|-------|
+| C4 | Funnel visualization (signup → purchase conversion) | 0 | ~120 component | Data: `funnel`, `funnelByUtmSource`, `funnelByPath` — 3 datasets already in payload |
+| C5 | OS distribution chart | 0 | ~60 component | Data: `byOs`, `osChartData` — already built in payload |
+| C6 | Duration percentiles (P50/P95) | 0 | ~30 component | Data: `durationP50Seconds`, `durationP95Seconds` — already in payload, only avgDuration shown |
+| C7 | Activity timeline page for user detail | 0 | ~80 page + ~10 BFF | Backend `GET /admin/users/:id/activity` already exists, no admin UI |
+| C8 | Manual rollup trigger button | 0 | ~40 component + ~10 BFF | Backend `POST /admin/analytics/rollup` already exists, no admin UI |
+
+| | **Phase C Total** | **~200** | **~630** | |
+|---|---|---|---|---|
+
+**Phase C total: ~1,010 lines across 2 repos** (backend ~200 + tests ~180 + dashboard ~630).
 
 **Performance notes:** The `(eventType, createdAt)` composite index covers all query patterns.
 At 13M rows/month, 30-day queries scan ~13M rows via index range scan — acceptable with 1-minute
@@ -351,7 +368,7 @@ Phase C (event queries) ── independent of B
 |----|---------|-------|-------|
 | 1 | Phase A: security + IP privacy | ~101 | cryptoli |
 | 2 | Phase B: admin proxy endpoints + stats enrichment | ~420 | cryptoli + cryptoi-admin |
-| 3 | Phase C: event query layer | ~660 | cryptoli + cryptoi-admin |
+| 3 | Phase C: event query layer + dashboard completion | ~1,010 | cryptoli + cryptoi-admin |
 
 ---
 
