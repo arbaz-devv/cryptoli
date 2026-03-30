@@ -1,9 +1,14 @@
 # Analytics Phase 2: Gap Analysis & Implementation Roadmap
 
 > **Date:** 2026-03-30
-> **Baseline:** main branches across 3 repos — cryptoli (fa1d85b), cryptoi-admin (5578a61), cryptoli-frontend (be97f28)
-> **Method:** 20 specialized Opus agents audited all 3 codebases, verifying every claim against actual code with file:line evidence. 875 tool invocations, ~50 min cumulative runtime.
+> **Baseline:** main branches across 2 repos (see below)
+> **Method:** 20 specialized Opus agents audited all codebases, verifying every claim against actual code with file:line evidence. 875 tool invocations, ~50 min cumulative runtime.
 > **Scope:** Admin dashboard underutilization, data flow disconnects, minor fixes.
+>
+> | Repo | Local Path | Baseline Commit |
+> |------|-----------|-----------------|
+> | **cryptoli** (NestJS backend) | `~/Code/cryptoli` | fa1d85b |
+> | **cryptoi-admin** (Next.js admin dashboard) | `~/Code/cryptoi-admin` | 5578a61 |
 
 ---
 
