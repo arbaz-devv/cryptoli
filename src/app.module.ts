@@ -22,10 +22,12 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
     ConfigModule,
+    ObservabilityModule,
     RedisModule,
     ThrottlerModule.forRootAsync({
       useFactory: (redis: RedisService) => ({
