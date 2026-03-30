@@ -67,8 +67,9 @@ Render backend data that is already returned but not displayed in `cryptoi-admin
 
 New read endpoints for the `analytics_events` table and notification analytics. See source design doc section 3 Phase B (B-I) for full scope and architecture. The `(eventType, createdAt)` composite index covers all query patterns. Cache responses for 1 minute.
 
-- [ ] **B1:** Event aggregation endpoint — service method + controller route in the analytics module. GroupBy eventType with daily timeseries and dimensional breakdowns (by country, device, browser, os, path, referrer, UTM) querying `analytics_events` columns. See source design doc for full scope
+- [x] **B1:** Event aggregation endpoint — service method + controller route in the analytics module. GroupBy eventType with daily timeseries and dimensional breakdowns (by country, device, browser, os, path, referrer, UTM) querying `analytics_events` columns. See source design doc for full scope
   - Required tests: unit tests for service aggregation logic; e2e tests for the endpoint with auth
+  > **Learnings:** Used Prisma groupBy for all dimensional breakdowns (10 dimensions) and $queryRaw for daily timeseries (date_trunc not supported in Prisma groupBy). All 12 queries run in parallel via Promise.all. 1-minute in-memory cache per unique param set (matches statsCache pattern). Endpoint: GET /api/analytics/events?from=&to=&eventType= with AnalyticsGuard. Error handling follows latestMembers pattern (generic error message, Logger.error for actual). 5 unit tests (service) + 5 unit tests (controller) + 5 e2e tests added.
 
 - [ ] **B2-prereq:** Fix `src/notifications/push.service.ts` to set `pushedAt` on the Notification record after successful `webPush.sendNotification()` — the `pushedAt` field exists in schema (line 302) but is never written. Note: `sendToUser()` currently receives only `userId` and payload, not the notification ID — the call chain from `NotificationsService.createForUser()` needs adjustment to pass the notification ID through
   - Required tests: unit test verifying pushedAt is set after successful push delivery

@@ -205,6 +205,68 @@ describe('Analytics E2E', () => {
     });
   });
 
+  describe('GET /api/analytics/events', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/events');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('timeSeries');
+      expect(res.body.data).toHaveProperty('byEventType');
+      expect(res.body.data).toHaveProperty('dateRange');
+    });
+
+    it('should accept from/to and eventType query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: '2026-03-01', to: '2026-03-30', eventType: 'page_view' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return all dimensional breakdowns in response shape', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      const data = res.body.data;
+      expect(data).toHaveProperty('byCountry');
+      expect(data).toHaveProperty('byDevice');
+      expect(data).toHaveProperty('byBrowser');
+      expect(data).toHaveProperty('byOs');
+      expect(data).toHaveProperty('byPath');
+      expect(data).toHaveProperty('byReferrer');
+      expect(data).toHaveProperty('byUtmSource');
+      expect(data).toHaveProperty('byUtmMedium');
+      expect(data).toHaveProperty('byUtmCampaign');
+    });
+  });
+
   describe('GET /api/analytics/realtime', () => {
     it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/realtime');

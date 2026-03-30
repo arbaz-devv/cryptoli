@@ -21,6 +21,21 @@ describe('AnalyticsController', () => {
       getRollupHealth: jest
         .fn()
         .mockResolvedValue({ lastSuccessDate: '2026-03-23', stale: false }),
+      getEventAggregation: jest.fn().mockResolvedValue({
+        total: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        timeSeries: [],
+        byEventType: {},
+        byCountry: {},
+        byDevice: {},
+        byBrowser: {},
+        byOs: {},
+        byPath: {},
+        byReferrer: {},
+        byUtmSource: {},
+        byUtmMedium: {},
+        byUtmCampaign: {},
+      }),
     };
     mockPrisma = {
       user: {
@@ -300,6 +315,62 @@ describe('AnalyticsController', () => {
       const result = await controller.realtime();
       expect(result.ok).toBe(true);
       expect(result.activeNow).toBe(5);
+    });
+  });
+
+  describe('events()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.events,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with event aggregation data', async () => {
+      const result = await controller.events('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(mockAnalyticsService.getEventAggregation).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+        undefined,
+      );
+    });
+
+    it('should pass eventType filter when provided', async () => {
+      await controller.events('2026-03-01', '2026-03-30', 'page_view');
+      expect(mockAnalyticsService.getEventAggregation).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+        'page_view',
+      );
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.events(undefined as any, undefined as any);
+      const [fromArg, toArg] = mockAnalyticsService.getEventAggregation.mock.calls[0];
+      // from should be ~30 days ago, to should be today
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getEventAggregation.mockRejectedValue(dbError);
+      const logSpy = jest.spyOn(controller['logger'], 'error').mockImplementation();
+
+      const result = await controller.events('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch event aggregation');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch event aggregation',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
     });
   });
 

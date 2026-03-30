@@ -12,7 +12,10 @@ import {
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
-import { AnalyticsService } from './analytics.service';
+import {
+  AnalyticsService,
+  EventAggregationResult,
+} from './analytics.service';
 import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
 import { getClientIp, getCountryHint } from './ip-utils';
@@ -103,6 +106,36 @@ export class AnalyticsController {
   }> {
     const data = await this.analyticsService.getRealtime();
     return { ok: true, activeNow: data.activeNow, byCountry: data.byCountry };
+  }
+
+  /** Event aggregation: daily timeseries + dimensional breakdowns from analytics_events table */
+  @UseGuards(AnalyticsGuard)
+  @Get('events')
+  async events(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('eventType') eventType?: string,
+  ): Promise<{ ok: boolean; data?: EventAggregationResult; error?: string }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    try {
+      const data = await this.analyticsService.getEventAggregation(
+        fromDate,
+        toDate,
+        eventType || undefined,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch event aggregation',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch event aggregation' };
+    }
   }
 
   /** Latest registered users (real data from DB) for admin analytics dashboard */
