@@ -318,9 +318,9 @@ admin dashboard changes.
 
 **Phase B total: ~420 lines across 2 repos.**
 
-### Phase C — Event Query Layer + Dashboard Completion
+### Phase C — Admin Intelligence
 
-**Backend + admin dashboard PR. The big unlock for write-only data + rendering already-fetched dimensions.**
+**Backend + admin dashboard PR. Make the analytics platform actually useful to admins.**
 
 #### C-I: New backend endpoints (analytics_events read paths)
 
@@ -359,7 +359,7 @@ needed at current scale.
 Phase A (security + IP) ── no dependencies, land first
 Phase B (admin proxy) ──── B0 is prerequisite for B1-B4
                            B1 (health proxy) resolves S2 for admin
-Phase C (event queries) ── independent of B
+Phase C (admin intelligence) ── independent of B
 ```
 
 ### PR Strategy
@@ -368,7 +368,7 @@ Phase C (event queries) ── independent of B
 |----|---------|-------|-------|
 | 1 | Phase A: security + IP privacy | ~101 | cryptoli |
 | 2 | Phase B: admin proxy endpoints + stats enrichment | ~420 | cryptoli + cryptoi-admin |
-| 3 | Phase C: event query layer + dashboard completion | ~1,010 | cryptoli + cryptoi-admin |
+| 3 | Phase C: admin intelligence | ~1,010 | cryptoli + cryptoi-admin |
 
 ---
 
