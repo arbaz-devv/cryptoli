@@ -159,9 +159,13 @@ admin dashboard changes.
 | Bug | Add missing `country` arg to follow/unfollow track() | ~2 | — | — | `users.service.ts:156,199` |
 | B5 | Fix `lastActive` in user list | ~10 | — | ~15 | Use `updatedAt` instead of hardcoded `'-'` |
 | B6 | Enrich admin stats (totalComments, totalVotes, totalFollows, totalSessions) | ~15 | ~20 | ~20 | Add 4 counters to `GET /admin/stats` |
-| **Total** | | **~41** | **~25** | **~70** | |
+| UD1 | User detail: render missing fields | — | ~20 | — | `username`, `registrationCountry`, `country`, `moderatedAt` — backend returns them, dashboard doesn't display |
+| UD2 | User detail: add dates to reviews + complaints tables | — | ~10 | — | `reviews[].createdAt`, `complaints[].createdAt` — add date columns |
+| UD3 | User detail: render discussions section | — | ~30 | — | Backend returns `discussions[]` (posts with title, commentCount, status, createdAt) — entire section unrendered |
+| UD4 | User detail: return `userAgent` + `isCompanyProfile` from backend | ~5 | — | ~10 | Dashboard tries to render these but backend doesn't include them in the response |
+| **Total** | | **~46** | **~85** | **~80** | |
 
-**Phase A total: ~136 lines across 2 repos.**
+**Phase A total: ~211 lines across 2 repos.**
 
 ### Phase B — Admin Intelligence
 
@@ -201,7 +205,7 @@ libraries, no new patterns.
 
 | # | Task | Backend | Dashboard | Tests | Notes |
 |---|------|---------|-----------|-------|-------|
-| B1 | Event aggregation endpoint | ~60 svc + ~20 ctrl | ~100 component | ~80 | groupBy eventType + daily timeseries (raw SQL for DATE()) |
+| B1 | Event aggregation endpoint | ~80 svc + ~20 ctrl | ~120 component | ~80 | groupBy eventType + daily timeseries + dimensional breakdowns (by country, device, browser, path, referrer, UTM) from analytics_events columns |
 | B2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery |
 | B3 | Search query analytics | ~40 svc + ~15 ctrl | ~80 component | ~40 | Requires raw SQL for JSONB `properties->>'query'` |
 
@@ -213,12 +217,14 @@ libraries, no new patterns.
 | B5 | OS distribution chart | 0 | ~60 component | Data: `byOs`, `osChartData` — already built in payload |
 | B6 | Duration percentiles (P50/P95) | 0 | ~30 component | Data: `durationP50Seconds`, `durationP95Seconds` — already in payload, only avgDuration shown |
 | B7 | Activity timeline page for user detail | 0 | ~80 page + ~10 BFF | Backend `GET /admin/users/:id/activity` already exists, no admin UI |
-| B8 | Manual rollup trigger button | 0 | ~40 component + ~10 BFF | Backend `POST /admin/analytics/rollup` already exists, no admin UI |
+| B8 | Manual rollup trigger button + system health status | 0 | ~60 component + ~10 BFF | Backend `POST /admin/analytics/rollup` and `GET /analytics/health` already exist. Surface rollup trigger + `configured`, `connected`, `lastError`, `rollup.lastSuccessDate`, `rollup.stale` in one operations panel |
+| B9 | Sales count + new members in range stat cards | 0 | ~15 component | Data: `sales`, `newMembersInRange` — already in payload, never destructured. Add to OverviewCardsSection or separate row |
+| B10 | Wire `browserUsagePct` + `visitorsByCountryPct` into existing sections | 0 | ~10 | Already computed in `lib/analytics.ts:449-459`, never passed to components. Wire into DeviceAndBrowserSection and CountryTrafficSection as percentage labels |
 
-| | **Phase B Total** | **~200** | **~630** | |
+| | **Phase B Total** | **~220** | **~725** | |
 |---|---|---|---|---|
 
-**Phase B total: ~1,010 lines across 2 repos** (backend ~200 + tests ~180 + dashboard ~630).
+**Phase B total: ~1,125 lines across 2 repos** (backend ~220 + tests ~180 + dashboard ~725).
 
 **Performance notes:** The `(eventType, createdAt)` composite index covers all query patterns.
 At 13M rows/month, 30-day queries scan ~13M rows via index range scan — acceptable with 1-minute
@@ -236,8 +242,8 @@ Phase B (admin intelligence) ── independent of A
 
 | PR | Content | Lines | Repos |
 |----|---------|-------|-------|
-| 1 | Phase A: fixes + stats enrichment | ~136 | cryptoli + cryptoi-admin |
-| 2 | Phase B: admin intelligence | ~1,010 | cryptoli + cryptoi-admin |
+| 1 | Phase A: fixes + stats enrichment + user detail completion | ~211 | cryptoli + cryptoi-admin |
+| 2 | Phase B: admin intelligence | ~1,125 | cryptoli + cryptoi-admin |
 
 ---
 
