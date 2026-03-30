@@ -49,10 +49,12 @@ The analytics platform is a **fully operational write machine with a severely un
 
 **Breaking change:** The admin dashboard's `checkAnalyticsHealth()` at
 `cryptoi-admin/lib/analytics.ts:104-141` calls this endpoint with **NO authentication headers**.
-Adding a guard will cause the dashboard to show "Analytics not configured" permanently.
+Adding a guard will break the dashboard unless it sends `X-Analytics-Key` (which it already has
+in its env but doesn't include in the health check call).
 
-**Fix:** Resolved by Phase B proxy — admin calls go through `/api/admin/analytics/health` with
-AdminGuard. The direct `/api/analytics/health` endpoint then gets `@UseGuards(AnalyticsGuard)`.
+**Fix:** Add `@UseGuards(AnalyticsGuard)` to the health endpoint (one decorator). Update
+`checkAnalyticsHealth()` in the admin dashboard to send `X-Analytics-Key` header (it already
+sends this header for stats/realtime/latest-members — health was just missed).
 
 ---
 
@@ -73,33 +75,7 @@ return { ok: false, error: 'Failed to fetch latest members' };
 
 ---
 
-### F3. Rich Analytics Locked Behind Separate Auth
-
-**Priority: High** | Impact: 30+ dimensions invisible to admin through admin auth
-
-`GET /api/analytics/stats` returns 30+ dimensions behind `AnalyticsGuard` (`X-Analytics-Key`).
-The admin's `GET /api/admin/stats` returns only 9 basic DB counts. They measure fundamentally
-different things — admin counts entities, analytics measures visitor behavior.
-
-**Data available in analytics but not proxied through admin auth:**
-
-Traffic timeseries, geographic breakdown, device/browser/OS distribution, referrer attribution,
-UTM campaign attribution, hourly/weekday patterns, top pages, session duration (avg/P50/P95),
-bounce rate, conversion funnel (3-stage with rates), funnel by UTM source/path, retention cohorts
-(day1/7/30), likes, realtime active visitors.
-
-**The admin dashboard IS comprehensive** — `/dashboard/analytics` renders ~25 of 30+ dimensions.
-But it uses server-to-server `X-Analytics-Key`, not admin JWT auth. The gap is auth separation.
-
-**Data fetched by admin dashboard but never rendered:**
-- Funnel visualization (3 datasets: funnel, funnelByUtmSource, funnelByPath)
-- OS distribution (fetched, transformed, no component)
-- Duration percentiles P50/P95 (only avgDuration shown)
-- `newMembersInRange`, `sales`
-
----
-
-### F4. Server-Side Events Are Write-Only
+### F3. Server-Side Events Are Write-Only
 
 **Priority: High** | Impact: 14 event types producing zero consumable output
 
@@ -132,6 +108,20 @@ argument when calling `track()`, unlike all other 12 emission sites.
 
 ---
 
+### F4. Data Fetched by Admin Dashboard but Never Rendered
+
+**Priority: Medium**
+
+The admin dashboard already fetches these via `getAnalyticsDashboardPayload()` and passes them
+through the payload — they just need components to render them.
+
+- Funnel visualization (3 datasets: `funnel`, `funnelByUtmSource`, `funnelByPath`)
+- OS distribution (`byOs`, `osChartData` — already built in payload)
+- Duration percentiles P50/P95 (`durationP50Seconds`, `durationP95Seconds` — only avgDuration shown)
+- `newMembersInRange`, `sales`
+
+---
+
 ### F5. Session Country Not Populated Without CDN
 
 **Priority: Low** | File: `auth.service.ts:263`
@@ -152,63 +142,48 @@ never assigned to `data.country`.
 Estimates include all layers required by CLAUDE.md: source, DTOs, unit tests, e2e tests, and
 admin dashboard changes.
 
-### Phase A — Minor Fixes
+### Phase A — Fixes
 
-**Backend PR. No admin/frontend coordination needed.**
+**Backend + admin dashboard PR.**
 
-| # | Fix | Source Lines | Test Lines | Notes |
-|---|-----|-------------|------------|-------|
-| F2 | Generic error in latest-members + Logger | ~10 | ~15 | Add Logger to AnalyticsController |
-| F5 | Use GeoIP country in createSession fallback | ~3 | ~5 | `data.country = meta.country \|\| geoResult?.country` |
-| Bug | Add missing `country` arg to follow/unfollow track() | ~2 | — | `users.service.ts:156,199` |
-| **Total** | | **~15** | **~20** | |
+| # | Fix | Backend | Dashboard | Tests | Notes |
+|---|-----|---------|-----------|-------|-------|
+| F1 | Add `@UseGuards(AnalyticsGuard)` to health endpoint | ~1 | ~5 | ~15 | Dashboard: add `X-Analytics-Key` header to `checkAnalyticsHealth()` |
+| F2 | Generic error in latest-members + Logger | ~10 | — | ~15 | Add Logger to AnalyticsController |
+| F5 | Use GeoIP country in createSession fallback | ~3 | — | ~5 | `data.country = meta.country \|\| geoResult?.country` |
+| Bug | Add missing `country` arg to follow/unfollow track() | ~2 | — | — | `users.service.ts:156,199` |
+| B5 | Fix `lastActive` in user list | ~10 | — | ~15 | Use `updatedAt` instead of hardcoded `'-'` |
+| B6 | Enrich admin stats (totalComments, totalVotes, totalFollows, totalSessions) | ~15 | ~20 | ~20 | Add 4 counters to `GET /admin/stats` |
+| **Total** | | **~41** | **~25** | **~70** | |
 
-### Phase B — Admin Proxy Endpoints
+**Phase A total: ~136 lines across 2 repos.**
 
-**Backend + admin dashboard PR. Prerequisite: inject AnalyticsService into AdminService.**
-
-| # | Task | Backend | Dashboard | Tests |
-|---|------|---------|-----------|-------|
-| B0 | Inject AnalyticsService + prerequisite wiring | ~10 | — | ~20 |
-| B1 | Proxy analytics/health (also fixes F1) | ~15 | ~10 | ~30 |
-| B2 | Proxy analytics/stats | ~30 + ~10 DTO | ~30 | ~50 |
-| B3 | Proxy analytics/realtime | ~13 | ~10 | ~35 |
-| B4 | Proxy analytics/latest-members | ~16 | ~10 | ~40 |
-| B5 | Fix `lastActive` in user list | ~10 | — | ~15 |
-| B6 | Enrich admin stats (totalComments, totalVotes, totalFollows, totalSessions) | ~15 | ~20 | ~20 |
-| **Total** | | **~119 + DTO** | **~80** | **~210** |
-
-**Phase B total: ~420 lines across 2 repos.**
-
-### Phase C — Admin Intelligence
+### Phase B — Admin Intelligence
 
 **Backend + admin dashboard PR. Make the analytics platform actually useful to admins.**
 
-#### C-I: New backend endpoints (analytics_events read paths)
+#### B-I: New backend endpoints (analytics_events read paths)
 
 | # | Task | Backend | Dashboard | Tests | Notes |
 |---|------|---------|-----------|-------|-------|
-| C1 | Event aggregation endpoint | ~60 svc + ~20 ctrl | ~100 component | ~80 | groupBy eventType + daily timeseries (raw SQL for DATE()) |
-| C2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery |
-| C3 | Search query analytics | ~40 svc + ~15 ctrl | ~80 component | ~40 | Requires raw SQL for JSONB `properties->>'query'` |
+| B1 | Event aggregation endpoint | ~60 svc + ~20 ctrl | ~100 component | ~80 | groupBy eventType + daily timeseries (raw SQL for DATE()) |
+| B2 | Notification analytics | ~50 svc + ~15 ctrl | ~100 component | ~60 | groupBy type, read rate, push delivery |
+| B3 | Search query analytics | ~40 svc + ~15 ctrl | ~80 component | ~40 | Requires raw SQL for JSONB `properties->>'query'` |
 
-#### C-II: Render already-fetched but unused analytics dimensions (dashboard-only, zero backend)
-
-The admin dashboard already fetches these via `getAnalyticsDashboardPayload()` and passes them
-through the payload — they just need components to render them.
+#### B-II: Render already-fetched but unused analytics dimensions (dashboard-only, zero backend)
 
 | # | Task | Backend | Dashboard | Notes |
 |---|------|---------|-----------|-------|
-| C4 | Funnel visualization (signup → purchase conversion) | 0 | ~120 component | Data: `funnel`, `funnelByUtmSource`, `funnelByPath` — 3 datasets already in payload |
-| C5 | OS distribution chart | 0 | ~60 component | Data: `byOs`, `osChartData` — already built in payload |
-| C6 | Duration percentiles (P50/P95) | 0 | ~30 component | Data: `durationP50Seconds`, `durationP95Seconds` — already in payload, only avgDuration shown |
-| C7 | Activity timeline page for user detail | 0 | ~80 page + ~10 BFF | Backend `GET /admin/users/:id/activity` already exists, no admin UI |
-| C8 | Manual rollup trigger button | 0 | ~40 component + ~10 BFF | Backend `POST /admin/analytics/rollup` already exists, no admin UI |
+| B4 | Funnel visualization (signup → purchase conversion) | 0 | ~120 component | Data: `funnel`, `funnelByUtmSource`, `funnelByPath` — 3 datasets already in payload |
+| B5 | OS distribution chart | 0 | ~60 component | Data: `byOs`, `osChartData` — already built in payload |
+| B6 | Duration percentiles (P50/P95) | 0 | ~30 component | Data: `durationP50Seconds`, `durationP95Seconds` — already in payload, only avgDuration shown |
+| B7 | Activity timeline page for user detail | 0 | ~80 page + ~10 BFF | Backend `GET /admin/users/:id/activity` already exists, no admin UI |
+| B8 | Manual rollup trigger button | 0 | ~40 component + ~10 BFF | Backend `POST /admin/analytics/rollup` already exists, no admin UI |
 
-| | **Phase C Total** | **~200** | **~630** | |
+| | **Phase B Total** | **~200** | **~630** | |
 |---|---|---|---|---|
 
-**Phase C total: ~1,010 lines across 2 repos** (backend ~200 + tests ~180 + dashboard ~630).
+**Phase B total: ~1,010 lines across 2 repos** (backend ~200 + tests ~180 + dashboard ~630).
 
 **Performance notes:** The `(eventType, createdAt)` composite index covers all query patterns.
 At 13M rows/month, 30-day queries scan ~13M rows via index range scan — acceptable with 1-minute
@@ -218,19 +193,16 @@ needed at current scale.
 ### Phase Dependencies
 
 ```
-Phase A (minor fixes) ──── no dependencies, land first
-Phase B (admin proxy) ──── B0 is prerequisite for B1-B4
-                           B1 (health proxy) resolves F1 for admin
-Phase C (admin intelligence) ── independent of B
+Phase A (fixes) ──── no dependencies, land first
+Phase B (admin intelligence) ── independent of A
 ```
 
 ### PR Strategy
 
 | PR | Content | Lines | Repos |
 |----|---------|-------|-------|
-| 1 | Phase A: minor fixes | ~35 | cryptoli |
-| 2 | Phase B: admin proxy endpoints + stats enrichment | ~420 | cryptoli + cryptoi-admin |
-| 3 | Phase C: admin intelligence | ~1,010 | cryptoli + cryptoi-admin |
+| 1 | Phase A: fixes + stats enrichment | ~136 | cryptoli + cryptoi-admin |
+| 2 | Phase B: admin intelligence | ~1,010 | cryptoli + cryptoi-admin |
 
 ---
 
@@ -238,7 +210,7 @@ Phase C (admin intelligence) ── independent of B
 
 | Gap | Impact | When |
 |-----|--------|------|
-| Health endpoint e2e test hits /health without auth, expects 200 | Breaks when B1 adds guard | Phase B |
+| Health endpoint e2e test hits /health without auth, expects 200 | Breaks when F1 adds guard | Phase A |
 | Zero e2e tests for `GET /analytics/latest-members` | No coverage for F2 fix | Phase A |
 | Zero test coverage for `latest-members` error path | No coverage for catch block | Phase A |
-| Admin dashboard has zero page/component tests | No coverage for new Phase C components | Phase C |
+| Admin dashboard has zero page/component tests | No coverage for new Phase B components | Phase B |

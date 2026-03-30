@@ -298,10 +298,15 @@ This should be part of a global retention cron alongside any other table cleanup
 
 The admin dashboard currently requires two separate secrets (`ADMIN_API_KEY` + `ANALYTICS_API_KEY`)
 to access the backend. `AdminGuard` accepts either `X-Admin-Key` or admin JWT. `AnalyticsGuard`
-accepts only `X-Analytics-Key`. This is by design (separate blast radius), but once Phase B proxy
-endpoints land (ANALYTICS-02.md), the admin dashboard will only need admin auth. Consider whether
-to keep `AnalyticsGuard` as a separate gate for external BI/monitoring consumers, or consolidate
-into a single auth mechanism.
+accepts only `X-Analytics-Key`. This is by design (separate blast radius — leaked analytics key
+only exposes read-only traffic data, not user management). The current setup works fine.
+
+If consolidation is desired later, proxy the analytics endpoints through `AdminController` behind
+`AdminGuard` so the admin dashboard only needs one secret. The original `/api/analytics/*`
+endpoints would remain for external BI/monitoring consumers with their own `X-Analytics-Key`.
+This eliminates `ANALYTICS_API_KEY` from the admin dashboard's env and resolves `D1` (SSR
+bypassing admin JWT — the analytics page SSR calls `getAnalyticsDashboardPayload()` with
+`X-Analytics-Key` directly, no admin JWT check).
 
 ---
 
