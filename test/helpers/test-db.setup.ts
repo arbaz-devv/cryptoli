@@ -51,6 +51,13 @@ export default async function globalSetup() {
     stdio: 'pipe',
   });
 
+  // Enable pg_trgm for full-text search similarity() function
+  const migrationPrisma = new PrismaClient({ datasourceUrl: databaseUrl });
+  await migrationPrisma.$executeRawUnsafe(
+    'CREATE EXTENSION IF NOT EXISTS pg_trgm',
+  );
+  await migrationPrisma.$disconnect();
+
   const testPrisma = new PrismaClient({ datasourceUrl: databaseUrl });
   const testRedisUrl = `redis://${redis.getHost()}:${redis.getMappedPort(6379)}`;
 
