@@ -378,6 +378,98 @@ describe('Analytics E2E', () => {
     });
   });
 
+  describe('GET /api/analytics/search-queries', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/search-queries');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('timeSeries');
+      expect(res.body.data).toHaveProperty('topQueries');
+      expect(res.body.data).toHaveProperty('byType');
+      expect(res.body.data).toHaveProperty('avgResultCount');
+      expect(res.body.data).toHaveProperty('dateRange');
+    });
+
+    it('should accept from/to query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .query({ from: '2026-03-01', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return search query stats with real DB data', async () => {
+      const prisma = getTestPrisma();
+
+      // Seed search_performed events with JSONB properties
+      await prisma.analyticsEvent.createMany({
+        data: [
+          {
+            eventType: 'search_performed',
+            properties: { query: 'bitcoin', type: 'companies', resultCount: 10 },
+          },
+          {
+            eventType: 'search_performed',
+            properties: { query: 'bitcoin', type: 'companies', resultCount: 8 },
+          },
+          {
+            eventType: 'search_performed',
+            properties: { query: 'ethereum', type: 'users', resultCount: 3 },
+          },
+        ],
+      });
+
+      // Use today's date to match seeded data (createdAt defaults to now)
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.topQueries).toHaveLength(2);
+      // bitcoin has 2 searches, ethereum has 1 — sorted by count desc
+      expect(data.topQueries[0].query).toBe('bitcoin');
+      expect(data.topQueries[0].count).toBe(2);
+      expect(data.topQueries[0].avgResultCount).toBe(9); // (10+8)/2
+      expect(data.topQueries[1].query).toBe('ethereum');
+      expect(data.topQueries[1].count).toBe(1);
+      expect(data.byType).toEqual({ companies: 2, users: 1 });
+      expect(data.avgResultCount).toBe(7); // (10+8+3)/3 = 7
+      expect(data.timeSeries).toHaveLength(1);
+      expect(data.timeSeries[0].date).toBe(today);
+      expect(data.timeSeries[0].count).toBe(3);
+    });
+  });
+
   describe('GET /api/analytics/realtime', () => {
     it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/realtime');

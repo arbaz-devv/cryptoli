@@ -45,6 +45,14 @@ describe('AnalyticsController', () => {
         dateRange: { from: '2026-03-01', to: '2026-03-30' },
         byType: [],
       }),
+      getSearchQueryAnalytics: jest.fn().mockResolvedValue({
+        total: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        timeSeries: [],
+        topQueries: [],
+        byType: {},
+        avgResultCount: 0,
+      }),
     };
     mockPrisma = {
       user: {
@@ -424,6 +432,53 @@ describe('AnalyticsController', () => {
       expect(result.error).not.toContain('connection lost');
       expect(logSpy).toHaveBeenCalledWith(
         'Failed to fetch notification analytics',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('searchQueries()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.searchQueries,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with search query analytics data', async () => {
+      const result = await controller.searchQueries('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(
+        mockAnalyticsService.getSearchQueryAnalytics,
+      ).toHaveBeenCalledWith('2026-03-01', '2026-03-30');
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.searchQueries(undefined as any, undefined as any);
+      const [fromArg, toArg] =
+        mockAnalyticsService.getSearchQueryAnalytics.mock.calls[0];
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getSearchQueryAnalytics.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.searchQueries('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch search query analytics');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch search query analytics',
         dbError.stack,
       );
       logSpy.mockRestore();

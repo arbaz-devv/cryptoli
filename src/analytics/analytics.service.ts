@@ -173,6 +173,21 @@ export interface NotificationAnalyticsResult {
   byType: NotificationTypeStats[];
 }
 
+export interface SearchQueryStats {
+  query: string;
+  count: number;
+  avgResultCount: number;
+}
+
+export interface SearchQueryAnalyticsResult {
+  total: number;
+  dateRange: { from: string; to: string };
+  timeSeries: Array<{ date: string; count: number }>;
+  topQueries: SearchQueryStats[];
+  byType: Record<string, number>;
+  avgResultCount: number;
+}
+
 function emptyEventAggregation(
   from: string,
   to: string,
@@ -209,6 +224,20 @@ function emptyNotificationAnalytics(
   };
 }
 
+function emptySearchQueryAnalytics(
+  from: string,
+  to: string,
+): SearchQueryAnalyticsResult {
+  return {
+    total: 0,
+    dateRange: { from, to },
+    timeSeries: [],
+    topQueries: [],
+    byType: {},
+    avgResultCount: 0,
+  };
+}
+
 export const dynamic = 'force-dynamic';
 
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
@@ -220,6 +249,10 @@ const eventAggregationCache = new Map<
 const notificationAnalyticsCache = new Map<
   string,
   { data: NotificationAnalyticsResult; expiry: number }
+>();
+const searchQueryAnalyticsCache = new Map<
+  string,
+  { data: SearchQueryAnalyticsResult; expiry: number }
 >();
 
 /** Days older than this are read from PG (4-day buffer vs 32-day Redis TTL). */
@@ -1866,6 +1899,105 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     };
 
     notificationAnalyticsCache.set(cacheKey, {
+      data: result,
+      expiry: Date.now() + STATS_CACHE_TTL_MS,
+    });
+
+    return result;
+  }
+
+  async getSearchQueryAnalytics(
+    from: string,
+    to: string,
+  ): Promise<SearchQueryAnalyticsResult> {
+    if (!this.prisma) {
+      return emptySearchQueryAnalytics(from, to);
+    }
+
+    const cacheKey = `search-queries:${from}:${to}`;
+    const cached = searchQueryAnalyticsCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T23:59:59.999Z');
+
+    const [totalRows, timeSeriesRaw, topQueriesRaw, byTypeRaw, avgResultRaw] =
+      await Promise.all([
+        // Total search events
+        this.prisma.analyticsEvent.count({
+          where: { eventType: 'search_performed', createdAt: { gte: fromDate, lte: toDate } },
+        }),
+
+        // Daily timeseries
+        this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+          SELECT date_trunc('day', created_at)::date::text AS date, COUNT(*) AS count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+          GROUP BY 1 ORDER BY 1`,
+
+        // Top queries with avg result count per query
+        this.prisma.$queryRaw<
+          Array<{ query: string; count: bigint; avg_result_count: number }>
+        >`
+          SELECT
+            properties->>'query' AS query,
+            COUNT(*) AS count,
+            AVG((properties->>'resultCount')::numeric)::float8 AS avg_result_count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'query' IS NOT NULL
+          GROUP BY 1
+          ORDER BY count DESC
+          LIMIT 50`,
+
+        // Breakdown by search type
+        this.prisma.$queryRaw<Array<{ type: string; count: bigint }>>`
+          SELECT properties->>'type' AS type, COUNT(*) AS count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'type' IS NOT NULL
+          GROUP BY 1
+          ORDER BY count DESC`,
+
+        // Overall average result count
+        this.prisma.$queryRaw<Array<{ avg_result_count: number }>>`
+          SELECT AVG((properties->>'resultCount')::numeric)::float8 AS avg_result_count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'resultCount' IS NOT NULL`,
+      ]);
+
+    const timeSeries = timeSeriesRaw.map((r) => ({
+      date: r.date,
+      count: Number(r.count),
+    }));
+
+    const topQueries: SearchQueryStats[] = topQueriesRaw.map((r) => ({
+      query: r.query,
+      count: Number(r.count),
+      avgResultCount: Math.round((r.avg_result_count ?? 0) * 100) / 100,
+    }));
+
+    const byType: Record<string, number> = {};
+    for (const row of byTypeRaw) {
+      if (row.type) byType[row.type] = Number(row.count);
+    }
+
+    const result: SearchQueryAnalyticsResult = {
+      total: totalRows,
+      dateRange: { from, to },
+      timeSeries,
+      topQueries,
+      byType,
+      avgResultCount:
+        Math.round((avgResultRaw[0]?.avg_result_count ?? 0) * 100) / 100,
+    };
+
+    searchQueryAnalyticsCache.set(cacheKey, {
       data: result,
       expiry: Date.now() + STATS_CACHE_TTL_MS,
     });

@@ -1770,4 +1770,104 @@ describe('AnalyticsService', () => {
       expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('getSearchQueryAnalytics()', () => {
+    it('should return empty result when prisma is not available', async () => {
+      const result = await service.getSearchQueryAnalytics('2026-03-01', '2026-03-30');
+
+      expect(result.total).toBe(0);
+      expect(result.timeSeries).toEqual([]);
+      expect(result.topQueries).toEqual([]);
+      expect(result.byType).toEqual({});
+      expect(result.avgResultCount).toBe(0);
+      expect(result.dateRange).toEqual({ from: '2026-03-01', to: '2026-03-30' });
+    });
+
+    it('should query search_performed events and return aggregated results', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(200);
+      prismaMock.$queryRaw
+        // timeseries
+        .mockResolvedValueOnce([
+          { date: '2026-03-01', count: BigInt(120) },
+          { date: '2026-03-02', count: BigInt(80) },
+        ])
+        // top queries
+        .mockResolvedValueOnce([
+          { query: 'bitcoin', count: BigInt(90), avg_result_count: 15.5 },
+          { query: 'ethereum', count: BigInt(60), avg_result_count: 8.3 },
+        ])
+        // by type
+        .mockResolvedValueOnce([
+          { type: 'companies', count: BigInt(130) },
+          { type: 'users', count: BigInt(70) },
+        ])
+        // avg result count
+        .mockResolvedValueOnce([{ avg_result_count: 12.75 }]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getSearchQueryAnalytics('2026-03-15', '2026-03-30');
+
+      expect(result.total).toBe(200);
+      expect(result.timeSeries).toEqual([
+        { date: '2026-03-01', count: 120 },
+        { date: '2026-03-02', count: 80 },
+      ]);
+      expect(result.topQueries).toEqual([
+        { query: 'bitcoin', count: 90, avgResultCount: 15.5 },
+        { query: 'ethereum', count: 60, avgResultCount: 8.3 },
+      ]);
+      expect(result.byType).toEqual({ companies: 130, users: 70 });
+      expect(result.avgResultCount).toBe(12.75);
+    });
+
+    it('should return zero avgResultCount when no results have resultCount', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(5);
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([]) // timeseries
+        .mockResolvedValueOnce([]) // top queries
+        .mockResolvedValueOnce([]) // by type
+        .mockResolvedValueOnce([{ avg_result_count: null }]); // avg result
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getSearchQueryAnalytics('2026-01-01', '2026-01-31');
+
+      expect(result.total).toBe(5);
+      expect(result.avgResultCount).toBe(0);
+      expect(result.topQueries).toEqual([]);
+    });
+
+    it('should cache results for 1 minute', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(10);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      await svc.getSearchQueryAnalytics('2026-03-06', '2026-03-10');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+
+      // Second call with same params returns cached result
+      await svc.getSearchQueryAnalytics('2026-03-06', '2026-03-10');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+    });
+  });
 });

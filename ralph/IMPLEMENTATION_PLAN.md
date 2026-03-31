@@ -79,8 +79,9 @@ New read endpoints for the `analytics_events` table and notification analytics. 
   - Required tests: unit tests for aggregation logic; e2e tests for the endpoint with auth
   > **Learnings:** Used single `$queryRaw` with PostgreSQL `FILTER (WHERE ...)` for efficient per-type read/pushed counts in one query. Table name is `"Notification"` (PascalCase, no @@map) with camelCase columns (`"createdAt"`, `"pushedAt"`). Rates computed as percentages rounded to 2 decimal places. 1-minute in-memory cache per unique date range (same pattern as eventAggregationCache). Endpoint: `GET /api/analytics/notifications?from=&to=` with AnalyticsGuard. E2E tests need unique date ranges to avoid in-memory cache collisions between tests. Added 4 unit tests (service) + 4 unit tests (controller) + 5 e2e tests.
 
-- [ ] **B3:** Search query analytics endpoint — service method + controller route. Extract search queries from `analytics_events` where `eventType = 'search_performed'` using `prisma.$queryRaw` for JSONB `properties->>'query'` extraction
+- [x] **B3:** Search query analytics endpoint — service method + controller route. Extract search queries from `analytics_events` where `eventType = 'search_performed'` using `prisma.$queryRaw` for JSONB `properties->>'query'` extraction
   - Required tests: unit tests for service logic; e2e tests for the endpoint with auth
+  > **Learnings:** Used 5 parallel queries: count, daily timeseries (date_trunc raw SQL), top queries with per-query avg resultCount (JSONB `->>'query'` extraction + AVG), breakdown by search type (`->>'type'`), and overall avg resultCount. 1-minute in-memory cache per unique date range (same pattern as eventAggregationCache/notificationAnalyticsCache). Endpoint: `GET /api/analytics/search-queries?from=&to=` with AnalyticsGuard. Response includes `total`, `timeSeries`, `topQueries` (query + count + avgResultCount), `byType`, `avgResultCount`. Added 4 unit tests (service) + 4 unit tests (controller) + 5 e2e tests including real DB data seeding with JSONB properties.
 
 ## Phase 4: Admin Intelligence — Dashboard
 

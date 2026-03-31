@@ -16,6 +16,7 @@ import {
   AnalyticsService,
   EventAggregationResult,
   NotificationAnalyticsResult,
+  SearchQueryAnalyticsResult,
 } from './analytics.service';
 import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
@@ -168,6 +169,38 @@ export class AnalyticsController {
         e instanceof Error ? e.stack : e,
       );
       return { ok: false, error: 'Failed to fetch notification analytics' };
+    }
+  }
+
+  /** Search query analytics: top queries, volume trends, type breakdown from analytics_events */
+  @UseGuards(AnalyticsGuard)
+  @Get('search-queries')
+  async searchQueries(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ): Promise<{
+    ok: boolean;
+    data?: SearchQueryAnalyticsResult;
+    error?: string;
+  }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    try {
+      const data = await this.analyticsService.getSearchQueryAnalytics(
+        fromDate,
+        toDate,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch search query analytics',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch search query analytics' };
     }
   }
 
