@@ -171,8 +171,9 @@ export class ObservabilityService {
   getSnapshot(options?: { scope?: ObservabilitySnapshotScope }) {
     const scope = options?.scope ?? 'all';
 
-    const requestEntries = [...this.requestMetrics.entries()].filter(([, metric]) =>
-      scope === 'product' ? !metric.route.startsWith('/api/admin') : true,
+    const requestEntries = [...this.requestMetrics.entries()].filter(
+      ([, metric]) =>
+        scope === 'product' ? !metric.route.startsWith('/api/admin') : true,
     );
 
     const allRequestRoutes = requestEntries
@@ -184,7 +185,10 @@ export class ObservabilityService {
       .sort((a, b) => b.p95Ms - a.p95Ms);
 
     const requestRoutes = allRequestRoutes.slice(0, 20);
-    const totalRequests = allRequestRoutes.reduce((sum, item) => sum + item.count, 0);
+    const totalRequests = allRequestRoutes.reduce(
+      (sum, item) => sum + item.count,
+      0,
+    );
     const totalRequestErrors = allRequestRoutes.reduce(
       (sum, item) => sum + item.errorCount,
       0,
@@ -212,7 +216,10 @@ export class ObservabilityService {
       (sum, item) => sum + item.errorCount,
       0,
     );
-    const totalCacheHits = cacheStores.reduce((sum, item) => sum + item.hits, 0);
+    const totalCacheHits = cacheStores.reduce(
+      (sum, item) => sum + item.hits,
+      0,
+    );
     const totalCacheMisses = cacheStores.reduce(
       (sum, item) => sum + item.misses,
       0,

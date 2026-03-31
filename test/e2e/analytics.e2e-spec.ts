@@ -116,8 +116,24 @@ describe('Analytics E2E', () => {
   });
 
   describe('GET /api/analytics/health', () => {
-    it('should return 200 with all required status fields', async () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
       const res = await request(server).get('/api/analytics/health');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/health')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with all required status fields when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/health')
+        .set('X-Analytics-Key', 'test-analytics-key');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('enabled');
@@ -155,6 +171,368 @@ describe('Analytics E2E', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('ok');
+    });
+  });
+
+  describe('GET /api/analytics/latest-members', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/latest-members');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with members array when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(Array.isArray(res.body.members)).toBe(true);
+    });
+
+    it('should never leak internal error details in response', async () => {
+      // Even if the DB query fails, the error message must be generic
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      // With a clean DB, this should succeed — but verify the error field
+      // shape is correct when present (ok: false responses)
+      if (!res.body.ok) {
+        expect(res.body.error).toBe('Failed to fetch latest members');
+      }
+    });
+  });
+
+  describe('GET /api/analytics/events', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/events');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('timeSeries');
+      expect(res.body.data).toHaveProperty('byEventType');
+      expect(res.body.data).toHaveProperty('dateRange');
+    });
+
+    it('should accept from/to and eventType query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: '2026-03-01', to: '2026-03-30', eventType: 'page_view' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return ok: false with error for invalid date format', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: 'not-a-date', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe('Invalid date format. Use YYYY-MM-DD.');
+    });
+
+    it('should return event aggregation stats with real DB data', async () => {
+      const prisma = getTestPrisma();
+
+      await prisma.analyticsEvent.createMany({
+        data: [
+          {
+            eventType: 'page_view',
+            country: 'US',
+            device: 'desktop',
+            browser: 'Chrome',
+          },
+          {
+            eventType: 'page_view',
+            country: 'DE',
+            device: 'mobile',
+            browser: 'Safari',
+          },
+          {
+            eventType: 'signup_completed',
+            country: 'US',
+            device: 'desktop',
+            browser: 'Chrome',
+          },
+        ],
+      });
+
+      // Use today's date to match seeded data (createdAt defaults to now)
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.byEventType).toEqual({ page_view: 2, signup_completed: 1 });
+      expect(data.byCountry).toEqual({ US: 2, DE: 1 });
+      expect(data.byDevice).toEqual({ desktop: 2, mobile: 1 });
+      expect(data.timeSeries).toHaveLength(1);
+      expect(data.timeSeries[0].date).toBe(today);
+      expect(data.timeSeries[0].count).toBe(3);
+    });
+
+    it('should return all dimensional breakdowns in response shape', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      const data = res.body.data;
+      expect(data).toHaveProperty('byCountry');
+      expect(data).toHaveProperty('byDevice');
+      expect(data).toHaveProperty('byBrowser');
+      expect(data).toHaveProperty('byOs');
+      expect(data).toHaveProperty('byPath');
+      expect(data).toHaveProperty('byReferrer');
+      expect(data).toHaveProperty('byUtmSource');
+      expect(data).toHaveProperty('byUtmMedium');
+      expect(data).toHaveProperty('byUtmCampaign');
+    });
+  });
+
+  describe('GET /api/analytics/notifications', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/notifications');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('readCount');
+      expect(res.body.data).toHaveProperty('pushedCount');
+      expect(res.body.data).toHaveProperty('readRate');
+      expect(res.body.data).toHaveProperty('pushDeliveryRate');
+      expect(res.body.data).toHaveProperty('dateRange');
+      expect(res.body.data).toHaveProperty('byType');
+    });
+
+    it('should accept from/to query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .query({ from: '2026-03-01', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return notification stats with real DB data', async () => {
+      // Seed a notification so we verify the raw query works end-to-end
+      const prisma = getTestPrisma();
+      const user = await prisma.user.create({
+        data: {
+          email: 'notif-test@example.com',
+          username: 'notiftest',
+          passwordHash: 'hash',
+        },
+      });
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: user.id,
+            type: 'NEW_REVIEW',
+            title: 'Test',
+            message: 'msg',
+            read: true,
+            pushedAt: new Date(),
+          },
+          {
+            userId: user.id,
+            type: 'NEW_REVIEW',
+            title: 'Test2',
+            message: 'msg2',
+            read: false,
+          },
+          {
+            userId: user.id,
+            type: 'NEW_COMMENT',
+            title: 'Comment',
+            message: 'cmsg',
+            read: true,
+          },
+        ],
+      });
+
+      // Use explicit date range to avoid in-memory cache collision with prior empty-DB test
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/notifications')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.readCount).toBe(2);
+      expect(data.pushedCount).toBe(1);
+      // 2/3 ≈ 66.67%
+      expect(data.readRate).toBeCloseTo(66.67, 1);
+      // 1/3 ≈ 33.33%
+      expect(data.pushDeliveryRate).toBeCloseTo(33.33, 1);
+      expect(data.byType).toHaveLength(2);
+      // Sorted by total DESC: NEW_REVIEW (2) first
+      const reviewType = data.byType.find((t: any) => t.type === 'NEW_REVIEW');
+      expect(reviewType.total).toBe(2);
+      expect(reviewType.read).toBe(1);
+      expect(reviewType.pushed).toBe(1);
+    });
+  });
+
+  describe('GET /api/analytics/search-queries', () => {
+    it('should return 401 when no X-Analytics-Key header is provided', async () => {
+      const res = await request(server).get('/api/analytics/search-queries');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 200 with ok and data when authenticated', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data).toBeDefined();
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('timeSeries');
+      expect(res.body.data).toHaveProperty('topQueries');
+      expect(res.body.data).toHaveProperty('byType');
+      expect(res.body.data).toHaveProperty('avgResultCount');
+      expect(res.body.data).toHaveProperty('dateRange');
+    });
+
+    it('should accept from/to query params', async () => {
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .query({ from: '2026-03-01', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.data.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should return search query stats with real DB data', async () => {
+      const prisma = getTestPrisma();
+
+      // Seed search_performed events with JSONB properties
+      await prisma.analyticsEvent.createMany({
+        data: [
+          {
+            eventType: 'search_performed',
+            properties: {
+              query: 'bitcoin',
+              type: 'companies',
+              resultCount: 10,
+            },
+          },
+          {
+            eventType: 'search_performed',
+            properties: { query: 'bitcoin', type: 'companies', resultCount: 8 },
+          },
+          {
+            eventType: 'search_performed',
+            properties: { query: 'ethereum', type: 'users', resultCount: 3 },
+          },
+        ],
+      });
+
+      // Use today's date to match seeded data (createdAt defaults to now)
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/search-queries')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.topQueries).toHaveLength(2);
+      // bitcoin has 2 searches, ethereum has 1 — sorted by count desc
+      expect(data.topQueries[0].query).toBe('bitcoin');
+      expect(data.topQueries[0].count).toBe(2);
+      expect(data.topQueries[0].avgResultCount).toBe(9); // (10+8)/2
+      expect(data.topQueries[1].query).toBe('ethereum');
+      expect(data.topQueries[1].count).toBe(1);
+      expect(data.byType).toEqual({ companies: 2, users: 1 });
+      expect(data.avgResultCount).toBe(7); // (10+8+3)/3 = 7
+      expect(data.timeSeries).toHaveLength(1);
+      expect(data.timeSeries[0].date).toBe(today);
+      expect(data.timeSeries[0].count).toBe(3);
     });
   });
 

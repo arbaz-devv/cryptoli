@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-27
+Last verified: 2026-03-31
 ---
 
 # Data Model
@@ -51,11 +51,14 @@ relation fields don't exist.
 
 ### Denormalized Counters
 
-Several models have denormalized count fields updated via
-`prisma.$transaction()` with a transactional delta pattern. The canonical
-implementation is `ReviewsService.vote()`. Each voting service defines a
-file-local `buildVoteCounterDelta()` to compute deltas, applied via
+Review, Comment, and Complaint models all have denormalized `helpfulCount`
+and `downVoteCount` fields updated via `prisma.$transaction()` with a
+transactional delta pattern. The canonical implementation is
+`ReviewsService.vote()`. Each voting service defines a file-local
+`buildVoteCounterDelta()` to compute deltas, applied via
 `{ increment: delta }`. Never hardcode `{ increment: 1 }` directly.
+Transaction write conflicts (P2028) are retried once — see
+`specs/voting-system.md`.
 
 Run `grep -rn 'helpfulCount\|downVoteCount\|reportCount' src/` to find all
 denormalized fields and their update sites.
@@ -80,13 +83,15 @@ See `specs/voting-system.md` for the full transaction-delta pattern.
 **AnalyticsEvent** — append-only event log, no FK to User (intentional for
 write throughput). Uses `@@map("analytics_events")` with `@map` on columns.
 Fields include eventType, sessionId, userId (nullable), ipHash, country,
-device, browser, os, path, referrer, UTM fields, durationSeconds, properties (Json).
+timezone, device, browser, os, path, referrer, UTM fields, durationSeconds,
+properties (Json).
 
 **AnalyticsDailySummary** — EAV design: `(date, dimension, dimensionValue, count)`.
 Unique constraint on `[date, dimension, dimensionValue]`. Uses
 `@@map("analytics_daily_summaries")`. Populated by the rollup service.
 
-These are the only models using `@@map` table/column mapping.
+These are the only models using `@@map` (table-level mapping). The User model
+also uses `@map` (column-level) on `registrationIp` and `registrationCountry`.
 
 ### Additional Models
 
@@ -94,10 +99,12 @@ These are the only models using `@@map` table/column mapping.
   (ACTIVE/SUSPENDED). Cascades from User.
 - **ComplaintReply** — company-authored replies to complaints. Cascades from
   both Complaint and Company.
-- **PushSubscription** — web push endpoints (endpoint, p256dh, auth).
-  Cascades from User.
+- **PushSubscription** — web push endpoints (endpoint, p256dh, auth,
+  userAgent). Cascades from User.
 - **CompanyFollow** — `@@unique([userId, companyId])`. Cascades from User
   and Company.
+- **Follow** — user-to-user follows. `@@unique([followerId, followingId])`.
+  Both `follower` and `following` relations cascade on User delete.
 
 ### Session & User Extensions
 
@@ -106,8 +113,10 @@ These are the only models using `@@map` table/column mapping.
 
 **User** has `registrationIp` and `registrationCountry` — set at registration.
 
-**Notification.actor** relation has NO `onDelete` cascade (unlike the `user`
-relation which cascades). Deleting an actor preserves notification history.
+**Notification** has `pushedAt DateTime?` — set by `PushService` after
+successful web push delivery. `Notification.actor` relation has NO `onDelete`
+cascade (unlike the `user` relation which cascades). Deleting an actor
+preserves notification history.
 
 ### Schema Change Workflow
 
@@ -118,6 +127,15 @@ After modifying `schema.prisma`:
 
 Never modify migration files directly. For multi-table writes, use
 `prisma.$transaction()`.
+
+### Trigram Indexes (Full-Text Search)
+
+The `pg_trgm` extension powers similarity-based search. Six GIN indexes with
+`gin_trgm_ops` exist on: `Company.name`, `Company.description`,
+`Review.title`, `Review.content`, `User.username`, `User.name`. These are
+created via raw SQL migration (`20260330000000_search_trigram_indexes`), not
+expressed in `schema.prisma`. The test infrastructure creates the `pg_trgm`
+extension in `globalSetup` to match production.
 
 ## Verification
 

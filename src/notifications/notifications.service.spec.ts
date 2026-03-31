@@ -44,11 +44,15 @@ describe('NotificationsService', () => {
         notification,
         unreadCount: 3,
       });
-      expect(pushMock.sendToUser).toHaveBeenCalledWith('u1', {
-        title: 'Test',
-        body: 'Hello',
-        url: '/test',
-      });
+      expect(pushMock.sendToUser).toHaveBeenCalledWith(
+        'u1',
+        {
+          title: 'Test',
+          body: 'Hello',
+          url: '/test',
+        },
+        'n1',
+      );
     });
 
     it('should swallow push errors gracefully', async () => {

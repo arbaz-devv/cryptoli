@@ -21,6 +21,38 @@ describe('AnalyticsController', () => {
       getRollupHealth: jest
         .fn()
         .mockResolvedValue({ lastSuccessDate: '2026-03-23', stale: false }),
+      getEventAggregation: jest.fn().mockResolvedValue({
+        total: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        timeSeries: [],
+        byEventType: {},
+        byCountry: {},
+        byDevice: {},
+        byBrowser: {},
+        byOs: {},
+        byPath: {},
+        byReferrer: {},
+        byUtmSource: {},
+        byUtmMedium: {},
+        byUtmCampaign: {},
+      }),
+      getNotificationAnalytics: jest.fn().mockResolvedValue({
+        total: 0,
+        readCount: 0,
+        pushedCount: 0,
+        readRate: 0,
+        pushDeliveryRate: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        byType: [],
+      }),
+      getSearchQueryAnalytics: jest.fn().mockResolvedValue({
+        total: 0,
+        dateRange: { from: '2026-03-01', to: '2026-03-30' },
+        timeSeries: [],
+        topQueries: [],
+        byType: {},
+        avgResultCount: 0,
+      }),
     };
     mockPrisma = {
       user: {
@@ -258,6 +290,14 @@ describe('AnalyticsController', () => {
   });
 
   describe('health()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.health,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
     it('should return health details with rollup status', async () => {
       const result = await controller.health();
       expect(result.enabled).toBe(true);
@@ -295,6 +335,160 @@ describe('AnalyticsController', () => {
     });
   });
 
+  describe('events()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.events,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with event aggregation data', async () => {
+      const result = await controller.events('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(mockAnalyticsService.getEventAggregation).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+        undefined,
+      );
+    });
+
+    it('should pass eventType filter when provided', async () => {
+      await controller.events('2026-03-01', '2026-03-30', 'page_view');
+      expect(mockAnalyticsService.getEventAggregation).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+        'page_view',
+      );
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.events(undefined as any, undefined as any);
+      const [fromArg, toArg] =
+        mockAnalyticsService.getEventAggregation.mock.calls[0];
+      // from should be ~30 days ago, to should be today
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getEventAggregation.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.events('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch event aggregation');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch event aggregation',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('notifications()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.notifications,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with notification analytics data', async () => {
+      const result = await controller.notifications('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(
+        mockAnalyticsService.getNotificationAnalytics,
+      ).toHaveBeenCalledWith('2026-03-01', '2026-03-30');
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.notifications(undefined as any, undefined as any);
+      const [fromArg, toArg] =
+        mockAnalyticsService.getNotificationAnalytics.mock.calls[0];
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getNotificationAnalytics.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.notifications('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch notification analytics');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch notification analytics',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('searchQueries()', () => {
+    it('should require AnalyticsGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AnalyticsController.prototype.searchQueries,
+      );
+      expect(guards).toContain(AnalyticsGuard);
+    });
+
+    it('should return ok with search query analytics data', async () => {
+      const result = await controller.searchQueries('2026-03-01', '2026-03-30');
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data!.total).toBe(0);
+      expect(mockAnalyticsService.getSearchQueryAnalytics).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+      );
+    });
+
+    it('should default to 30-day range when from/to not provided', async () => {
+      await controller.searchQueries(undefined as any, undefined as any);
+      const [fromArg, toArg] =
+        mockAnalyticsService.getSearchQueryAnalytics.mock.calls[0];
+      expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('should return generic error and log actual error on failure', async () => {
+      const dbError = new Error('connection lost');
+      mockAnalyticsService.getSearchQueryAnalytics.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.searchQueries('2026-03-01', '2026-03-30');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch search query analytics');
+      expect(result.error).not.toContain('connection lost');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch search query analytics',
+        dbError.stack,
+      );
+      logSpy.mockRestore();
+    });
+  });
+
   describe('latestMembers()', () => {
     it('should require AnalyticsGuard', () => {
       const guards = Reflect.getMetadata(
@@ -319,6 +513,27 @@ describe('AnalyticsController', () => {
       await controller.latestMembers('100');
       const call = mockPrisma.user.findMany.mock.calls[0][0];
       expect(call.take).toBe(20);
+    });
+
+    it('should return generic error message and log actual error on failure', async () => {
+      const dbError = new Error('connection refused to database');
+      mockPrisma.user.findMany.mockRejectedValue(dbError);
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
+
+      const result = await controller.latestMembers('5');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Failed to fetch latest members');
+      // Must not leak the actual DB error message
+      expect(result.error).not.toContain('connection refused');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Failed to fetch latest members',
+        dbError.stack,
+      );
+
+      logSpy.mockRestore();
     });
   });
 });

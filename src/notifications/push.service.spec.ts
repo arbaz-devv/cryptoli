@@ -113,6 +113,88 @@ describe('PushService', () => {
       expect(webPush.sendNotification).toHaveBeenCalledTimes(2);
     });
 
+    it('should set pushedAt on the notification after successful push delivery', async () => {
+      process.env.VAPID_PUBLIC_KEY = 'test-public-key';
+      process.env.VAPID_PRIVATE_KEY = 'test-private-key';
+      service.onModuleInit();
+
+      const subs = [
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/sub1',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
+      ];
+      prisma.pushSubscription.findMany.mockResolvedValue(subs);
+      prisma.notification.update.mockResolvedValue({});
+      (webPush.sendNotification as jest.Mock).mockResolvedValue({});
+
+      await service.sendToUser('u1', { title: 'Test', body: 'Hello' }, 'n1');
+
+      // Wait for fire-and-forget update
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(prisma.notification.update).toHaveBeenCalledWith({
+        where: { id: 'n1' },
+        data: { pushedAt: expect.any(Date) },
+      });
+    });
+
+    it('should not set pushedAt when all push deliveries fail', async () => {
+      process.env.VAPID_PUBLIC_KEY = 'test-public-key';
+      process.env.VAPID_PRIVATE_KEY = 'test-private-key';
+      service.onModuleInit();
+
+      const subs = [
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/sub1',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
+      ];
+      prisma.pushSubscription.findMany.mockResolvedValue(subs);
+      (webPush.sendNotification as jest.Mock).mockRejectedValue({
+        statusCode: 500,
+      });
+
+      await service.sendToUser('u1', { title: 'Test', body: 'Fail' }, 'n1');
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(prisma.notification.update).not.toHaveBeenCalled();
+    });
+
+    it('should not set pushedAt when notificationId is not provided', async () => {
+      process.env.VAPID_PUBLIC_KEY = 'test-public-key';
+      process.env.VAPID_PRIVATE_KEY = 'test-private-key';
+      service.onModuleInit();
+
+      const subs = [
+        {
+          id: 's1',
+          userId: 'u1',
+          endpoint: 'https://push.example.com/sub1',
+          p256dh: 'k1',
+          auth: 'a1',
+          createdAt: new Date(),
+        },
+      ];
+      prisma.pushSubscription.findMany.mockResolvedValue(subs);
+      (webPush.sendNotification as jest.Mock).mockResolvedValue({});
+
+      await service.sendToUser('u1', { title: 'Test', body: 'Hello' });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(prisma.notification.update).not.toHaveBeenCalled();
+    });
+
     it('should delete stale subscriptions on 410 Gone', async () => {
       process.env.VAPID_PUBLIC_KEY = 'test-public-key';
       process.env.VAPID_PRIVATE_KEY = 'test-private-key';

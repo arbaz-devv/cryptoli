@@ -45,6 +45,7 @@ export class PushService implements OnModuleInit {
   async sendToUser(
     userId: string,
     payload: { title: string; body: string; url?: string },
+    notificationId?: string,
   ) {
     if (!this.vapidConfigured) return;
 
@@ -58,7 +59,7 @@ export class PushService implements OnModuleInit {
       url: payload.url ?? '/',
     });
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       subs.map((sub) =>
         webPush.sendNotification(
           {
@@ -69,17 +70,29 @@ export class PushService implements OnModuleInit {
           { TTL: 60 * 60 * 24 },
         ),
       ),
-    ).then((results) => {
-      results.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          const err = r.reason as { statusCode?: number };
-          if (err?.statusCode === 410 || err?.statusCode === 404) {
-            void this.prisma.pushSubscription
-              .deleteMany({ where: { endpoint: subs[i].endpoint } })
-              .catch(() => {});
-          }
+    );
+
+    let anySucceeded = false;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        anySucceeded = true;
+      } else {
+        const err = r.reason as { statusCode?: number };
+        if (err?.statusCode === 410 || err?.statusCode === 404) {
+          void this.prisma.pushSubscription
+            .deleteMany({ where: { endpoint: subs[i].endpoint } })
+            .catch(() => {});
         }
-      });
+      }
     });
+
+    if (anySucceeded && notificationId) {
+      void this.prisma.notification
+        .update({
+          where: { id: notificationId },
+          data: { pushedAt: new Date() },
+        })
+        .catch(() => {});
+    }
   }
 }

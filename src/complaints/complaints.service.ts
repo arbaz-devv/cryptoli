@@ -96,7 +96,7 @@ export class ComplaintsService {
     const complaintsWithVotes = complaints.map((complaint) => {
       const viewerVote =
         user && 'votes' in complaint && Array.isArray(complaint.votes)
-          ? complaint.votes[0]?.voteType ?? null
+          ? (complaint.votes[0]?.voteType ?? null)
           : null;
       const { votes, ...complaintWithoutVotes } =
         complaint as typeof complaint & {
@@ -349,8 +349,7 @@ export class ComplaintsService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2028';
       const isTransactionNotFound =
-        error instanceof Error &&
-        /Transaction not found/i.test(error.message);
+        error instanceof Error && /Transaction not found/i.test(error.message);
 
       if (!isRetryable && !isTransactionNotFound) {
         throw error;

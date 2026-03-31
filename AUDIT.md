@@ -279,6 +279,37 @@ partitioning is purely a PostgreSQL-level optimization invisible to the ORM.
 
 ---
 
+## Deferred Items (from Analytics Phase 2 audit, 2026-03-30)
+
+### Account Deletion + Analytics Anonymization
+
+`anonymizeUserAnalytics(userId)` at `analytics.service.ts:1469` exists as a preparatory hook but
+is never called — no account deletion endpoint exists in the codebase. When user deletion is
+implemented, this method must be wired in. It currently only nullifies `user_id` on
+`analytics_events` rows; consider whether `session_id` should also be nullified.
+
+### Session Table Cleanup Cron
+
+Sessions have `expiresAt` (7 days) but expired rows are **never deleted** — only rejected at
+validation time (`auth.service.ts:297`). A periodic cleanup job should delete expired sessions.
+This should be part of a global retention cron alongside any other table cleanup.
+
+### Admin Auth Consolidation
+
+The admin dashboard currently requires two separate secrets (`ADMIN_API_KEY` + `ANALYTICS_API_KEY`)
+to access the backend. `AdminGuard` accepts either `X-Admin-Key` or admin JWT. `AnalyticsGuard`
+accepts only `X-Analytics-Key`. This is by design (separate blast radius — leaked analytics key
+only exposes read-only traffic data, not user management). The current setup works fine.
+
+If consolidation is desired later, proxy the analytics endpoints through `AdminController` behind
+`AdminGuard` so the admin dashboard only needs one secret. The original `/api/analytics/*`
+endpoints would remain for external BI/monitoring consumers with their own `X-Analytics-Key`.
+This eliminates `ANALYTICS_API_KEY` from the admin dashboard's env and resolves `D1` (SSR
+bypassing admin JWT — the analytics page SSR calls `getAnalyticsDashboardPayload()` with
+`X-Analytics-Key` directly, no admin JWT check).
+
+---
+
 ## Bottom Line
 
 The codebase is **well-organized and thoughtfully designed for a single-instance MVP**. The core business logic (voting, auth, notifications) is sound. But the path to 10M users requires:

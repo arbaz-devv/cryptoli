@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-27
+Last verified: 2026-03-31
 ---
 
 # Voting System
@@ -48,10 +48,19 @@ The sequence inside `prisma.$transaction()`:
 
 All three services (reviews, comments, complaints) follow this identical pattern.
 
+### Transaction Retry
+
+All three `vote()` methods wrap the transaction in a `runVoteTransaction()`
+function with retry-once logic for Prisma error code `P2028` (interactive
+transaction error) and messages matching `/Transaction not found/i`. If the
+first attempt fails with either condition, it retries once; other errors
+propagate immediately. Note: `helpful()` does NOT have this retry wrapper.
+
 ### Endpoints
 
 - **`POST /reviews/:id/helpful`** — UP-only toggle. Uses the same transaction +
-  delta pattern as `vote()`. Maintained for backwards compatibility.
+  delta pattern as `vote()` but without the P2028 retry wrapper and without
+  creating notifications. Maintained for backwards compatibility.
 - **`POST /reviews/:id/vote`** — Full UP/DOWN toggle with delta pattern.
 - **`POST /comments/:id/vote`** — Full UP/DOWN toggle with delta pattern.
 - **`POST /complaints/:id/vote`** — Full UP/DOWN toggle with delta pattern.
@@ -60,10 +69,12 @@ All three services (reviews, comments, complaints) follow this identical pattern
 
 After the `$transaction` completes (never inside it):
 
-- **Socket:** `ReviewsService.vote()` emits `emitReviewVoteUpdated()`. Comments
-  and complaints do NOT emit socket events after voting.
-- **Notifications:** Reviews and comments create a `NEW_REACTION` notification
-  for the entity author. Complaints do NOT create vote notifications.
+- **Socket:** `ReviewsService.vote()` and `helpful()` both emit
+  `emitReviewVoteUpdated()`. Comments and complaints do NOT emit socket events
+  after voting.
+- **Notifications:** Reviews create a `NEW_REACTION` notification on both UP
+  and DOWN votes. Comments create a notification only on UP votes
+  (`isNewUpVote` flag). Complaints do NOT create vote notifications.
 - **Analytics:** All three services call `analyticsService.track('vote_cast', ...)`
   when an optional `analyticsCtx` parameter is provided.
 

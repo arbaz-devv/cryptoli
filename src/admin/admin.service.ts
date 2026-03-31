@@ -107,15 +107,21 @@ export class AdminService {
 
   private getAdminCacheSnapshot() {
     const now = Date.now();
-    const summarizeMapCache = <T>(name: string, cache: Map<string, T>, ttlMs: number) => ({
+    const summarizeMapCache = <T>(
+      name: string,
+      cache: Map<string, T>,
+      ttlMs: number,
+    ) => ({
       name,
       kind: 'memory',
       entries: cache.size,
       ttlMs,
-      activeEntries: [...cache.values()].filter((entry: any) => entry?.expiry > now)
-        .length,
-      expiredEntries: [...cache.values()].filter((entry: any) => entry?.expiry <= now)
-        .length,
+      activeEntries: [...cache.values()].filter(
+        (entry) => ((entry as { expiry?: number })?.expiry ?? 0) > now,
+      ).length,
+      expiredEntries: [...cache.values()].filter(
+        (entry) => ((entry as { expiry?: number })?.expiry ?? 0) <= now,
+      ).length,
     });
 
     return {
@@ -128,7 +134,11 @@ export class AdminService {
           activeEntries: statsCache && statsCache.expiry > now ? 1 : 0,
           expiredEntries: statsCache && statsCache.expiry <= now ? 1 : 0,
         },
-        summarizeMapCache('admin.users', usersListCache, USERS_LIST_CACHE_TTL_MS),
+        summarizeMapCache(
+          'admin.users',
+          usersListCache,
+          USERS_LIST_CACHE_TTL_MS,
+        ),
         summarizeMapCache(
           'admin.complaints',
           complaintsListCache,
@@ -255,9 +265,7 @@ export class AdminService {
             ),
             usedHuman: memoryInfo.used_memory_human ?? null,
             peakHuman: memoryInfo.used_memory_peak_human ?? null,
-            fragmentationRatio: Number(
-              memoryInfo.mem_fragmentation_ratio ?? 0,
-            ),
+            fragmentationRatio: Number(memoryInfo.mem_fragmentation_ratio ?? 0),
           },
           clients: {
             connected: Number(clientsInfo.connected_clients ?? 0),
@@ -276,7 +284,10 @@ export class AdminService {
       }
     })();
 
-    const [database, redis] = await Promise.all([databasePromise, redisPromise]);
+    const [database, redis] = await Promise.all([
+      databasePromise,
+      redisPromise,
+    ]);
     return { database, redis };
   }
 
@@ -486,6 +497,7 @@ export class AdminService {
           avatar: true,
           role: true,
           createdAt: true,
+          updatedAt: true,
           moderation: {
             select: {
               status: true,
@@ -505,7 +517,7 @@ export class AdminService {
       status: this.mapUserStatus(u.moderation?.status),
       joinedAt: u.createdAt.toISOString().slice(0, 10),
       reviewCount: u._count.reviews,
-      lastActive: '-',
+      lastActive: u.updatedAt.toISOString().slice(0, 10),
     }));
     const result = {
       users: list,
@@ -636,6 +648,7 @@ export class AdminService {
           createdAt: true,
           ip: true,
           ipHash: true,
+          userAgent: true,
           device: true,
           browser: true,
           os: true,
@@ -750,6 +763,7 @@ export class AdminService {
         os: latestSession?.os ?? undefined,
         country: latestSession?.country ?? undefined,
         timezone: latestSession?.timezone ?? undefined,
+        userAgent: latestSession?.userAgent ?? undefined,
         loginCount: sessions.length,
         moderationReason: user.moderation?.reason ?? undefined,
         moderatedAt: user.moderation?.updatedAt?.toISOString(),

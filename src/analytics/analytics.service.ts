@@ -138,10 +138,122 @@ export interface AnalyticsStats {
   };
 }
 
+export interface EventAggregationResult {
+  total: number;
+  dateRange: { from: string; to: string };
+  timeSeries: Array<{ date: string; count: number }>;
+  byEventType: Record<string, number>;
+  byCountry: Record<string, number>;
+  byDevice: Record<string, number>;
+  byBrowser: Record<string, number>;
+  byOs: Record<string, number>;
+  byPath: Record<string, number>;
+  byReferrer: Record<string, number>;
+  byUtmSource: Record<string, number>;
+  byUtmMedium: Record<string, number>;
+  byUtmCampaign: Record<string, number>;
+}
+
+export interface NotificationTypeStats {
+  type: string;
+  total: number;
+  read: number;
+  pushed: number;
+  readRate: number;
+  pushDeliveryRate: number;
+}
+
+export interface NotificationAnalyticsResult {
+  total: number;
+  readCount: number;
+  pushedCount: number;
+  readRate: number;
+  pushDeliveryRate: number;
+  dateRange: { from: string; to: string };
+  byType: NotificationTypeStats[];
+}
+
+export interface SearchQueryStats {
+  query: string;
+  count: number;
+  avgResultCount: number;
+}
+
+export interface SearchQueryAnalyticsResult {
+  total: number;
+  dateRange: { from: string; to: string };
+  timeSeries: Array<{ date: string; count: number }>;
+  topQueries: SearchQueryStats[];
+  byType: Record<string, number>;
+  avgResultCount: number;
+}
+
+function emptyEventAggregation(
+  from: string,
+  to: string,
+): EventAggregationResult {
+  return {
+    total: 0,
+    dateRange: { from, to },
+    timeSeries: [],
+    byEventType: {},
+    byCountry: {},
+    byDevice: {},
+    byBrowser: {},
+    byOs: {},
+    byPath: {},
+    byReferrer: {},
+    byUtmSource: {},
+    byUtmMedium: {},
+    byUtmCampaign: {},
+  };
+}
+
+function emptyNotificationAnalytics(
+  from: string,
+  to: string,
+): NotificationAnalyticsResult {
+  return {
+    total: 0,
+    readCount: 0,
+    pushedCount: 0,
+    readRate: 0,
+    pushDeliveryRate: 0,
+    dateRange: { from, to },
+    byType: [],
+  };
+}
+
+function emptySearchQueryAnalytics(
+  from: string,
+  to: string,
+): SearchQueryAnalyticsResult {
+  return {
+    total: 0,
+    dateRange: { from, to },
+    timeSeries: [],
+    topQueries: [],
+    byType: {},
+    avgResultCount: 0,
+  };
+}
+
 export const dynamic = 'force-dynamic';
 
 const STATS_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const statsCache = new Map<string, { data: AnalyticsStats; expiry: number }>();
+const eventAggregationCache = new Map<
+  string,
+  { data: EventAggregationResult; expiry: number }
+>();
+const notificationAnalyticsCache = new Map<
+  string,
+  { data: NotificationAnalyticsResult; expiry: number }
+>();
+const searchQueryAnalyticsCache = new Map<
+  string,
+  { data: SearchQueryAnalyticsResult; expiry: number }
+>();
 
 /** Days older than this are read from PG (4-day buffer vs 32-day Redis TTL). */
 const PG_CUTOFF_DAYS = 28;
@@ -1544,6 +1656,354 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
     } finally {
       await redis.del(runningKey);
     }
+  }
+
+  // ── Event Aggregation (Phase 3 B1) ──────────────────────────────
+
+  /**
+   * Aggregates analytics_events by eventType with daily timeseries and
+   * dimensional breakdowns. Queries the PG analytics_events table directly
+   * (not Redis counters). Cached for 1 minute per unique param set.
+   */
+  async getEventAggregation(
+    from: string,
+    to: string,
+    eventType?: string,
+  ): Promise<EventAggregationResult> {
+    if (!this.prisma) {
+      return emptyEventAggregation(from, to);
+    }
+
+    const cacheKey = `events:${from}:${to}:${eventType ?? ''}`;
+    const cached = eventAggregationCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T23:59:59.999Z');
+
+    const where: Record<string, unknown> = {
+      createdAt: { gte: fromDate, lte: toDate },
+    };
+    if (eventType) where.eventType = eventType;
+
+    const prisma = this.prisma;
+
+    // Run all queries in parallel for performance
+    const [
+      total,
+      timeSeriesRaw,
+      byEventType,
+      byCountry,
+      byDevice,
+      byBrowser,
+      byOs,
+      byPath,
+      byReferrer,
+      byUtmSource,
+      byUtmMedium,
+      byUtmCampaign,
+    ] = await Promise.all([
+      prisma.analyticsEvent.count({ where }),
+
+      // Daily timeseries via raw SQL (Prisma groupBy can't truncate dates)
+      eventType
+        ? prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+            SELECT date_trunc('day', created_at)::date::text AS date, COUNT(*) AS count
+            FROM analytics_events
+            WHERE created_at >= ${fromDate} AND created_at <= ${toDate}
+              AND event_type = ${eventType}
+            GROUP BY 1 ORDER BY 1`
+        : prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+            SELECT date_trunc('day', created_at)::date::text AS date, COUNT(*) AS count
+            FROM analytics_events
+            WHERE created_at >= ${fromDate} AND created_at <= ${toDate}
+            GROUP BY 1 ORDER BY 1`,
+
+      prisma.analyticsEvent.groupBy({
+        by: ['eventType'],
+        where,
+        _count: true,
+        orderBy: { _count: { eventType: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['country'],
+        where: { ...where, country: { not: null } },
+        _count: true,
+        orderBy: { _count: { country: 'desc' } },
+        take: 50,
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['device'],
+        where: { ...where, device: { not: null } },
+        _count: true,
+        orderBy: { _count: { device: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['browser'],
+        where: { ...where, browser: { not: null } },
+        _count: true,
+        orderBy: { _count: { browser: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['os'],
+        where: { ...where, os: { not: null } },
+        _count: true,
+        orderBy: { _count: { os: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['path'],
+        where: { ...where, path: { not: null } },
+        _count: true,
+        orderBy: { _count: { path: 'desc' } },
+        take: 50,
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['referrer'],
+        where: { ...where, referrer: { not: null } },
+        _count: true,
+        orderBy: { _count: { referrer: 'desc' } },
+        take: 50,
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['utmSource'],
+        where: { ...where, utmSource: { not: null } },
+        _count: true,
+        orderBy: { _count: { utmSource: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['utmMedium'],
+        where: { ...where, utmMedium: { not: null } },
+        _count: true,
+        orderBy: { _count: { utmMedium: 'desc' } },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ['utmCampaign'],
+        where: { ...where, utmCampaign: { not: null } },
+        _count: true,
+        orderBy: { _count: { utmCampaign: 'desc' } },
+      }),
+    ]);
+
+    const timeSeries = timeSeriesRaw.map((r) => ({
+      date: r.date,
+      count: Number(r.count),
+    }));
+
+    const toRecord = <T extends Record<string, unknown> & { _count: number }>(
+      rows: T[],
+      key: keyof T & string,
+    ): Record<string, number> => {
+      const record: Record<string, number> = {};
+      for (const row of rows) {
+        const k = row[key] as string;
+        if (k) record[k] = row._count;
+      }
+      return record;
+    };
+
+    const result: EventAggregationResult = {
+      total,
+      dateRange: { from, to },
+      timeSeries,
+      byEventType: toRecord(byEventType, 'eventType'),
+      byCountry: toRecord(byCountry, 'country'),
+      byDevice: toRecord(byDevice, 'device'),
+      byBrowser: toRecord(byBrowser, 'browser'),
+      byOs: toRecord(byOs, 'os'),
+      byPath: toRecord(byPath, 'path'),
+      byReferrer: toRecord(byReferrer, 'referrer'),
+      byUtmSource: toRecord(byUtmSource, 'utmSource'),
+      byUtmMedium: toRecord(byUtmMedium, 'utmMedium'),
+      byUtmCampaign: toRecord(byUtmCampaign, 'utmCampaign'),
+    };
+
+    eventAggregationCache.set(cacheKey, {
+      data: result,
+      expiry: Date.now() + STATS_CACHE_TTL_MS,
+    });
+
+    return result;
+  }
+
+  async getNotificationAnalytics(
+    from: string,
+    to: string,
+  ): Promise<NotificationAnalyticsResult> {
+    if (!this.prisma) {
+      return emptyNotificationAnalytics(from, to);
+    }
+
+    const cacheKey = `notifications:${from}:${to}`;
+    const cached = notificationAnalyticsCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T23:59:59.999Z');
+
+    // Single raw query: group by type with read/pushed counts using FILTER
+    // Notification model has no @@map — table is "Notification", columns are camelCase
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        type: string;
+        total: bigint;
+        read_count: bigint;
+        pushed_count: bigint;
+      }>
+    >`
+      SELECT type::text,
+        COUNT(*)                                          AS total,
+        COUNT(*) FILTER (WHERE read = true)               AS read_count,
+        COUNT(*) FILTER (WHERE "pushedAt" IS NOT NULL)    AS pushed_count
+      FROM "Notification"
+      WHERE "createdAt" >= ${fromDate} AND "createdAt" <= ${toDate}
+      GROUP BY type
+      ORDER BY total DESC
+    `;
+
+    let grandTotal = 0;
+    let grandRead = 0;
+    let grandPushed = 0;
+
+    const byType: NotificationTypeStats[] = rows.map((row) => {
+      const total = Number(row.total);
+      const read = Number(row.read_count);
+      const pushed = Number(row.pushed_count);
+      grandTotal += total;
+      grandRead += read;
+      grandPushed += pushed;
+      return {
+        type: row.type,
+        total,
+        read,
+        pushed,
+        readRate: total > 0 ? Math.round((read / total) * 10000) / 100 : 0,
+        pushDeliveryRate:
+          total > 0 ? Math.round((pushed / total) * 10000) / 100 : 0,
+      };
+    });
+
+    const result: NotificationAnalyticsResult = {
+      total: grandTotal,
+      readCount: grandRead,
+      pushedCount: grandPushed,
+      readRate:
+        grandTotal > 0 ? Math.round((grandRead / grandTotal) * 10000) / 100 : 0,
+      pushDeliveryRate:
+        grandTotal > 0
+          ? Math.round((grandPushed / grandTotal) * 10000) / 100
+          : 0,
+      dateRange: { from, to },
+      byType,
+    };
+
+    notificationAnalyticsCache.set(cacheKey, {
+      data: result,
+      expiry: Date.now() + STATS_CACHE_TTL_MS,
+    });
+
+    return result;
+  }
+
+  async getSearchQueryAnalytics(
+    from: string,
+    to: string,
+  ): Promise<SearchQueryAnalyticsResult> {
+    if (!this.prisma) {
+      return emptySearchQueryAnalytics(from, to);
+    }
+
+    const cacheKey = `search-queries:${from}:${to}`;
+    const cached = searchQueryAnalyticsCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+
+    const fromDate = new Date(from + 'T00:00:00Z');
+    const toDate = new Date(to + 'T23:59:59.999Z');
+
+    const [totalRows, timeSeriesRaw, topQueriesRaw, byTypeRaw, avgResultRaw] =
+      await Promise.all([
+        // Total search events
+        this.prisma.analyticsEvent.count({
+          where: {
+            eventType: 'search_performed',
+            createdAt: { gte: fromDate, lte: toDate },
+          },
+        }),
+
+        // Daily timeseries
+        this.prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+          SELECT date_trunc('day', created_at)::date::text AS date, COUNT(*) AS count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+          GROUP BY 1 ORDER BY 1`,
+
+        // Top queries with avg result count per query
+        this.prisma.$queryRaw<
+          Array<{ query: string; count: bigint; avg_result_count: number }>
+        >`
+          SELECT
+            properties->>'query' AS query,
+            COUNT(*) AS count,
+            AVG((properties->>'resultCount')::numeric)::float8 AS avg_result_count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'query' IS NOT NULL
+          GROUP BY 1
+          ORDER BY count DESC
+          LIMIT 50`,
+
+        // Breakdown by search type
+        this.prisma.$queryRaw<Array<{ type: string; count: bigint }>>`
+          SELECT properties->>'type' AS type, COUNT(*) AS count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'type' IS NOT NULL
+          GROUP BY 1
+          ORDER BY count DESC`,
+
+        // Overall average result count
+        this.prisma.$queryRaw<Array<{ avg_result_count: number }>>`
+          SELECT AVG((properties->>'resultCount')::numeric)::float8 AS avg_result_count
+          FROM analytics_events
+          WHERE event_type = 'search_performed'
+            AND created_at >= ${fromDate} AND created_at <= ${toDate}
+            AND properties->>'resultCount' IS NOT NULL`,
+      ]);
+
+    const timeSeries = timeSeriesRaw.map((r) => ({
+      date: r.date,
+      count: Number(r.count),
+    }));
+
+    const topQueries: SearchQueryStats[] = topQueriesRaw.map((r) => ({
+      query: r.query,
+      count: Number(r.count),
+      avgResultCount: Math.round((r.avg_result_count ?? 0) * 100) / 100,
+    }));
+
+    const byType: Record<string, number> = {};
+    for (const row of byTypeRaw) {
+      if (row.type) byType[row.type] = Number(row.count);
+    }
+
+    const result: SearchQueryAnalyticsResult = {
+      total: totalRows,
+      dateRange: { from, to },
+      timeSeries,
+      topQueries,
+      byType,
+      avgResultCount:
+        Math.round((avgResultRaw[0]?.avg_result_count ?? 0) * 100) / 100,
+    };
+
+    searchQueryAnalyticsCache.set(cacheKey, {
+      data: result,
+      expiry: Date.now() + STATS_CACHE_TTL_MS,
+    });
+
+    return result;
   }
 
   isEnabled(): boolean {

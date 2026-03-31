@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Post,
   Query,
   Req,
@@ -11,15 +12,29 @@ import {
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
-import { AnalyticsService } from './analytics.service';
+import {
+  AnalyticsService,
+  EventAggregationResult,
+  NotificationAnalyticsResult,
+  SearchQueryAnalyticsResult,
+} from './analytics.service';
 import { AnalyticsGuard } from './analytics.guard';
 import { TrackDto } from './dto/track.dto';
 import { getClientIp, getCountryHint } from './ip-utils';
 import { AnalyticsInterceptor } from './analytics.interceptor';
 
+function isValidDateParam(s: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(new Date(s + 'T00:00:00Z').getTime())
+  );
+}
+
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/analytics')
 export class AnalyticsController {
+  private readonly logger = new Logger(AnalyticsController.name);
+
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly prisma: PrismaService,
@@ -70,6 +85,7 @@ export class AnalyticsController {
     return { ok: true, data };
   }
 
+  @UseGuards(AnalyticsGuard)
   @Get('health')
   async health(): Promise<{
     enabled: boolean;
@@ -99,6 +115,109 @@ export class AnalyticsController {
   }> {
     const data = await this.analyticsService.getRealtime();
     return { ok: true, activeNow: data.activeNow, byCountry: data.byCountry };
+  }
+
+  /** Event aggregation: daily timeseries + dimensional breakdowns from analytics_events table */
+  @UseGuards(AnalyticsGuard)
+  @Get('events')
+  async events(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('eventType') eventType?: string,
+  ): Promise<{ ok: boolean; data?: EventAggregationResult; error?: string }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
+    try {
+      const data = await this.analyticsService.getEventAggregation(
+        fromDate,
+        toDate,
+        eventType || undefined,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch event aggregation',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch event aggregation' };
+    }
+  }
+
+  /** Notification analytics: read rates, push delivery rates, grouped by type */
+  @UseGuards(AnalyticsGuard)
+  @Get('notifications')
+  async notifications(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ): Promise<{
+    ok: boolean;
+    data?: NotificationAnalyticsResult;
+    error?: string;
+  }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
+    try {
+      const data = await this.analyticsService.getNotificationAnalytics(
+        fromDate,
+        toDate,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch notification analytics',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch notification analytics' };
+    }
+  }
+
+  /** Search query analytics: top queries, volume trends, type breakdown from analytics_events */
+  @UseGuards(AnalyticsGuard)
+  @Get('search-queries')
+  async searchQueries(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ): Promise<{
+    ok: boolean;
+    data?: SearchQueryAnalyticsResult;
+    error?: string;
+  }> {
+    const fromDate =
+      from ||
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+    const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
+    try {
+      const data = await this.analyticsService.getSearchQueryAnalytics(
+        fromDate,
+        toDate,
+      );
+      return { ok: true, data };
+    } catch (e) {
+      this.logger.error(
+        'Failed to fetch search query analytics',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch search query analytics' };
+    }
   }
 
   /** Latest registered users (real data from DB) for admin analytics dashboard */
@@ -140,9 +259,11 @@ export class AnalyticsController {
       });
       return { ok: true, members };
     } catch (e) {
-      const message =
-        e instanceof Error ? e.message : 'Failed to fetch latest members';
-      return { ok: false, error: message };
+      this.logger.error(
+        'Failed to fetch latest members',
+        e instanceof Error ? e.stack : e,
+      );
+      return { ok: false, error: 'Failed to fetch latest members' };
     }
   }
 }

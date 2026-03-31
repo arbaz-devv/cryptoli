@@ -1526,4 +1526,369 @@ describe('AnalyticsService', () => {
       expect(prismaMock.$executeRaw).toHaveBeenCalled();
     });
   });
+
+  describe('getEventAggregation()', () => {
+    it('should return empty result when prisma is not available', async () => {
+      // Default service has no prisma injected
+      const result = await service.getEventAggregation(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.timeSeries).toEqual([]);
+      expect(result.byEventType).toEqual({});
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should query analytics_events and return aggregated breakdowns', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(150);
+      prismaMock.$queryRaw.mockResolvedValue([
+        { date: '2026-03-01', count: BigInt(80) },
+        { date: '2026-03-02', count: BigInt(70) },
+      ]);
+      // Mock all groupBy calls in order: eventType, country, device, browser, os, path, referrer, utmSource, utmMedium, utmCampaign
+      prismaMock.analyticsEvent.groupBy
+        .mockResolvedValueOnce([
+          { eventType: 'page_view', _count: 100 },
+          { eventType: 'page_leave', _count: 50 },
+        ])
+        .mockResolvedValueOnce([
+          { country: 'US', _count: 90 },
+          { country: 'DE', _count: 60 },
+        ])
+        .mockResolvedValueOnce([{ device: 'desktop', _count: 120 }])
+        .mockResolvedValueOnce([{ browser: 'Chrome', _count: 100 }])
+        .mockResolvedValueOnce([{ os: 'Windows', _count: 80 }])
+        .mockResolvedValueOnce([{ path: '/home', _count: 70 }])
+        .mockResolvedValueOnce([{ referrer: 'google.com', _count: 40 }])
+        .mockResolvedValueOnce([{ utmSource: 'twitter', _count: 20 }])
+        .mockResolvedValueOnce([{ utmMedium: 'social', _count: 15 }])
+        .mockResolvedValueOnce([{ utmCampaign: 'launch', _count: 10 }]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getEventAggregation('2026-03-01', '2026-03-30');
+
+      expect(result.total).toBe(150);
+      expect(result.timeSeries).toEqual([
+        { date: '2026-03-01', count: 80 },
+        { date: '2026-03-02', count: 70 },
+      ]);
+      expect(result.byEventType).toEqual({ page_view: 100, page_leave: 50 });
+      expect(result.byCountry).toEqual({ US: 90, DE: 60 });
+      expect(result.byDevice).toEqual({ desktop: 120 });
+      expect(result.byBrowser).toEqual({ Chrome: 100 });
+      expect(result.byOs).toEqual({ Windows: 80 });
+      expect(result.byPath).toEqual({ '/home': 70 });
+      expect(result.byReferrer).toEqual({ 'google.com': 40 });
+      expect(result.byUtmSource).toEqual({ twitter: 20 });
+      expect(result.byUtmMedium).toEqual({ social: 15 });
+      expect(result.byUtmCampaign).toEqual({ launch: 10 });
+    });
+
+    it('should filter by eventType when provided', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(50);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+      prismaMock.analyticsEvent.groupBy.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      await svc.getEventAggregation('2026-03-01', '2026-03-30', 'page_view');
+
+      // Verify count was called with eventType filter
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ eventType: 'page_view' }),
+        }),
+      );
+    });
+
+    it('should cache results for 1 minute', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(10);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+      prismaMock.analyticsEvent.groupBy.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      // First call hits DB
+      await svc.getEventAggregation('2026-03-01', '2026-03-05');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+
+      // Second call with same params returns cached result
+      await svc.getEventAggregation('2026-03-01', '2026-03-05');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip null dimension values in groupBy results', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(5);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+      prismaMock.analyticsEvent.groupBy
+        .mockResolvedValueOnce([{ eventType: 'page_view', _count: 5 }])
+        .mockResolvedValueOnce([{ country: null, _count: 3 }])
+        .mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getEventAggregation('2026-03-10', '2026-03-10');
+
+      // null keys should be filtered out
+      expect(result.byCountry).toEqual({});
+      expect(result.byEventType).toEqual({ page_view: 5 });
+    });
+  });
+
+  describe('getNotificationAnalytics()', () => {
+    it('should return empty result when prisma is not available', async () => {
+      const result = await service.getNotificationAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.readCount).toBe(0);
+      expect(result.pushedCount).toBe(0);
+      expect(result.readRate).toBe(0);
+      expect(result.pushDeliveryRate).toBe(0);
+      expect(result.byType).toEqual([]);
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should query notifications and return aggregated type breakdown with rates', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([
+        {
+          type: 'NEW_REVIEW',
+          total: BigInt(100),
+          read_count: BigInt(80),
+          pushed_count: BigInt(60),
+        },
+        {
+          type: 'NEW_COMMENT',
+          total: BigInt(50),
+          read_count: BigInt(10),
+          pushed_count: BigInt(25),
+        },
+      ]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getNotificationAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(150);
+      expect(result.readCount).toBe(90);
+      expect(result.pushedCount).toBe(85);
+      expect(result.readRate).toBe(60); // 90/150 = 0.6 = 60%
+      expect(result.pushDeliveryRate).toBe(56.67); // 85/150 ≈ 56.67%
+      expect(result.byType).toHaveLength(2);
+      expect(result.byType[0]).toEqual({
+        type: 'NEW_REVIEW',
+        total: 100,
+        read: 80,
+        pushed: 60,
+        readRate: 80,
+        pushDeliveryRate: 60,
+      });
+      expect(result.byType[1]).toEqual({
+        type: 'NEW_COMMENT',
+        total: 50,
+        read: 10,
+        pushed: 25,
+        readRate: 20,
+        pushDeliveryRate: 50,
+      });
+    });
+
+    it('should return zero rates when there are no notifications', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      // Use unique date range to avoid hitting the module-level cache from prior test
+      const result = await svc.getNotificationAnalytics(
+        '2026-02-01',
+        '2026-02-28',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.readRate).toBe(0);
+      expect(result.pushDeliveryRate).toBe(0);
+      expect(result.byType).toEqual([]);
+    });
+
+    it('should cache results for 1 minute', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      await svc.getNotificationAnalytics('2026-03-01', '2026-03-05');
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+
+      // Second call with same params returns cached result
+      await svc.getNotificationAnalytics('2026-03-01', '2026-03-05');
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getSearchQueryAnalytics()', () => {
+    it('should return empty result when prisma is not available', async () => {
+      const result = await service.getSearchQueryAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(0);
+      expect(result.timeSeries).toEqual([]);
+      expect(result.topQueries).toEqual([]);
+      expect(result.byType).toEqual({});
+      expect(result.avgResultCount).toBe(0);
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
+    });
+
+    it('should query search_performed events and return aggregated results', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(200);
+      prismaMock.$queryRaw
+        // timeseries
+        .mockResolvedValueOnce([
+          { date: '2026-03-01', count: BigInt(120) },
+          { date: '2026-03-02', count: BigInt(80) },
+        ])
+        // top queries
+        .mockResolvedValueOnce([
+          { query: 'bitcoin', count: BigInt(90), avg_result_count: 15.5 },
+          { query: 'ethereum', count: BigInt(60), avg_result_count: 8.3 },
+        ])
+        // by type
+        .mockResolvedValueOnce([
+          { type: 'companies', count: BigInt(130) },
+          { type: 'users', count: BigInt(70) },
+        ])
+        // avg result count
+        .mockResolvedValueOnce([{ avg_result_count: 12.75 }]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getSearchQueryAnalytics(
+        '2026-03-15',
+        '2026-03-30',
+      );
+
+      expect(result.total).toBe(200);
+      expect(result.timeSeries).toEqual([
+        { date: '2026-03-01', count: 120 },
+        { date: '2026-03-02', count: 80 },
+      ]);
+      expect(result.topQueries).toEqual([
+        { query: 'bitcoin', count: 90, avgResultCount: 15.5 },
+        { query: 'ethereum', count: 60, avgResultCount: 8.3 },
+      ]);
+      expect(result.byType).toEqual({ companies: 130, users: 70 });
+      expect(result.avgResultCount).toBe(12.75);
+    });
+
+    it('should return zero avgResultCount when no results have resultCount', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(5);
+      prismaMock.$queryRaw
+        .mockResolvedValueOnce([]) // timeseries
+        .mockResolvedValueOnce([]) // top queries
+        .mockResolvedValueOnce([]) // by type
+        .mockResolvedValueOnce([{ avg_result_count: null }]); // avg result
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      const result = await svc.getSearchQueryAnalytics(
+        '2026-01-01',
+        '2026-01-31',
+      );
+
+      expect(result.total).toBe(5);
+      expect(result.avgResultCount).toBe(0);
+      expect(result.topQueries).toEqual([]);
+    });
+
+    it('should cache results for 1 minute', async () => {
+      const prismaMock = createPrismaMock();
+      prismaMock.analyticsEvent.count.mockResolvedValue(10);
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const svc = new AnalyticsService(
+        redisMock as any,
+        geoipMock as any,
+        undefined,
+        prismaMock,
+      );
+
+      await svc.getSearchQueryAnalytics('2026-03-06', '2026-03-10');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+
+      // Second call with same params returns cached result
+      await svc.getSearchQueryAnalytics('2026-03-06', '2026-03-10');
+      expect(prismaMock.analyticsEvent.count).toHaveBeenCalledTimes(1);
+    });
+  });
 });

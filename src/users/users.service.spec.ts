@@ -259,6 +259,7 @@ describe('UsersService', () => {
           userId: 'u1',
           properties: { targetUserId: 'u2', targetUsername: 'targetuser' },
         }),
+        'US',
       );
     });
 
@@ -277,6 +278,7 @@ describe('UsersService', () => {
           userId: 'u1',
           properties: { targetUserId: 'u2', targetUsername: 'targetuser' },
         }),
+        'US',
       );
     });
 

@@ -81,6 +81,7 @@ describe('AdminService', () => {
           avatar: null,
           role: 'USER',
           createdAt: new Date('2026-01-15'),
+          updatedAt: new Date('2026-03-20'),
           moderation: null,
           _count: { reviews: 3 },
         },
@@ -93,6 +94,7 @@ describe('AdminService', () => {
       expect((result.users[0] as any).name).toBe('Alice');
       expect((result.users[0] as any).role).toBe('user');
       expect((result.users[0] as any).reviewCount).toBe(3);
+      expect((result.users[0] as any).lastActive).toBe('2026-03-20');
       expect(result.pagination.total).toBe(1);
     });
 
@@ -267,6 +269,7 @@ describe('AdminService', () => {
           createdAt: yesterday,
           ip: '10.0.0.1',
           ipHash: 'oldhash',
+          userAgent: 'Mozilla/5.0 Firefox/120.0',
           device: 'mobile',
           browser: 'Firefox',
           os: 'Android',
@@ -278,6 +281,7 @@ describe('AdminService', () => {
           createdAt: now,
           ip: '192.168.1.1',
           ipHash: 'newhash',
+          userAgent: 'Mozilla/5.0 Chrome/120.0',
           device: 'desktop',
           browser: 'Chrome',
           os: 'Windows',
@@ -298,6 +302,7 @@ describe('AdminService', () => {
       expect(result.user.os).toBe('Windows');
       expect(result.user.country).toBe('US');
       expect(result.user.timezone).toBe('America/New_York');
+      expect(result.user.userAgent).toBe('Mozilla/5.0 Chrome/120.0');
       expect(result.user.loginCount).toBe(2);
       // registrationIp falls back to earliest session when user field is null
       expect(result.user.registrationIp).toBe('10.0.0.1');
