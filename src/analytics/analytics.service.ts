@@ -1789,14 +1789,14 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       count: Number(r.count),
     }));
 
-    const toRecord = <T extends Record<string, unknown>>(
+    const toRecord = <T extends Record<string, unknown> & { _count: number }>(
       rows: T[],
-      key: keyof T,
+      key: keyof T & string,
     ): Record<string, number> => {
       const record: Record<string, number> = {};
       for (const row of rows) {
         const k = row[key] as string;
-        if (k) record[k] = (row as any)._count as number;
+        if (k) record[k] = row._count;
       }
       return record;
     };
@@ -1887,9 +1887,7 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       readCount: grandRead,
       pushedCount: grandPushed,
       readRate:
-        grandTotal > 0
-          ? Math.round((grandRead / grandTotal) * 10000) / 100
-          : 0,
+        grandTotal > 0 ? Math.round((grandRead / grandTotal) * 10000) / 100 : 0,
       pushDeliveryRate:
         grandTotal > 0
           ? Math.round((grandPushed / grandTotal) * 10000) / 100
@@ -1925,7 +1923,10 @@ export class AnalyticsService implements OnModuleInit, OnModuleDestroy {
       await Promise.all([
         // Total search events
         this.prisma.analyticsEvent.count({
-          where: { eventType: 'search_performed', createdAt: { gte: fromDate, lte: toDate } },
+          where: {
+            eventType: 'search_performed',
+            createdAt: { gte: fromDate, lte: toDate },
+          },
         }),
 
         // Daily timeseries

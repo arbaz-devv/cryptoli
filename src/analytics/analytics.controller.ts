@@ -23,6 +23,13 @@ import { TrackDto } from './dto/track.dto';
 import { getClientIp, getCountryHint } from './ip-utils';
 import { AnalyticsInterceptor } from './analytics.interceptor';
 
+function isValidDateParam(s: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(new Date(s + 'T00:00:00Z').getTime())
+  );
+}
+
 @UseInterceptors(AnalyticsInterceptor)
 @Controller('api/analytics')
 export class AnalyticsController {
@@ -124,6 +131,9 @@ export class AnalyticsController {
         .toISOString()
         .slice(0, 10);
     const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
     try {
       const data = await this.analyticsService.getEventAggregation(
         fromDate,
@@ -157,6 +167,9 @@ export class AnalyticsController {
         .toISOString()
         .slice(0, 10);
     const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
     try {
       const data = await this.analyticsService.getNotificationAnalytics(
         fromDate,
@@ -189,6 +202,9 @@ export class AnalyticsController {
         .toISOString()
         .slice(0, 10);
     const toDate = to || new Date().toISOString().slice(0, 10);
+    if (!isValidDateParam(fromDate) || !isValidDateParam(toDate)) {
+      return { ok: false, error: 'Invalid date format. Use YYYY-MM-DD.' };
+    }
     try {
       const data = await this.analyticsService.getSearchQueryAnalytics(
         fromDate,
@@ -243,7 +259,10 @@ export class AnalyticsController {
       });
       return { ok: true, members };
     } catch (e) {
-      this.logger.error('Failed to fetch latest members', e instanceof Error ? e.stack : e);
+      this.logger.error(
+        'Failed to fetch latest members',
+        e instanceof Error ? e.stack : e,
+      );
       return { ok: false, error: 'Failed to fetch latest members' };
     }
   }
