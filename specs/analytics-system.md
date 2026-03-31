@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-27
+Last verified: 2026-03-31
 ---
 
 # Analytics System
@@ -29,7 +29,7 @@ counters AND PG buffer; server-side events go to PG buffer only.
 
 `track()` returns immediately if `consent` is not explicitly `true`.
 `false`, `undefined`, or omitted = zero storage. This is opt-in, not opt-out.
-Bot detection (via `isBot` from ua-parser-js) rejects before the consent check.
+Consent check runs before bot detection (via `isBot` from ua-parser-js).
 
 ### Data Flow
 
@@ -50,7 +50,7 @@ the ioredis command queue.
 
 ### Redis Pipeline
 
-All Redis writes for a single event use one `pipeline()` call (~30 commands:
+All Redis writes for a page_view event use one `pipeline()` call (~38-40 commands:
 INCR, PFADD, HINCRBY, ZADD, HSETNX, SADD). Each key gets its own EXPIRE
 (32-day TTL). Pipeline errors feed `redisService.setLastError()` — they do
 not throw.
@@ -62,7 +62,8 @@ Key naming: `analytics:{metric}:{YYYY-MM-DD}` (e.g., `analytics:pageviews:2026-0
 In-memory event buffer: flushes every 2 seconds or at 500 events (whichever
 comes first). Max buffer size: 2000 — overflow silently drops events with a
 log warning. Uses `SET LOCAL synchronous_commit = off` for write performance.
-`prisma.analyticsEvent.createMany()` with `skipDuplicates`.
+`prisma.analyticsEvent.createMany()` (no deduplication in buffer — the rollup
+service uses `skipDuplicates`, but the buffer does not).
 
 ### Rollup (AnalyticsRollupService)
 
@@ -120,11 +121,53 @@ Currently adopted by 7 controllers: analytics, auth, reviews, comments,
 complaints, users, search.
 
 **AnalyticsGuard vs AnalyticsInterceptor** — these are separate mechanisms:
-- `AnalyticsGuard`: fail-closed API key check on analytics dashboard endpoints
-  (stats, realtime, latest-members). If `ANALYTICS_API_KEY` is empty/absent,
-  all guarded endpoints reject.
+- `AnalyticsGuard`: fail-closed API key check (`X-Analytics-Key` header) on
+  analytics dashboard endpoints. If `ANALYTICS_API_KEY` is empty/absent,
+  all guarded endpoints reject. Guarded endpoints: `stats`, `health`,
+  `realtime`, `events`, `notifications`, `search-queries`, `latest-members`
+  (7 total).
 - `AnalyticsInterceptor`: populates `req.analyticsCtx` for server-side tracking
   in feature controllers. No authentication — just context extraction.
+
+## Admin Intelligence Endpoints
+
+Three read-only endpoints for event aggregation, notification analytics, and
+search query analytics — added in Phase 3. All use `AnalyticsGuard` and
+return `{ ok, data?, error? }`. A module-level `isValidDateParam()` validates
+`from`/`to` query params as `YYYY-MM-DD` format.
+
+| Endpoint | Query Params | Service Method | Cache |
+|----------|-------------|----------------|-------|
+| `GET /analytics/events` | `from`, `to`, `eventType?` | `getEventAggregation()` | `eventAggregationCache` |
+| `GET /analytics/notifications` | `from`, `to` | `getNotificationAnalytics()` | `notificationAnalyticsCache` |
+| `GET /analytics/search-queries` | `from`, `to` | `getSearchQueryAnalytics()` | `searchQueryAnalyticsCache` |
+
+**Event aggregation** uses Prisma `groupBy` for 10 dimensional breakdowns
+(country, device, browser, os, path, referrer, UTM source/medium/campaign,
+event type) and `$queryRaw` for daily timeseries (`date_trunc`). All 12
+queries run in parallel via `Promise.all`.
+
+**Notification analytics** uses a single `$queryRaw` with PostgreSQL
+`FILTER (WHERE ...)` for per-type read/pushed counts. Rates computed as
+percentages rounded to 2 decimal places.
+
+**Search query analytics** runs 5 parallel queries: total count, daily
+timeseries, top queries with per-query avg `resultCount` (JSONB
+`->>'query'` extraction), breakdown by search type, and overall avg
+`resultCount`.
+
+All three caches follow the `statsCache` pattern: in-process `Map` with
+1-minute TTL (`STATS_CACHE_TTL_MS`), keyed by date range (+ `eventType`
+for events). These are module-level constants (survive across requests,
+not across restarts).
+
+**Additional guarded endpoints** (not new but previously undocumented):
+- `GET /analytics/health` — returns `{ enabled, configured, connected,
+  lastError, rollup: { lastSuccessDate, stale } }`. Uses Logger for errors,
+  returns generic error message (never leaks internals).
+- `GET /analytics/latest-members` — returns recent registrations with
+  `limit` param (default 8, clamped 1-20). Error handler logs via
+  `Logger.error`, returns generic `'Failed to fetch latest members'`.
 
 ## Verification
 
@@ -135,4 +178,6 @@ grep -rn '@UseInterceptors(AnalyticsInterceptor)' src/
 grep -rn '@Optional.*AnalyticsService\|AnalyticsService.*@Optional' src/
 grep -rn 'synchronous_commit' src/analytics/
 grep -rn 'AnalyticsGuard' src/analytics/
+grep -rn 'isValidDateParam' src/analytics/analytics.controller.ts
+grep -rn 'eventAggregationCache\|notificationAnalyticsCache\|searchQueryAnalyticsCache' src/analytics/
 ```

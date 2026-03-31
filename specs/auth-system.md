@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-27
+Last verified: 2026-03-31
 ---
 
 # Auth System
@@ -25,6 +25,21 @@ in `main.ts`, not as a NestJS guard.
 - Per-route CORS configuration (CORS is global in `main.ts`)
 - Rate limiting logic beyond the auth-specific throttle override
 
+## Endpoint Reference
+
+| Method | Path | Guard | Throttle | Validation |
+|--------|------|-------|----------|------------|
+| GET | `/api/auth/me` | None | Default | None |
+| GET | `/api/auth/check-username` | None | Default | Manual (length, alphanumeric) |
+| GET | `/api/auth/username-suggestions` | None | Default | `base` query param |
+| PATCH | `/api/auth/me` | `AuthGuard` | Default | Zod (`updateProfileSchema`) |
+| POST | `/api/auth/register` | None | 5/60s | Zod (`registerSchema`) |
+| POST | `/api/auth/login` | None | 5/60s | Zod (`loginSchema`) |
+| POST | `/api/auth/logout` | None | Default | None |
+| POST | `/api/auth/change-password` | `AuthGuard` | Default | Zod (`changePasswordSchema`) |
+
+`@UseInterceptors(AnalyticsInterceptor)` is applied at the class level.
+
 ## Key Patterns
 
 ### Auth Flow (Login/Register)
@@ -32,8 +47,8 @@ in `main.ts`, not as a NestJS guard.
 1. Validate body with Zod (raw `body: unknown` then `.parse()`) — schemas in `src/common/utils.ts`
 2. Hash password with bcrypt (10 rounds)
 3. Create session in DB with SHA-256 hashed token and 7-day expiry
-4. Set HTTP-only cookie: `res.cookie('session', token, { httpOnly: true, sameSite, secure })`
-5. `sameSite` is `'none'` in production with non-localhost origins (cross-origin Vercel → Railway)
+4. Set HTTP-only cookie via `sessionCookieOptions()`: `{ httpOnly: true, sameSite, secure, path: '/', maxAge: 7d }`
+5. `sameSite` is `'none'` in production with non-localhost origins; `secure` is always `true` in production
 
 ### Guard Resolution
 
@@ -115,6 +130,40 @@ no circular dependency). `AnalyticsService` is injected with `@Optional()`.
 
 `createUser()` accepts optional `registrationIp` and `registrationCountry`,
 persisted to the User model for analytics.
+
+### Profile Update
+
+`PATCH /api/auth/me` accepts `{ username?, bio? }` validated by Zod
+(`updateProfileSchema`). Username uniqueness enforced via Prisma P2002 error
+handling. Returns `{ user }` with updated `SessionUser` shape.
+
+### Username Suggestions
+
+`GET /api/auth/username-suggestions?base=` generates available username
+variants. Works for both authenticated and anonymous users (optionally
+resolves the current user via session token).
+
+### Password Change Side Effects
+
+`POST /api/auth/change-password` triggers three side effects beyond updating
+the password hash:
+
+1. **Session rotation** — creates a new session (trigger: `password_change`)
+   and deletes all other sessions for the user
+2. **Notification** — creates a `MENTION`-type notification with title
+   "Password changed" (note: uses `MENTION` type, not a dedicated security type)
+3. **Analytics** — tracks `password_change` event
+
+### GeoIP Fallback in Session Creation
+
+`createSession()` uses `GeoipService.lookup(meta.ip)` as a second-pass
+fallback for `country` and `timezone`, beyond what `extractSessionMeta`
+provides from CDN headers. The fallback chains differ:
+
+- **Country**: `meta.country` (CDN header) → `geoResult.country` (GeoIP) → `null`
+- **Timezone**: `geoResult.timezone` (GeoIP) → `meta.timezone` (request) → `null`
+
+Country prefers the CDN header; timezone prefers the GeoIP lookup.
 
 ## Verification
 

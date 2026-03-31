@@ -72,6 +72,7 @@ src/
 ├── search/              # Full-text search
 ├── trending/            # Time-windowed rankings
 ├── notifications/       # DB notifications, socket emit, web push (forwardRef with AuthModule)
+├── observability/       # Global in-memory metrics, health probes (/api/health/live, /ready)
 └── monitoring/          # Sentry integration
 prisma/
 └── schema.prisma        # Database schema — PostgreSQL
@@ -165,7 +166,5 @@ Format: `type(scope): description` — e.g., `feat(reviews): add pagination`,
 ## Environment
 
 Copy `.env.example` to `.env`. Required: `DATABASE_URL`, `JWT_SECRET` (32+
-chars in prod), `CORS_ORIGIN`. Optional: `REDIS_URL` (Redis features no-op
-when absent), `ADMIN_API_KEY`, `ANALYTICS_API_KEY`, `ADMIN_EMAIL`,
-`ADMIN_PASSWORD_HASH`, `TRUST_PROXY`, `PORT`, `MAXMIND_ACCOUNT_ID`,
-`MAXMIND_LICENSE_KEY` (GeoIP database updates — lookups no-op when absent).
+chars in prod), `CORS_ORIGIN`. All other vars are optional — see
+`.env.example` for the full list and descriptions.

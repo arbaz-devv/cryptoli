@@ -1,6 +1,6 @@
 ---
 Status: Implemented
-Last verified: 2026-03-27
+Last verified: 2026-03-31
 ---
 
 # Testing Strategy
@@ -53,13 +53,14 @@ ADMIN_PASSWORD_HASH=                   # Generated in globalSetup from 'testpass
 
 ### Jest Configurations
 
-**Three jest configs, one per tier:**
+**Four jest configs, one per tier:**
 
 | Config | Runs | `testRegex` | `rootDir` |
 |--------|------|-------------|-----------|
-| `package.json` (inline) | Unit tests | `src/.*\\.spec\\.ts$` | `src` |
-| `test/jest-integration.json` | Integration tests | `test/integration/.*\\.spec\\.ts$` | `.` |
-| `test/jest-e2e.json` | E2E tests | `test/e2e/.*\\.e2e-spec\\.ts$` | `.` |
+| `package.json` (inline) | Unit tests | `.*\\.spec\\.ts$` | `src` |
+| `test/jest-integration.json` | Integration tests | `test/integration/.*\\.spec\\.ts$` | `..` |
+| `test/jest-e2e.json` | E2E tests | `test/e2e/.*\\.e2e-spec\\.ts$` | `..` |
+| `test/jest-smoke.json` | Smoke tests | `smoke\\.spec\\.ts$` | `..` |
 
 Integration and e2e configs share a `globalSetup` that starts TestContainers and a `globalTeardown` that stops them.
 
@@ -70,7 +71,8 @@ Integration and e2e configs share a `globalSetup` that starts TestContainers and
   "test": "jest",
   "test:cov": "jest --coverage",
   "test:integration": "jest --config test/jest-integration.json",
-  "test:e2e": "jest --config test/jest-e2e.json",
+  "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+  "test:smoke": "jest --config ./test/jest-smoke.json --runInBand",
   "test:all": "npm test && npm run test:integration && npm run test:e2e"
 }
 ```
@@ -123,17 +125,18 @@ This means `.env` can contain anything — production credentials, staging URLs,
 
 ### globalSetup: Three-Phase Boot Sequence
 
-`test/helpers/test-db.setup.ts` runs before ANY test file is loaded. It follows a strict three-phase sequence. If any phase fails, no tests run.
+`test/helpers/test-db.setup.ts` runs before ANY test file is loaded. It follows a strict three-phase sequence. If any phase fails, no tests run. Containers are started via a `startWithRetry()` wrapper that retries up to 3 times on EPIPE errors.
 
 ```typescript
 export default async function globalSetup() {
   // ── Phase 1: Provision ──────────────────────────────────────────
-  // Start disposable containers. These are the ONLY external services
-  // tests will ever connect to.
+  // Start disposable containers (with EPIPE retry wrapper).
 
-  const pg = await new PostgreSqlContainer('postgres:16-alpine')
-    .withDatabase('cryptoli_test')
-    .start();
+  const pg = await startWithRetry(() =>
+    new PostgreSqlContainer('postgres:16-alpine')
+      .withDatabase('cryptoli_test')
+      .start(),
+  );
 
   const redis = await new GenericContainer('redis:7-alpine')
     .withExposedPorts(6379)
@@ -143,7 +146,13 @@ export default async function globalSetup() {
   const databaseUrl = pg.getConnectionUri();
   execSync('npx prisma db push --skip-generate', {
     env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: 'pipe',
   });
+
+  // Enable pg_trgm extension for search tests
+  const setupPrisma = new PrismaClient({ datasourceUrl: databaseUrl });
+  await setupPrisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+  await setupPrisma.$disconnect();
 
   // Construct test clients with EXPLICIT URLs (not from process.env)
   const testPrisma = new PrismaClient({ datasourceUrl: databaseUrl });
@@ -312,6 +321,15 @@ export function getTestRedisUrl(): string {
   return url;
 }
 
+// Singleton ioredis client for integration/e2e tests
+export function getTestRedis(): Redis { /* ... singleton, localhost-guarded ... */ }
+
+// Flush all keys in test Redis (used in beforeEach for rate-limit/cache cleanup)
+export function flushTestRedis(): Promise<'OK'> { /* ... calls redis.flushall() ... */ }
+
+// Disconnect both singleton clients (called in globalTeardown)
+export function disconnectTestClients(): Promise<void> { /* ... quit redis, disconnect prisma, null both ... */ }
+
 function isLocalhostUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -339,14 +357,7 @@ export async function truncateAll(client?: PrismaClient) {
 E2E tests override providers explicitly, not via env:
 
 ```typescript
-// test/helpers/setup-app.ts
-
-import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { AppModule } from '../../src/app.module';
-import { PrismaService } from '../../src/prisma/prisma.service';
-import { getTestPrisma } from './test-db.utils';
-// ... import middleware setup
+// test/helpers/setup-app.ts (simplified — actual file applies middleware inline)
 
 export async function setupTestApp(): Promise<{ app: INestApplication; server: any }> {
   const testPrisma = getTestPrisma(); // validated localhost client
@@ -359,11 +370,17 @@ export async function setupTestApp(): Promise<{ app: INestApplication; server: a
     .compile();
 
   const app = moduleFixture.createNestApplication();
-  applyMiddleware(app);               // replicate main.ts stack
-  await app.init();
 
+  // Middleware applied inline (replicating main.ts stack):
+  // compression, ValidationPipe, AllExceptionsFilter, Helmet, CORS, CSRF
+  app.use(compression({ threshold: 1024, level: 6 }));
+  // ... remaining middleware setup ...
+
+  await app.init();
   return { app, server: app.getHttpServer() };
 }
+
+export async function teardownTestApp(app: INestApplication): Promise<void> { /* ... */ }
 ```
 
 ### globalTeardown
@@ -371,8 +388,12 @@ export async function setupTestApp(): Promise<{ app: INestApplication; server: a
 ```typescript
 // test/helpers/test-db.teardown.ts
 import nock from 'nock';
+import { disconnectTestClients } from './test-db.utils';
 
 export default async function globalTeardown() {
+  // Disconnect singleton Prisma/Redis clients
+  await disconnectTestClients();
+
   // Restore HTTP
   nock.cleanAll();
   nock.enableNetConnect();
@@ -388,6 +409,7 @@ export default async function globalTeardown() {
 Unit tests (`src/**/*.spec.ts`) are isolated by a different mechanism — they never touch infrastructure at all:
 - All dependencies are mocked via `jest.fn()` — no real PrismaClient, no real Redis
 - `globalThis.__socketIO` is undefined → SocketService no-ops
+- `PrismaService` requires an `ObservabilityService` mock in its constructor
 - No `globalSetup` runs for unit tests (separate jest config)
 - If a unit test accidentally imports a real service without mocking it, it fails immediately — no `DATABASE_URL` in env (only set by integration/e2e globalSetup)
 
@@ -479,6 +501,9 @@ test/
     test-db.teardown.ts              ← TestContainers globalTeardown (stop containers)
     test-db.utils.ts                 ← truncateAll(), getTestPrisma()
     setup-app.ts                     ← E2E app bootstrap replicating main.ts middleware
+    geoip.mock.ts                    ← GeoipService mock factory for unit tests
+  smoke/
+    smoke.spec.ts                    ← Live deployment smoke tests (read-only GET endpoints)
   integration/
     reviews-voting.spec.ts           ← Tier 2: real DB
     cascade-deletes.spec.ts           ← Tier 2: real DB
@@ -503,6 +528,7 @@ test/
     analytics.e2e-spec.ts
   jest-integration.json
   jest-e2e.json
+  jest-smoke.json
 ```
 
 ---
@@ -552,13 +578,16 @@ export function createSocketMock() {
   };
 }
 
-// test/helpers/redis.mock.ts
+// test/helpers/redis.mock.ts (illustrative — actual mock has 30+ client methods
+// including pipeline(), multi(), hset/hget, pfadd/pfcount, zadd, sadd/smembers,
+// plus onModuleInit/onModuleDestroy lifecycle hooks and _clientMock accessor)
 export function createRedisMock(ready = false) {
   return {
     isReady: jest.fn().mockReturnValue(ready),
-    getClient: jest.fn().mockReturnValue(ready ? { get: jest.fn(), set: jest.fn() } : null),
+    getClient: jest.fn().mockReturnValue(ready ? clientMock : null),
     getLastError: jest.fn(),
     setLastError: jest.fn(),
+    _clientMock: clientMock, // direct access for test assertions
   };
 }
 ```
@@ -700,7 +729,9 @@ describe('Auth (e2e)', () => {
 });
 ```
 
-**`test/helpers/setup-app.ts`** replicates the `main.ts` middleware stack:
+**`test/helpers/setup-app.ts`** replicates the `main.ts` middleware stack
+(applied inline, not via a separate function):
+- Compression (`threshold: 1024, level: 6`)
 - Helmet
 - CORS (configured for `http://localhost:3000`)
 - CSRF middleware (Origin check on unsafe methods when session cookie present)
