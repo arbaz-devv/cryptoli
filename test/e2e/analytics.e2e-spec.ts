@@ -181,6 +181,14 @@ describe('Analytics E2E', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should return 401 when an incorrect X-Analytics-Key is provided', async () => {
+      const res = await request(server)
+        .get('/api/analytics/latest-members')
+        .set('X-Analytics-Key', 'wrong-key');
+
+      expect(res.status).toBe(401);
+    });
+
     it('should return 200 with members array when authenticated', async () => {
       const res = await request(server)
         .get('/api/analytics/latest-members')
@@ -246,6 +254,47 @@ describe('Analytics E2E', () => {
         from: '2026-03-01',
         to: '2026-03-30',
       });
+    });
+
+    it('should return ok: false with error for invalid date format', async () => {
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: 'not-a-date', to: '2026-03-30' })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toBe('Invalid date format. Use YYYY-MM-DD.');
+    });
+
+    it('should return event aggregation stats with real DB data', async () => {
+      const prisma = getTestPrisma();
+
+      await prisma.analyticsEvent.createMany({
+        data: [
+          { eventType: 'page_view', country: 'US', device: 'desktop', browser: 'Chrome' },
+          { eventType: 'page_view', country: 'DE', device: 'mobile', browser: 'Safari' },
+          { eventType: 'signup_completed', country: 'US', device: 'desktop', browser: 'Chrome' },
+        ],
+      });
+
+      // Use today's date to match seeded data (createdAt defaults to now)
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await request(server)
+        .get('/api/analytics/events')
+        .query({ from: today, to: today })
+        .set('X-Analytics-Key', 'test-analytics-key');
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const data = res.body.data;
+      expect(data.total).toBe(3);
+      expect(data.byEventType).toEqual({ page_view: 2, signup_completed: 1 });
+      expect(data.byCountry).toEqual({ US: 2, DE: 1 });
+      expect(data.byDevice).toEqual({ desktop: 2, mobile: 1 });
+      expect(data.timeSeries).toHaveLength(1);
+      expect(data.timeSeries[0].date).toBe(today);
+      expect(data.timeSeries[0].count).toBe(3);
     });
 
     it('should return all dimensional breakdowns in response shape', async () => {
