@@ -107,9 +107,12 @@ async function bootstrap() {
     const startedAt = process.hrtime.bigint();
     res.on('finish', () => {
       const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      // Express route typing is incomplete — safe access guarded by typeof check
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const rawPath = (req as any).route?.path as string | undefined;
       const routePath =
-        typeof req.route?.path === 'string'
-          ? `${req.baseUrl ?? ''}${req.route.path}`
+        typeof rawPath === 'string'
+          ? `${req.baseUrl ?? ''}${rawPath}`
           : req.path;
       observability.recordRequest({
         method: req.method,

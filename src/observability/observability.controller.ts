@@ -76,7 +76,10 @@ export class ObservabilityController {
       }
     })();
 
-    const [database, redis] = await Promise.all([databasePromise, redisPromise]);
+    const [database, redis] = await Promise.all([
+      databasePromise,
+      redisPromise,
+    ]);
 
     const ready = database.ready && (!redis.configured || redis.ready);
 

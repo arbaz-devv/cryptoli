@@ -584,8 +584,7 @@ export class CommentsService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2028';
       const isTransactionNotFound =
-        error instanceof Error &&
-        /Transaction not found/i.test(error.message);
+        error instanceof Error && /Transaction not found/i.test(error.message);
 
       if (!isRetryable && !isTransactionNotFound) {
         throw error;

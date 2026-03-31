@@ -113,7 +113,11 @@ export class TrendingService {
 
     if (cacheEnabled) {
       try {
-        await redis.setex(cacheKey, TRENDING_CACHE_TTL_SEC, JSON.stringify(result));
+        await redis.setex(
+          cacheKey,
+          TRENDING_CACHE_TTL_SEC,
+          JSON.stringify(result),
+        );
       } catch {
         // ignore cache write errors
       }

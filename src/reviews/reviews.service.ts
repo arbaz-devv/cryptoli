@@ -96,11 +96,12 @@ export class ReviewsService {
     const reviewsWithVotes = reviews.map((review) => {
       const viewerVote =
         user && 'helpfulVotes' in review && Array.isArray(review.helpfulVotes)
-          ? review.helpfulVotes[0]?.voteType ?? null
+          ? (review.helpfulVotes[0]?.voteType ?? null)
           : null;
-      const { helpfulVotes, ...reviewWithoutVotes } = review as typeof review & {
-        helpfulVotes?: Array<{ voteType: 'UP' | 'DOWN' }>;
-      };
+      const { helpfulVotes, ...reviewWithoutVotes } =
+        review as typeof review & {
+          helpfulVotes?: Array<{ voteType: 'UP' | 'DOWN' }>;
+        };
       void helpfulVotes;
       return {
         ...reviewWithoutVotes,
@@ -335,8 +336,7 @@ export class ReviewsService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2028';
       const isTransactionNotFound =
-        error instanceof Error &&
-        /Transaction not found/i.test(error.message);
+        error instanceof Error && /Transaction not found/i.test(error.message);
 
       if (!isRetryable && !isTransactionNotFound) {
         throw error;

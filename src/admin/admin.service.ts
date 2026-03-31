@@ -107,15 +107,21 @@ export class AdminService {
 
   private getAdminCacheSnapshot() {
     const now = Date.now();
-    const summarizeMapCache = <T>(name: string, cache: Map<string, T>, ttlMs: number) => ({
+    const summarizeMapCache = <T>(
+      name: string,
+      cache: Map<string, T>,
+      ttlMs: number,
+    ) => ({
       name,
       kind: 'memory',
       entries: cache.size,
       ttlMs,
-      activeEntries: [...cache.values()].filter((entry: any) => entry?.expiry > now)
-        .length,
-      expiredEntries: [...cache.values()].filter((entry: any) => entry?.expiry <= now)
-        .length,
+      activeEntries: [...cache.values()].filter(
+        (entry) => ((entry as { expiry?: number })?.expiry ?? 0) > now,
+      ).length,
+      expiredEntries: [...cache.values()].filter(
+        (entry) => ((entry as { expiry?: number })?.expiry ?? 0) <= now,
+      ).length,
     });
 
     return {
@@ -128,7 +134,11 @@ export class AdminService {
           activeEntries: statsCache && statsCache.expiry > now ? 1 : 0,
           expiredEntries: statsCache && statsCache.expiry <= now ? 1 : 0,
         },
-        summarizeMapCache('admin.users', usersListCache, USERS_LIST_CACHE_TTL_MS),
+        summarizeMapCache(
+          'admin.users',
+          usersListCache,
+          USERS_LIST_CACHE_TTL_MS,
+        ),
         summarizeMapCache(
           'admin.complaints',
           complaintsListCache,
@@ -255,9 +265,7 @@ export class AdminService {
             ),
             usedHuman: memoryInfo.used_memory_human ?? null,
             peakHuman: memoryInfo.used_memory_peak_human ?? null,
-            fragmentationRatio: Number(
-              memoryInfo.mem_fragmentation_ratio ?? 0,
-            ),
+            fragmentationRatio: Number(memoryInfo.mem_fragmentation_ratio ?? 0),
           },
           clients: {
             connected: Number(clientsInfo.connected_clients ?? 0),
@@ -276,7 +284,10 @@ export class AdminService {
       }
     })();
 
-    const [database, redis] = await Promise.all([databasePromise, redisPromise]);
+    const [database, redis] = await Promise.all([
+      databasePromise,
+      redisPromise,
+    ]);
     return { database, redis };
   }
 

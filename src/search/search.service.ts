@@ -70,11 +70,19 @@ export class SearchService {
     return null;
   }
 
-  private buildCacheKey(query: string, type: SearchType, limit: number): string {
+  private buildCacheKey(
+    query: string,
+    type: SearchType,
+    limit: number,
+  ): string {
     return `search:v2:${type}:${limit}:${query.toLowerCase()}`;
   }
 
-  private async getCachedResults(query: string, type: SearchType, limit: number) {
+  private async getCachedResults(
+    query: string,
+    type: SearchType,
+    limit: number,
+  ) {
     const redis = this.redisService.getClient();
     if (!this.redisService.isReady() || !redis) return null;
 
@@ -287,7 +295,12 @@ export class SearchService {
 
     const response = { results };
 
-    await this.setCachedResults(normalizedQuery, normalizedType, limit, response);
+    await this.setCachedResults(
+      normalizedQuery,
+      normalizedType,
+      limit,
+      response,
+    );
 
     if (analyticsCtx && this.analyticsService) {
       const resultCount = Object.values(results).reduce<number>(

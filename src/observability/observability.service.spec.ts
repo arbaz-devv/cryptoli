@@ -77,6 +77,8 @@ describe('ObservabilityService', () => {
 
     const allScope = service.getSnapshot({ scope: 'all' });
     expect(allScope.requests.totals.count).toBe(2);
-    expect(allScope.cache.stores.some((s) => s.name === 'admin.stats')).toBe(true);
+    expect(allScope.cache.stores.some((s) => s.name === 'admin.stats')).toBe(
+      true,
+    );
   });
 });
