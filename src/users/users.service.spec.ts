@@ -5,12 +5,14 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import type { AnalyticsContext } from '../analytics/analytics-context';
 import { createPrismaMock } from '../../test/helpers/prisma.mock';
 import { createRedisMock } from '../../test/helpers/redis.mock';
+import { ObservabilityService } from '../observability/observability.service';
 
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let redisMock: ReturnType<typeof createRedisMock>;
   let analyticsService: { track: jest.Mock };
+  let observability: { recordCacheHit: jest.Mock; recordCacheMiss: jest.Mock };
 
   const mockCtx: AnalyticsContext = {
     ip: '1.2.3.4',
@@ -22,9 +24,14 @@ describe('UsersService', () => {
     prisma = createPrismaMock();
     redisMock = createRedisMock(false);
     analyticsService = { track: jest.fn().mockResolvedValue(undefined) };
+    observability = {
+      recordCacheHit: jest.fn(),
+      recordCacheMiss: jest.fn(),
+    };
     service = new UsersService(
       prisma as unknown as PrismaService,
       redisMock as any,
+      observability as unknown as ObservabilityService,
       analyticsService as unknown as AnalyticsService,
     );
   });
@@ -40,14 +47,20 @@ describe('UsersService', () => {
         verified: false,
         reputation: 0,
         createdAt: new Date(),
+        _count: {
+          followers: 3,
+          following: 5,
+          posts: 2,
+          complaints: 1,
+        },
       });
-      prisma.$transaction.mockResolvedValue([5, 3, 2, 1]);
       prisma.follow.findFirst.mockResolvedValue(null);
 
       const result = await service.getPublicProfile(null, 'testuser');
 
       expect(result.user).toBeDefined();
       expect(result.stats.followersCount).toBe(5);
+      expect(result.stats.followingCount).toBe(3);
       expect(result.viewerState.isFollowing).toBe(false);
     });
 
@@ -67,6 +80,7 @@ describe('UsersService', () => {
       service = new UsersService(
         prisma as unknown as PrismaService,
         redisMock as any,
+        observability as unknown as ObservabilityService,
       );
       prisma.follow.findFirst.mockResolvedValue(null);
 
@@ -82,6 +96,7 @@ describe('UsersService', () => {
       service = new UsersService(
         prisma as unknown as PrismaService,
         redisMock as any,
+        observability as unknown as ObservabilityService,
       );
 
       prisma.user.findUnique.mockResolvedValue({
@@ -93,8 +108,13 @@ describe('UsersService', () => {
         verified: false,
         reputation: 0,
         createdAt: new Date(),
+        _count: {
+          followers: 0,
+          following: 0,
+          posts: 0,
+          complaints: 0,
+        },
       });
-      prisma.$transaction.mockResolvedValue([0, 0, 0, 0]);
       prisma.follow.findFirst.mockResolvedValue(null);
 
       const result = await service.getPublicProfile(null, 'testuser');
@@ -119,8 +139,13 @@ describe('UsersService', () => {
         verified: false,
         reputation: 0,
         createdAt: new Date(),
+        _count: {
+          followers: 0,
+          following: 0,
+          posts: 0,
+          complaints: 0,
+        },
       });
-      prisma.$transaction.mockResolvedValue([0, 0, 0, 0]);
       prisma.follow.findFirst.mockResolvedValue({ id: 'f1' });
 
       const result = await service.getPublicProfile('viewer1', 'target');
@@ -270,6 +295,7 @@ describe('UsersService', () => {
       const serviceNoAnalytics = new UsersService(
         prisma as unknown as PrismaService,
         redisMock as any,
+        observability as unknown as ObservabilityService,
       );
       prisma.user.findUnique.mockResolvedValue({ id: 'u2' });
       prisma.follow.create.mockResolvedValue({});

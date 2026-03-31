@@ -35,6 +35,9 @@ describe('AdminController', () => {
         errors: 0,
         durationMs: 10,
       }),
+      getObservabilitySnapshot: jest
+        .fn()
+        .mockResolvedValue({ generatedAt: 'now' }),
     };
     controller = new AdminController(mockAdminService as any);
   });
@@ -50,6 +53,14 @@ describe('AdminController', () => {
       const result = await controller.stats();
       expect(mockAdminService.getStats).toHaveBeenCalled();
       expect(result.totalUsers).toBe(1);
+    });
+  });
+
+  describe('observability()', () => {
+    it('should delegate to admin.getObservabilitySnapshot()', async () => {
+      const result = await controller.observability();
+      expect(mockAdminService.getObservabilitySnapshot).toHaveBeenCalled();
+      expect(result.generatedAt).toBe('now');
     });
   });
 

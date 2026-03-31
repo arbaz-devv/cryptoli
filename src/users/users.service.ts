@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import type { AnalyticsContext } from '../analytics/analytics-context';
+import { ObservabilityService } from '../observability/observability.service';
 
 const PROFILE_CACHE_PREFIX = 'profile:v2:';
 const PROFILE_CACHE_TTL_SEC = 90;
@@ -17,6 +18,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly observability: ObservabilityService,
     @Optional() private readonly analyticsService?: AnalyticsService,
   ) {}
 
@@ -28,7 +30,12 @@ export class UsersService {
     if (cacheEnabled) {
       try {
         const raw = await redis.get(cacheKey);
-        if (raw) cached = JSON.parse(raw) as { user: unknown; stats: unknown };
+        if (raw) {
+          this.observability.recordCacheHit('users.profile');
+          cached = JSON.parse(raw) as { user: unknown; stats: unknown };
+        } else {
+          this.observability.recordCacheMiss('users.profile');
+        }
       } catch {
         // ignore cache read errors
       }
@@ -44,13 +51,14 @@ export class UsersService {
       reputation: number;
       createdAt: Date;
     };
-    let user: ProfileUser | null;
-    let stats: {
+    type ProfileStats = {
       followersCount: number;
       followingCount: number;
       postsCount: number;
       complaintsCount: number;
     };
+    let user: ProfileUser | null;
+    let stats: ProfileStats;
 
     if (
       cached?.user &&
@@ -59,9 +67,9 @@ export class UsersService {
       'followersCount' in cached.stats
     ) {
       user = cached.user as ProfileUser;
-      stats = cached.stats as typeof stats;
+      stats = cached.stats as ProfileStats;
     } else {
-      user = await this.prisma.user.findUnique({
+      const userWithCounts = await this.prisma.user.findUnique({
         where: { username },
         select: {
           id: true,
@@ -72,19 +80,27 @@ export class UsersService {
           verified: true,
           reputation: true,
           createdAt: true,
+          _count: {
+            select: {
+              followers: true,
+              following: true,
+              posts: true,
+              complaints: true,
+            },
+          },
         },
       });
-      if (!user) {
+      if (!userWithCounts) {
         throw new NotFoundException('User not found');
       }
-      const [followersCount, followingCount, postsCount, complaintsCount] =
-        await this.prisma.$transaction([
-          this.prisma.follow.count({ where: { followingId: user.id } }),
-          this.prisma.follow.count({ where: { followerId: user.id } }),
-          this.prisma.post.count({ where: { authorId: user.id } }),
-          this.prisma.complaint.count({ where: { authorId: user.id } }),
-        ]);
-      stats = { followersCount, followingCount, postsCount, complaintsCount };
+      const { _count, ...baseUser } = userWithCounts;
+      user = baseUser;
+      stats = {
+        followersCount: _count.following,
+        followingCount: _count.followers,
+        postsCount: _count.posts,
+        complaintsCount: _count.complaints,
+      };
       if (cacheEnabled) {
         try {
           await redis.setex(

@@ -199,13 +199,10 @@ describe('ComplaintsService', () => {
   describe('list()', () => {
     it('should return paginated complaints with userVote enrichment', async () => {
       prisma.complaint.findMany.mockResolvedValue([
-        { id: 'c1', title: 'Test' },
-        { id: 'c2', title: 'Test 2' },
+        { id: 'c1', title: 'Test', votes: [{ voteType: 'UP' }] },
+        { id: 'c2', title: 'Test 2', votes: [] },
       ]);
       prisma.complaint.count.mockResolvedValue(2);
-      prisma.complaintVote.findMany.mockResolvedValue([
-        { complaintId: 'c1', voteType: 'UP' },
-      ]);
 
       const result = await service.list(
         1,
@@ -219,6 +216,7 @@ describe('ComplaintsService', () => {
       expect(result.complaints).toHaveLength(2);
       expect((result.complaints[0] as any).userVote).toBe('UP');
       expect((result.complaints[1] as any).userVote).toBeNull();
+      expect(prisma.complaintVote.findMany).not.toHaveBeenCalled();
       expect(result.pagination.total).toBe(2);
     });
 

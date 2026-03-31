@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocketService } from '../socket/socket.service';
 import { NotFoundError } from '../common/errors';
@@ -44,57 +45,68 @@ export class ReviewsService {
       ...(username && { author: { username } }),
     };
 
-    const reviews = await this.prisma.review.findMany({
-      where,
-      select: {
-        id: true,
-        title: true,
-        content: true,
-        overallScore: true,
-        helpfulCount: true,
-        downVoteCount: true,
-        createdAt: true,
-        author: {
-          select: {
-            username: true,
-            avatar: true,
-            verified: true,
-          },
-        },
-        company: {
-          select: {
-            name: true,
-          },
-        },
-        _count: {
-          select: {
-            helpfulVotes: true,
-            comments: true,
-          },
+    const reviewSelect = {
+      id: true,
+      title: true,
+      content: true,
+      overallScore: true,
+      helpfulCount: true,
+      downVoteCount: true,
+      createdAt: true,
+      author: {
+        select: {
+          username: true,
+          avatar: true,
+          verified: true,
         },
       },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
+      company: {
+        select: {
+          name: true,
+        },
+      },
+      _count: {
+        select: {
+          helpfulVotes: true,
+          comments: true,
+        },
+      },
+      ...(user
+        ? {
+            helpfulVotes: {
+              where: { userId: user.id },
+              select: { voteType: true },
+              take: 1,
+            },
+          }
+        : {}),
+    };
+
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        where,
+        select: reviewSelect,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+
+    const reviewsWithVotes = reviews.map((review) => {
+      const viewerVote =
+        user && 'helpfulVotes' in review && Array.isArray(review.helpfulVotes)
+          ? review.helpfulVotes[0]?.voteType ?? null
+          : null;
+      const { helpfulVotes, ...reviewWithoutVotes } = review as typeof review & {
+        helpfulVotes?: Array<{ voteType: 'UP' | 'DOWN' }>;
+      };
+      void helpfulVotes;
+      return {
+        ...reviewWithoutVotes,
+        userVote: viewerVote,
+      };
     });
-
-    let reviewsWithVotes = reviews;
-    if (user) {
-      const reviewIds = reviews.map((r) => r.id);
-      const userVotes = await this.prisma.helpfulVote.findMany({
-        where: { userId: user.id, reviewId: { in: reviewIds } },
-        select: { reviewId: true, voteType: true },
-      });
-      const voteMap = new Map(userVotes.map((v) => [v.reviewId, v.voteType]));
-      reviewsWithVotes = reviews.map((r) => ({
-        ...r,
-        userVote: voteMap.get(r.id) ?? null,
-      }));
-    } else {
-      reviewsWithVotes = reviews.map((r) => ({ ...r, userVote: null }));
-    }
-
-    const total = await this.prisma.review.count({ where });
 
     return {
       reviews: reviewsWithVotes,
@@ -237,79 +249,101 @@ export class ReviewsService {
       throw new BadRequestException('Invalid vote type. Must be UP or DOWN');
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const review = await tx.review.findUnique({
-        where: { id: reviewId },
-        select: {
-          id: true,
-          title: true,
-          authorId: true,
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+
+    const runVoteTransaction = async () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const review = await tx.review.findUnique({
+            where: { id: reviewId },
+            select: {
+              id: true,
+              title: true,
+              authorId: true,
+            },
+          });
+          if (!review) throw new NotFoundError('Review not found');
+
+          const existingVote = await tx.helpfulVote.findUnique({
+            where: { userId_reviewId: { userId, reviewId } },
+          });
+
+          let nextVoteType: 'UP' | 'DOWN' | null = voteType;
+
+          if (existingVote) {
+            if (existingVote.voteType === voteType) {
+              await tx.helpfulVote.delete({
+                where: { id: existingVote.id },
+              });
+              nextVoteType = null;
+            } else {
+              await tx.helpfulVote.update({
+                where: { id: existingVote.id },
+                data: { voteType },
+              });
+            }
+          } else {
+            await tx.helpfulVote.create({
+              data: { userId, reviewId, voteType },
+            });
+          }
+
+          const previousVoteType = existingVote
+            ? (existingVote.voteType as 'UP' | 'DOWN')
+            : null;
+          const { helpfulDelta, downDelta } = buildVoteCounterDelta(
+            previousVoteType,
+            nextVoteType,
+          );
+
+          const updatedReview = await tx.review.update({
+            where: { id: reviewId },
+            data: {
+              ...(helpfulDelta !== 0
+                ? { helpfulCount: { increment: helpfulDelta } }
+                : {}),
+              ...(downDelta !== 0
+                ? { downVoteCount: { increment: downDelta } }
+                : {}),
+            },
+            select: {
+              helpfulCount: true,
+              downVoteCount: true,
+            },
+          });
+
+          return {
+            reviewAuthorId: review.authorId,
+            reviewTitle: review.title,
+            actorUsername: actor?.username ?? 'Someone',
+            voteType: nextVoteType,
+            helpfulCount: updatedReview.helpfulCount ?? 0,
+            downVoteCount: updatedReview.downVoteCount ?? 0,
+          };
         },
-      });
-      if (!review) throw new NotFoundError('Review not found');
-
-      const actor = await tx.user.findUnique({
-        where: { id: userId },
-        select: { username: true },
-      });
-
-      const existingVote = await tx.helpfulVote.findUnique({
-        where: { userId_reviewId: { userId, reviewId } },
-      });
-
-      let nextVoteType: 'UP' | 'DOWN' | null = voteType;
-
-      if (existingVote) {
-        if (existingVote.voteType === voteType) {
-          await tx.helpfulVote.delete({
-            where: { id: existingVote.id },
-          });
-          nextVoteType = null;
-        } else {
-          await tx.helpfulVote.update({
-            where: { id: existingVote.id },
-            data: { voteType },
-          });
-        }
-      } else {
-        await tx.helpfulVote.create({
-          data: { userId, reviewId, voteType },
-        });
-      }
-
-      const previousVoteType = existingVote
-        ? (existingVote.voteType as 'UP' | 'DOWN')
-        : null;
-      const { helpfulDelta, downDelta } = buildVoteCounterDelta(
-        previousVoteType,
-        nextVoteType,
+        { maxWait: 5000, timeout: 10000 },
       );
 
-      const updatedReview = await tx.review.update({
-        where: { id: reviewId },
-        data: {
-          ...(helpfulDelta !== 0
-            ? { helpfulCount: { increment: helpfulDelta } }
-            : {}),
-          ...(downDelta !== 0
-            ? { downVoteCount: { increment: downDelta } }
-            : {}),
-        },
-        select: {
-          helpfulCount: true,
-          downVoteCount: true,
-        },
-      });
+    let result: Awaited<ReturnType<typeof runVoteTransaction>>;
+    try {
+      result = await runVoteTransaction();
+    } catch (error) {
+      const isRetryable =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2028';
+      const isTransactionNotFound =
+        error instanceof Error &&
+        /Transaction not found/i.test(error.message);
 
-      return {
-        reviewAuthorId: review.authorId,
-        reviewTitle: review.title,
-        actorUsername: actor?.username ?? 'Someone',
-        voteType: nextVoteType,
-        helpfulCount: updatedReview.helpfulCount ?? 0,
-        downVoteCount: updatedReview.downVoteCount ?? 0,
-      };
-    });
+      if (!isRetryable && !isTransactionNotFound) {
+        throw error;
+      }
+
+      result = await runVoteTransaction();
+    }
 
     this.socketService.emitReviewVoteUpdated(
       reviewId,
@@ -318,7 +352,7 @@ export class ReviewsService {
     );
 
     if (result.reviewAuthorId !== userId && result.voteType) {
-      await this.notificationsService.createForUser({
+      void this.notificationsService.createForUser({
         userId: result.reviewAuthorId,
         type: 'NEW_REACTION',
         title: 'Someone reacted to your rating',

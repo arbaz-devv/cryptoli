@@ -17,6 +17,7 @@ import { AllExceptionsFilter } from './common/http-exception.filter';
 import './socket/socket.types';
 import { AuthService } from './auth/auth.service';
 import { initSentry, Sentry } from './monitoring/sentry';
+import { ObservabilityService } from './observability/observability.service';
 
 type ValidationIssue = {
   field: string;
@@ -53,6 +54,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   const authService = app.get(AuthService);
+  const observability = app.get(ObservabilityService);
 
   // Compress JSON/text payloads to reduce bandwidth and mobile latency.
   app.use(
@@ -101,6 +103,23 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const startedAt = process.hrtime.bigint();
+    res.on('finish', () => {
+      const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const routePath =
+        typeof req.route?.path === 'string'
+          ? `${req.baseUrl ?? ''}${req.route.path}`
+          : req.path;
+      observability.recordRequest({
+        method: req.method,
+        route: routePath || req.originalUrl || '/',
+        durationMs: Number(elapsedMs.toFixed(2)),
+        statusCode: res.statusCode,
+      });
+    });
+    next();
+  });
 
   app.use(
     helmet({
@@ -190,6 +209,7 @@ async function bootstrap() {
   });
 
   io.on('connection', async (socket) => {
+    observability.onSocketConnected(socket.id);
     void socket.join('reviews');
 
     const cookieHeader = socket.handshake.headers.cookie;
@@ -200,7 +220,12 @@ async function bootstrap() {
     const user = await authService.getSessionFromToken(token);
     if (user?.id) {
       void socket.join(`user:${user.id}`);
+      observability.onSocketAuthenticated(socket.id);
     }
+
+    socket.on('disconnect', () => {
+      observability.onSocketDisconnected(socket.id);
+    });
   });
 
   globalThis.__socketIO = io;
