@@ -1530,12 +1530,18 @@ describe('AnalyticsService', () => {
   describe('getEventAggregation()', () => {
     it('should return empty result when prisma is not available', async () => {
       // Default service has no prisma injected
-      const result = await service.getEventAggregation('2026-03-01', '2026-03-30');
+      const result = await service.getEventAggregation(
+        '2026-03-01',
+        '2026-03-30',
+      );
 
       expect(result.total).toBe(0);
       expect(result.timeSeries).toEqual([]);
       expect(result.byEventType).toEqual({});
-      expect(result.dateRange).toEqual({ from: '2026-03-01', to: '2026-03-30' });
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
     });
 
     it('should query analytics_events and return aggregated breakdowns', async () => {
@@ -1551,7 +1557,10 @@ describe('AnalyticsService', () => {
           { eventType: 'page_view', _count: 100 },
           { eventType: 'page_leave', _count: 50 },
         ])
-        .mockResolvedValueOnce([{ country: 'US', _count: 90 }, { country: 'DE', _count: 60 }])
+        .mockResolvedValueOnce([
+          { country: 'US', _count: 90 },
+          { country: 'DE', _count: 60 },
+        ])
         .mockResolvedValueOnce([{ device: 'desktop', _count: 120 }])
         .mockResolvedValueOnce([{ browser: 'Chrome', _count: 100 }])
         .mockResolvedValueOnce([{ os: 'Windows', _count: 80 }])
@@ -1773,14 +1782,20 @@ describe('AnalyticsService', () => {
 
   describe('getSearchQueryAnalytics()', () => {
     it('should return empty result when prisma is not available', async () => {
-      const result = await service.getSearchQueryAnalytics('2026-03-01', '2026-03-30');
+      const result = await service.getSearchQueryAnalytics(
+        '2026-03-01',
+        '2026-03-30',
+      );
 
       expect(result.total).toBe(0);
       expect(result.timeSeries).toEqual([]);
       expect(result.topQueries).toEqual([]);
       expect(result.byType).toEqual({});
       expect(result.avgResultCount).toBe(0);
-      expect(result.dateRange).toEqual({ from: '2026-03-01', to: '2026-03-30' });
+      expect(result.dateRange).toEqual({
+        from: '2026-03-01',
+        to: '2026-03-30',
+      });
     });
 
     it('should query search_performed events and return aggregated results', async () => {
@@ -1812,7 +1827,10 @@ describe('AnalyticsService', () => {
         prismaMock,
       );
 
-      const result = await svc.getSearchQueryAnalytics('2026-03-15', '2026-03-30');
+      const result = await svc.getSearchQueryAnalytics(
+        '2026-03-15',
+        '2026-03-30',
+      );
 
       expect(result.total).toBe(200);
       expect(result.timeSeries).toEqual([
@@ -1843,7 +1861,10 @@ describe('AnalyticsService', () => {
         prismaMock,
       );
 
-      const result = await svc.getSearchQueryAnalytics('2026-01-01', '2026-01-31');
+      const result = await svc.getSearchQueryAnalytics(
+        '2026-01-01',
+        '2026-01-31',
+      );
 
       expect(result.total).toBe(5);
       expect(result.avgResultCount).toBe(0);

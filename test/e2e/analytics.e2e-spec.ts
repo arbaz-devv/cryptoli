@@ -369,9 +369,7 @@ describe('Analytics E2E', () => {
       expect(data.pushDeliveryRate).toBeCloseTo(33.33, 1);
       expect(data.byType).toHaveLength(2);
       // Sorted by total DESC: NEW_REVIEW (2) first
-      const reviewType = data.byType.find(
-        (t: any) => t.type === 'NEW_REVIEW',
-      );
+      const reviewType = data.byType.find((t: any) => t.type === 'NEW_REVIEW');
       expect(reviewType.total).toBe(2);
       expect(reviewType.read).toBe(1);
       expect(reviewType.pushed).toBe(1);
@@ -431,7 +429,11 @@ describe('Analytics E2E', () => {
         data: [
           {
             eventType: 'search_performed',
-            properties: { query: 'bitcoin', type: 'companies', resultCount: 10 },
+            properties: {
+              query: 'bitcoin',
+              type: 'companies',
+              resultCount: 10,
+            },
           },
           {
             eventType: 'search_performed',

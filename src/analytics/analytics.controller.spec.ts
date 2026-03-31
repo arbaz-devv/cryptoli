@@ -367,7 +367,8 @@ describe('AnalyticsController', () => {
 
     it('should default to 30-day range when from/to not provided', async () => {
       await controller.events(undefined as any, undefined as any);
-      const [fromArg, toArg] = mockAnalyticsService.getEventAggregation.mock.calls[0];
+      const [fromArg, toArg] =
+        mockAnalyticsService.getEventAggregation.mock.calls[0];
       // from should be ~30 days ago, to should be today
       expect(fromArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(toArg).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -376,7 +377,9 @@ describe('AnalyticsController', () => {
     it('should return generic error and log actual error on failure', async () => {
       const dbError = new Error('connection lost');
       mockAnalyticsService.getEventAggregation.mockRejectedValue(dbError);
-      const logSpy = jest.spyOn(controller['logger'], 'error').mockImplementation();
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
 
       const result = await controller.events('2026-03-01', '2026-03-30');
 
@@ -452,9 +455,10 @@ describe('AnalyticsController', () => {
       expect(result.ok).toBe(true);
       expect(result.data).toBeDefined();
       expect(result.data!.total).toBe(0);
-      expect(
-        mockAnalyticsService.getSearchQueryAnalytics,
-      ).toHaveBeenCalledWith('2026-03-01', '2026-03-30');
+      expect(mockAnalyticsService.getSearchQueryAnalytics).toHaveBeenCalledWith(
+        '2026-03-01',
+        '2026-03-30',
+      );
     });
 
     it('should default to 30-day range when from/to not provided', async () => {
@@ -514,7 +518,9 @@ describe('AnalyticsController', () => {
     it('should return generic error message and log actual error on failure', async () => {
       const dbError = new Error('connection refused to database');
       mockPrisma.user.findMany.mockRejectedValue(dbError);
-      const logSpy = jest.spyOn(controller['logger'], 'error').mockImplementation();
+      const logSpy = jest
+        .spyOn(controller['logger'], 'error')
+        .mockImplementation();
 
       const result = await controller.latestMembers('5');
 
