@@ -272,9 +272,24 @@ describe('Analytics E2E', () => {
 
       await prisma.analyticsEvent.createMany({
         data: [
-          { eventType: 'page_view', country: 'US', device: 'desktop', browser: 'Chrome' },
-          { eventType: 'page_view', country: 'DE', device: 'mobile', browser: 'Safari' },
-          { eventType: 'signup_completed', country: 'US', device: 'desktop', browser: 'Chrome' },
+          {
+            eventType: 'page_view',
+            country: 'US',
+            device: 'desktop',
+            browser: 'Chrome',
+          },
+          {
+            eventType: 'page_view',
+            country: 'DE',
+            device: 'mobile',
+            browser: 'Safari',
+          },
+          {
+            eventType: 'signup_completed',
+            country: 'US',
+            device: 'desktop',
+            browser: 'Chrome',
+          },
         ],
       });
 
