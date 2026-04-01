@@ -12,7 +12,7 @@ Resolve before starting migration.
 |---|----------|---------|
 | 1 | **Production domains** | e.g., `api.cryptoli.com`, `admin.cryptoli.com`, `cryptoli.com` |
 | 2 | **Server specs** | RAM, CPU, storage. Minimum 4GB RAM. Requires: Node.js 24, pnpm, PM2, Caddy, Docker (Postgres/Redis only) |
-| 3 | **GitHub repo name** | e.g., `arbbaz/cryptoli` or new org |
+| 3 | **GitHub repo name** | `scripness/cryptoli` |
 | 4 | **Sentry projects** | Keep 3 separate or consolidate? (Separate recommended) |
 
 ---
@@ -100,13 +100,14 @@ No per-app harness files. One AGENTS.md + one specs/ at root.
 | 2 | Post-merge cleanup: remove old `.github/` dirs, consolidate `.gitignore`, normalize package names |
 | 3 | Add scaffolding: `pnpm-workspace.yaml`, `.npmrc`, root `package.json`, `.node-version` |
 | 4 | Clean up frontend: remove `@prisma/client`, `prisma`, dead `db:*` scripts, dead `prisma.seed` config |
-| 5 | App config: add `output: "standalone"` to frontend + admin `next.config.ts`; add `"dev"` script alias to backend |
-| 6 | Align Node version to 24 across all apps |
-| 7 | Write deployment configs: `ecosystem.config.js`, `Caddyfile`, `docker-compose.yml` |
-| 8 | Write CI workflow: `.github/workflows/ci.yml` |
-| 9 | Write root `AGENTS.md` (~130 lines), move `specs/` to root, expand spec scope, symlink `CLAUDE.md` |
-| 10 | Update `ralph/` for monorepo: paths in `PROMPT_build.md`, delete sibling push from `loop_streamed.sh` |
-| 11 | Test: `pnpm setup`, `pnpm dev`, `pnpm test`, `pnpm build` |
+| 5 | Per-app script fixes: add `dev` + `typecheck` to backend, add `dev --port 3001` + `typecheck` to admin |
+| 6 | Add `output: "standalone"` to frontend + admin `next.config.ts` |
+| 7 | Align Node version to 24 across all apps |
+| 8 | Write deployment configs: `ecosystem.config.js`, `Caddyfile`, `docker-compose.yml` |
+| 9 | Write CI workflow: `.github/workflows/ci.yml` |
+| 10 | Write root `AGENTS.md` (~130 lines), move `specs/` to root, expand spec scope, symlink `CLAUDE.md` |
+| 11 | Update `ralph/` for monorepo: paths in `PROMPT_build.md`, delete sibling push from `loop_streamed.sh` |
+| 12 | Test: `pnpm setup`, `pnpm dev`, `pnpm test`, `pnpm build`, `pnpm start` |
 
 ---
 
@@ -131,8 +132,9 @@ pip install git-filter-repo
 - [ ] Remove old per-repo CI workflows (`apps/backend/.github/`, etc.)
 - [ ] Consolidate `.gitignore` files
 - [ ] Normalize package names in `package.json`
-- [ ] Archive original GitHub repos with pointer to monorepo
 - [ ] Push: `git remote add origin <url> && git push -u origin main --tags`
+
+Original repos remain untouched. No archival, no modifications, no pointers.
 
 ---
 
@@ -165,29 +167,87 @@ public-hoist-pattern[]=rxjs
   "private": true,
   "packageManager": "pnpm@10.x",
   "scripts": {
-    "dev": "pnpm db:generate && pnpm -r --parallel run dev",
-    "dev:backend": "pnpm --filter backend run dev",
+    // --- Daily dev (run every session) ---
+    "dev": "docker compose up -d && pnpm db:generate && pnpm -r --parallel run dev",
+    "dev:backend": "docker compose up -d && pnpm db:generate && pnpm --filter backend run dev",
     "dev:frontend": "pnpm --filter frontend run dev",
     "dev:admin": "pnpm --filter admin run dev",
+
+    // --- First-time / after schema changes ---
+    "setup": "pnpm install && docker compose up -d && pnpm db:generate && pnpm db:migrate",
+
+    // --- Build + local production test ---
     "build": "pnpm db:generate && pnpm -r run build",
+    "start": "pnpm -r --parallel run start",
+    "start:backend": "pnpm --filter backend run start:prod",
+    "start:frontend": "pnpm --filter frontend run start",
+    "start:admin": "pnpm --filter admin run start",
+
+    // --- Quality ---
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "format": "pnpm -r run format",
+
+    // --- Database ---
     "db:generate": "pnpm --filter backend exec prisma generate",
     "db:migrate": "pnpm --filter backend exec prisma migrate dev",
     "db:migrate:deploy": "pnpm --filter backend exec prisma migrate deploy",
     "db:reset": "pnpm --filter backend exec prisma migrate reset",
     "db:studio": "pnpm --filter backend exec prisma studio",
+
+    // --- Infrastructure ---
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
-    "infra:reset": "docker compose down -v && docker compose up -d",
-    "setup": "pnpm install && pnpm infra:up && pnpm db:generate && pnpm db:migrate"
+    "infra:reset": "docker compose down -v && docker compose up -d"
   }
 }
 ```
 
-Backend needs a `"dev": "nest start --watch"` alias alongside existing `start:dev`.
+### Script lifecycle
+
+```
+Fresh clone:     pnpm setup        → install deps, start infra, generate client, run migrations
+Daily dev:       pnpm dev          → ensure infra, regenerate client (<1s), start 3 dev servers
+Test:            pnpm test         → run all unit tests across all apps
+Prod test:       pnpm build        → build all 3 apps (production artifacts)
+                 pnpm start        → start all 3 in production mode locally
+Deploy:          CI handles via SSH (see Deployment section)
+Schema change:   pnpm db:migrate   → apply migration (dev/build auto-regenerate client)
+Clean slate:     pnpm infra:reset  → destroy volumes + recreate containers
+                 pnpm setup        → reinstall everything from scratch
+```
+
+### Design decisions
+
+**`dev` includes `docker compose up -d`** — idempotent (<0.5s when already running). Prevents "connection refused" on first run.
+
+**`db:generate` in both `dev` and `build`** — `prisma generate` is idempotent, ~0.9s, no network calls, no side effects. Safe to run always.
+
+**`db:migrate` is NOT in `dev`** — migrations can be destructive (drop columns, rename tables). Only runs explicitly via `setup` or manual `pnpm db:migrate`.
+
+**`setup` does NOT start dev servers** — gets you to a ready state. Then run `dev`.
+
+**`start` for local production testing** — after `build`, run `start` to test all 3 apps in production mode at localhost before deploying.
+
+### Per-app package.json changes
+
+**Backend — add:**
+```json
+"dev": "nest start --watch",
+"typecheck": "tsc --noEmit"
+```
+
+**Admin — add:**
+```json
+"dev": "next dev --port 3001",
+"typecheck": "tsc --noEmit"
+```
+
+**Frontend — drop dead scripts:**
+- Remove: `db:generate`, `db:push`, `db:migrate`, `db:studio` (reference nonexistent `scripts/setup-env.js`)
+- Remove: `@prisma/client`, `prisma` from dependencies
+- Remove: `"prisma": { "seed": ... }` config block
 
 No shared `tsconfig.base.json`. Each app keeps its own tsconfig -- NestJS and Next.js have different TS realities.
 
@@ -410,13 +470,11 @@ Existing 6 specs move from backend to root. Expand scope where applicable:
 
 ```bash
 git clone <repo> cryptoli && cd cryptoli
-pnpm install
-docker compose up -d                    # Postgres + Redis
 cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env.local
 cp apps/admin/.env.example apps/admin/.env.local
-pnpm db:generate && pnpm db:migrate
-pnpm dev                                # all 3 apps
+pnpm setup                              # install, start infra, generate, migrate
+pnpm dev                                # all 3 apps + infra
 ```
 
 ### Common Tasks
@@ -455,3 +513,5 @@ Per-app `.env` files. Each app has a committed `.env.example`.
 | 4 | **Next.js HOSTNAME** | Must set `HOSTNAME=0.0.0.0` for non-localhost access. Default `localhost` is unreachable from Caddy |
 | 5 | **git filter-repo** | Removes origin remote from clones by design. Always work on throwaway copies, never originals |
 | 6 | **PM2 + env vars** | PM2 does not load `.env` files. Apps must load their own env (NestJS ConfigModule, Next.js built-in `.env.local` support) |
+| 7 | **Dev port conflict** | Frontend and admin both default to Next.js port 3000. Admin must set `next dev --port 3001` to avoid collision |
+| 8 | **NEXT_PUBLIC_ build-time baking** | `NEXT_PUBLIC_*` env vars are inlined at `next build` time, not read at runtime. Must be set before building, not just before starting |
