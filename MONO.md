@@ -96,49 +96,69 @@ No per-app harness files. One AGENTS.md + one specs/ at root.
 
 ---
 
+## Pre-Migration Checklist
+
+Run before starting Phase 1. Every item must be resolved.
+
+| # | Item | Command / Action |
+|---|------|-----------------|
+| 1 | **Install pnpm** | `corepack enable && corepack prepare pnpm@latest --activate` |
+| 2 | **Verify git-filter-repo** | `git filter-repo --version` (already installed) |
+| 3 | **Pull all 3 repos to latest** | `git pull` in each repo, verify `git status` is clean |
+| 4 | **Freeze pushes** | Coordinate ~30 min window — no pushes to any of the 3 repos during migration |
+| 5 | **Verify GitHub target repo** | `scripness/cryptoli` exists (private, empty) |
+
+---
+
 ## Migration Steps
 
 ### Phase 1: Exact As-Is Migration
 
 | # | Step |
 |---|------|
-| 1 | Clone all 3 repos into throwaway copies (filter-repo removes the origin remote by design — never run on originals) |
+| 1 | Clone all 3 repos into throwaway copies from **local paths** (filter-repo removes the origin remote by design — never run on originals) |
 | 2 | Run `git filter-repo --to-subdirectory-filter apps/<name>` on each. Backend also gets `--tag-rename '':'backend-'` to prefix all 36 tags |
-| 3 | Create a fresh empty monorepo (`git init`) |
-| 4 | Merge each throwaway into the monorepo with `--allow-unrelated-histories` |
-| 5 | Run `scripts/verify-monorepo-merge.sh` — commit counts, file tree, blob SHAs, file modes, tags, blame samples |
-| 6 | Tag: `git tag -a migration/phase1-complete -m "Phase 1: exact as-is migration verified"` |
+| 3 | Save `commit-map` files from each throwaway clone before they're discarded |
+| 4 | Create a fresh empty monorepo (`git init`) |
+| 5 | Merge each throwaway into the monorepo with `--allow-unrelated-histories` (order: backend, frontend, admin) |
+| 6 | Run `scripts/verify-monorepo-merge.sh` — commit counts, file tree, blob SHAs, file modes, tags, blame samples, root cleanliness |
+| 7 | Tag: `git tag -a migration/phase1-complete` + branch `phase1-checkpoint` |
 
-### Phase 2: Monorepo Adaptations (6 commits)
+### Phase 2: Monorepo Adaptations (8 commits)
 
 | # | Commit | What |
 |---|--------|------|
-| 1 | `chore(mono): move harness files to root` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ from apps/backend/ to repo root |
+| 1 | `chore(mono): move harness to root and adapt for monorepo` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ to root. **Rewrite AGENTS.md** for 3-app scope (~130 lines). **Update ralph/PROMPT_build.md** (replace absolute sibling paths with relative `apps/` paths, update scope constraints). **Update ralph/loop_streamed.sh** (delete sibling repo push block, lines 63-67). |
 | 2 | `chore(mono): remove old per-app CI workflows` | `git rm -r apps/backend/.github/ apps/frontend/.github/` |
-| 3 | `chore(mono): add monorepo scaffolding` | pnpm-workspace.yaml, .npmrc, root package.json, .node-version, root .gitignore |
-| 4 | `chore(mono): adapt per-app configs` | Backend/admin package.json script additions; frontend: drop @prisma/client, dead db scripts, prisma.seed block; frontend + admin next.config.ts `output: "standalone"` |
-| 5 | `chore(mono): add deployment configs` | ecosystem.config.js, Caddyfile, docker-compose.yml |
-| 6 | `ci(mono): add unified CI workflow` | .github/workflows/ci.yml |
+| 3 | `chore(mono): add monorepo scaffolding` | pnpm-workspace.yaml, .npmrc, root package.json, .node-version, root .gitignore (see content below) |
+| 4 | `chore(mono): adapt per-app configs` | **Rename packages:** `backend`, `frontend`, `admin`. **Backend:** add `dev`, `typecheck` scripts; fix `test:all` (`npm` → `pnpm`). **Admin:** update `dev` to `next dev --port 3001`, add `typecheck`. **Frontend:** drop `@prisma/client`, `prisma`, dead `db:*` scripts, `prisma.seed` block; create `.env.example`; add `!.env.example` to `.gitignore`. **Both frontends:** add `output: "standalone"` to next.config.ts. **All 3:** remove `package-lock.json`. **Frontend + admin:** remove per-app `.npmrc`. Fix backend `.env.example` PORT to `8000`. |
+| 5 | `chore(mono): add deployment configs` | ecosystem.config.js, Caddyfile, docker-compose.yml. Add GeoIP update to deploy flow. |
+| 6 | `ci(mono): add unified CI workflow` | .github/workflows/ci.yml (author from scratch per CI Workflow section) |
+| 7 | `docs(mono): expand specs for monorepo scope` | Update 6 specs with frontend/admin coverage per Harness Migration section |
+| 8 | Phase 2 verification gate | Run `verify-monorepo-merge.sh --phase=2`, tag `migration/phase2-complete` |
 
 **Commit dependency graph:**
 
 ```
-1 (harness move)    2 (rm .github)    3 (scaffolding)
-                                           |
-                                      4 (per-app configs)
-                                         /    \
-                                   5 (deploy)  6 (CI)
+1 (harness)    2 (rm .github)    3 (scaffolding)
+                                       |
+                                  4 (per-app configs)
+                                     /    \
+                               5 (deploy)  6 (CI)
+                                            |
+                                       7 (specs)
+                                            |
+                                       8 (verify + tag)
 ```
 
-Commits 1, 2, 3 are independent. Commit 4 depends on 3. Commits 5 and 6 depend on 3 and 4.
+Commits 1, 2, 3 are independent. Commit 4 depends on 3 (pnpm workspace context). Commits 5 and 6 depend on 4. Commit 7 is independent but logically last. Commit 8 is the gate.
 
 **After Phase 2:**
 
 | # | Step |
 |---|------|
-| 7 | Re-run verification: Phase 1 history checks still pass + structural checks (harness at root, old .github/ gone, scaffolding parses, `pnpm install` succeeds) |
-| 8 | Tag: `git tag -a migration/phase2-complete -m "Phase 2: monorepo adaptations verified"` |
 | 9 | `git remote add origin git@github.com:scripness/cryptoli.git && git push -u origin main --tags` |
+| 10 | Delete `phase1-checkpoint` branch |
 
 ---
 
@@ -238,15 +258,18 @@ Runs after the three merges, before tagging `migration/phase1-complete`.
 
 Script exits non-zero on any failure. All checks must pass before tagging.
 
-### Phase 2 Verification
+### Phase 2 Verification (`scripts/verify-monorepo-merge.sh --phase=2`)
 
-Runs after all 6 adaptation commits, before tagging `migration/phase2-complete`.
+Runs after all 8 adaptation commits, before tagging `migration/phase2-complete`.
 
 | Check | Method |
 |-------|--------|
 | **History integrity** | Re-run Phase 1 commit count and tag checks — no history rewritten by Phase 2. |
 | **Harness at root** | AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ exist at repo root. Absent from apps/backend/. |
 | **Old CI removed** | apps/backend/.github/ and apps/frontend/.github/ do not exist. |
+| **Package names** | Each app's package.json `name` field matches its directory name (`backend`, `frontend`, `admin`). |
+| **Dead artifacts removed** | No `package-lock.json` in any app. No `.npmrc` in apps/frontend/ or apps/admin/. |
+| **Frontend .env.example** | apps/frontend/.env.example exists and is tracked. |
 | **Scaffolding parses** | pnpm-workspace.yaml: valid YAML. Root package.json: valid JSON. .node-version: contains `24`. |
 | **Install succeeds** | `pnpm install` exits 0. |
 
@@ -365,24 +388,48 @@ Clean slate:     pnpm infra:reset  → destroy volumes + recreate containers
 
 **`start` for local production testing** — after `build`, run `start` to test all 3 apps in production mode at localhost before deploying.
 
-### Per-app package.json changes
+### Per-app package.json changes (Phase 2 commit 4)
 
-**Backend — add:**
+**All 3 apps:**
+- Rename `name` field to match directory: `backend`, `frontend`, `admin` (pnpm `--filter` matches on name)
+- Remove `package-lock.json` (pnpm generates `pnpm-lock.yaml` at root)
+
+**Backend — add/fix:**
 ```json
 "dev": "nest start --watch",
 "typecheck": "tsc --noEmit"
 ```
+- Fix `test:all`: change `npm test && npm run` → `pnpm test && pnpm run`
+- Fix `.env.example`: change `PORT=9000` → `PORT=8000` (matches Caddyfile + deployment)
 
-**Admin — add:**
+**Admin — update/add:**
 ```json
 "dev": "next dev --port 3001",
 "typecheck": "tsc --noEmit"
 ```
+- Remove per-app `.npmrc` (`legacy-peer-deps=true` is npm-only, dead under pnpm)
 
-**Frontend — drop dead scripts:**
+**Frontend — drop + create:**
 - Remove: `db:generate`, `db:push`, `db:migrate`, `db:studio` (reference nonexistent `scripts/setup-env.js`)
 - Remove: `@prisma/client`, `prisma` from dependencies
 - Remove: `"prisma": { "seed": ... }` config block
+- Remove per-app `.npmrc` (`legacy-peer-deps=true` is npm-only, dead under pnpm)
+- Create `.env.example` (does not exist; `.gitignore` blocks `.env*`):
+  ```
+  NEXT_PUBLIC_API_URL=http://localhost:8000
+  NEXT_PUBLIC_APP_URL=http://localhost:3000
+  NEXT_PUBLIC_SOCKET_URL=http://localhost:8000
+  NEXTAUTH_SECRET=your-secret-here-min-32-chars
+  # SENTRY_DSN=
+  # NEXT_PUBLIC_SENTRY_DSN=
+  # NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+  ```
+- Add `!.env.example` to frontend `.gitignore` (matching admin's pattern)
+
+**Frontend + Admin — add to next.config.ts:**
+```ts
+output: "standalone"
+```
 
 No shared `tsconfig.base.json`. Each app keeps its own tsconfig -- NestJS and Next.js have different TS realities.
 
@@ -391,6 +438,63 @@ No shared `tsconfig.base.json`. Each app keeps its own tsconfig -- NestJS and Ne
 ```
 24
 ```
+
+### Root .gitignore
+
+```gitignore
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+build/
+out/
+
+# Environment (per-app .env.example files ARE tracked)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Testing
+coverage/
+.nyc_output/
+
+# GeoIP database (downloaded at runtime)
+data/geoip/*.mmdb
+
+# IDE
+.idea/
+.vscode/
+*.sublime-workspace
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Temp
+.temp/
+.tmp/
+
+# TypeScript
+*.tsbuildinfo
+
+# Sentry
+.env.sentry-build-plugin
+
+# Runtime
+pids/
+*.pid
+*.seed
+*.pid.lock
+```
+
+Per-app `.gitignore` files remain in place — git respects nested `.gitignore` files and they handle app-specific paths with `/` prefixes.
 
 ---
 
@@ -506,6 +610,8 @@ cp -r apps/frontend/.next/static apps/frontend/.next/standalone/apps/frontend/.n
 cp -r apps/frontend/public apps/frontend/.next/standalone/apps/frontend/public
 cp -r apps/admin/.next/static apps/admin/.next/standalone/apps/admin/.next/static
 cp -r apps/admin/public apps/admin/.next/standalone/apps/admin/public
+# Update GeoIP database (PM2 bypasses prestart:prod lifecycle hook)
+pnpm --filter backend exec sh scripts/geoip-update.sh
 pm2 reload ecosystem.config.js
 ```
 
@@ -633,7 +739,7 @@ Per-app `.env` files. Each app has a committed `.env.example`.
 | App | File | Key vars |
 |-----|------|----------|
 | backend | `apps/backend/.env` | DATABASE_URL, REDIS_URL, JWT_SECRET, PORT, CORS_ORIGIN |
-| frontend | `apps/frontend/.env.local` | NEXT_PUBLIC_API_URL, NEXT_PUBLIC_SOCKET_URL, NEXTAUTH_SECRET |
+| frontend | `apps/frontend/.env.local` | NEXT_PUBLIC_API_URL, NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_SOCKET_URL, NEXTAUTH_SECRET |
 | admin | `apps/admin/.env.local` | BACKEND_URL, ADMIN_API_KEY, ANALYTICS_API_KEY |
 
 ---
@@ -650,3 +756,6 @@ Per-app `.env` files. Each app has a committed `.env.example`.
 | 6 | **PM2 + env vars** | PM2 does not load `.env` files. Apps must load their own env (NestJS ConfigModule, Next.js built-in `.env.local` support) |
 | 7 | **Dev port conflict** | Frontend and admin both default to Next.js port 3000. Admin must set `next dev --port 3001` to avoid collision |
 | 8 | **NEXT_PUBLIC_ build-time baking** | `NEXT_PUBLIC_*` env vars are inlined at `next build` time, not read at runtime. Must be set before building, not just before starting |
+| 9 | **pnpm --filter matches package name** | `pnpm --filter backend` matches the `name` field in package.json, NOT the directory name. Per-app package names must be `backend`, `frontend`, `admin` for root scripts to work |
+| 10 | **PM2 bypasses npm lifecycle hooks** | `prestart:prod` in backend package.json never fires when PM2 runs `node dist/main.js` directly. GeoIP update must be explicit in deploy flow |
+| 11 | **Frontend missing .env.example** | Frontend `.gitignore` blocks `.env*` with no exception. Must add `!.env.example` to gitignore AND create the file. Admin already has this pattern |

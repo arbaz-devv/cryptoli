@@ -20,6 +20,7 @@
 # ============================================================================
 
 set -euo pipefail
+trap 'echo -e "\n${RED:-}ABORTED: script failed unexpectedly at line $LINENO${RESET:-}" >&2; exit 2' ERR
 
 # ---------------------------------------------------------------------------
 # Config
@@ -225,10 +226,12 @@ for app in backend frontend admin; do
     total_src_merges=$((total_src_merges + c))
 done
 new_merges=$((mono_merges - total_src_merges))
-if [ "$new_merges" -ge 0 ]; then
+if [ "$new_merges" -ge 3 ] && [ "$new_merges" -le 6 ]; then
     pass "(source merges: $total_src_merges, monorepo merges: $mono_merges, new: $new_merges)"
+elif [ "$new_merges" -ge 0 ]; then
+    warn "expected 3 new merge commits, got $new_merges (source: $total_src_merges, mono: $mono_merges)"
 else
-    warn "monorepo has fewer merge commits than sources combined"
+    fail "monorepo has fewer merge commits than sources combined (new: $new_merges)"
 fi
 
 # ============================================================================
@@ -769,12 +772,27 @@ else
 fi
 
 log_check "No filter-repo temp remotes"
-stale_remotes=$(git -C "$MONO" remote -v | grep -E '(backend|frontend|admin)-src' || true)
+stale_remotes=$(git -C "$MONO" remote -v | grep -E '(backend|frontend|admin)' || true)
 if [ -z "$stale_remotes" ]; then
     pass
 else
     warn "temp remotes still present (cosmetic, not a data issue)"
     echo "$stale_remotes" | sed 's/^/    /'
+fi
+
+# ============================================================================
+# 13. ROOT CLEANLINESS (Phase 1 only — no files outside apps/)
+# ============================================================================
+log_section "13. Root Cleanliness"
+
+log_check "No files outside apps/ in monorepo"
+root_files=$(git -C "$MONO" ls-files | grep -v '^apps/' || true)
+if [ -z "$root_files" ]; then
+    pass
+else
+    root_count=$(echo "$root_files" | wc -l)
+    fail "$root_count files found outside apps/"
+    echo "$root_files" | head -20 | sed 's/^/    /'
 fi
 
 # ============================================================================
