@@ -60,6 +60,10 @@ cryptoli/
   # -- CI --
   .github/workflows/ci.yml    # 6 parallel jobs, deploy on main
 
+  # -- Migration --
+  scripts/
+    verify-monorepo-merge.sh   # two-phase verification (committed, kept post-migration)
+
   # -- Apps (code only, no per-app harness) --
   apps/
     backend/                   # NestJS 11
@@ -94,47 +98,178 @@ No per-app harness files. One AGENTS.md + one specs/ at root.
 
 ## Migration Steps
 
+### Phase 1: Exact As-Is Migration
+
 | # | Step |
 |---|------|
-| 1 | Merge 3 repos via `git filter-repo --to-subdirectory-filter` + merge |
-| 2 | Post-merge cleanup: remove old `.github/` dirs, consolidate `.gitignore`, normalize package names |
-| 3 | Add scaffolding: `pnpm-workspace.yaml`, `.npmrc`, root `package.json`, `.node-version` |
-| 4 | Clean up frontend: remove `@prisma/client`, `prisma`, dead `db:*` scripts, dead `prisma.seed` config |
-| 5 | Per-app script fixes: add `dev` + `typecheck` to backend, add `dev --port 3001` + `typecheck` to admin |
-| 6 | Add `output: "standalone"` to frontend + admin `next.config.ts` |
-| 7 | Align Node version to 24 across all apps |
-| 8 | Write deployment configs: `ecosystem.config.js`, `Caddyfile`, `docker-compose.yml` |
-| 9 | Write CI workflow: `.github/workflows/ci.yml` |
-| 10 | Write root `AGENTS.md` (~130 lines), move `specs/` to root, expand spec scope, symlink `CLAUDE.md` |
-| 11 | Update `ralph/` for monorepo: paths in `PROMPT_build.md`, delete sibling push from `loop_streamed.sh` |
-| 12 | Test: `pnpm setup`, `pnpm dev`, `pnpm test`, `pnpm build`, `pnpm start` |
+| 1 | Clone all 3 repos into throwaway copies (filter-repo removes the origin remote by design — never run on originals) |
+| 2 | Run `git filter-repo --to-subdirectory-filter apps/<name>` on each. Backend also gets `--tag-rename '':'backend-'` to prefix all 36 tags |
+| 3 | Create a fresh empty monorepo (`git init`) |
+| 4 | Merge each throwaway into the monorepo with `--allow-unrelated-histories` |
+| 5 | Run `scripts/verify-monorepo-merge.sh` — commit counts, file tree, blob SHAs, file modes, tags, blame samples |
+| 6 | Tag: `git tag -a migration/phase1-complete -m "Phase 1: exact as-is migration verified"` |
+
+### Phase 2: Monorepo Adaptations (6 commits)
+
+| # | Commit | What |
+|---|--------|------|
+| 1 | `chore(mono): move harness files to root` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ from apps/backend/ to repo root |
+| 2 | `chore(mono): remove old per-app CI workflows` | `git rm -r apps/backend/.github/ apps/frontend/.github/` |
+| 3 | `chore(mono): add monorepo scaffolding` | pnpm-workspace.yaml, .npmrc, root package.json, .node-version, root .gitignore |
+| 4 | `chore(mono): adapt per-app configs` | Backend/admin package.json script additions; frontend: drop @prisma/client, dead db scripts, prisma.seed block; frontend + admin next.config.ts `output: "standalone"` |
+| 5 | `chore(mono): add deployment configs` | ecosystem.config.js, Caddyfile, docker-compose.yml |
+| 6 | `ci(mono): add unified CI workflow` | .github/workflows/ci.yml |
+
+**Commit dependency graph:**
+
+```
+1 (harness move)    2 (rm .github)    3 (scaffolding)
+                                           |
+                                      4 (per-app configs)
+                                         /    \
+                                   5 (deploy)  6 (CI)
+```
+
+Commits 1, 2, 3 are independent. Commit 4 depends on 3. Commits 5 and 6 depend on 3 and 4.
+
+**After Phase 2:**
+
+| # | Step |
+|---|------|
+| 7 | Re-run verification: Phase 1 history checks still pass + structural checks (harness at root, old .github/ gone, scaffolding parses, `pnpm install` succeeds) |
+| 8 | Tag: `git tag -a migration/phase2-complete -m "Phase 2: monorepo adaptations verified"` |
+| 9 | `git remote add origin git@github.com:scripness/cryptoli.git && git push -u origin main --tags` |
 
 ---
 
 ## Git History Merge
 
-Method: `git filter-repo --to-subdirectory-filter` + merge with `--allow-unrelated-histories`. Tested on actual repos -- preserves 205 commits, `git blame`, `git log -- path`, `git bisect`.
+Method: `git filter-repo --to-subdirectory-filter` + merge with `--allow-unrelated-histories`. Preserves commit metadata, `git blame`, `git log -- path`, `git bisect`.
+
+### Filter and Merge Commands
 
 ```bash
 pip install git-filter-repo
 
-# 1. Clone repos into throwaway copies (filter-repo removes origin)
-# 2. Rewrite each: git filter-repo --to-subdirectory-filter apps/<name>
-#    Tag prefix: backend-0.0.1, etc.
-# 3. Create fresh monorepo
-# 4. Merge each with --allow-unrelated-histories
-# 5. Remove temp remotes
-# 6. Verify: blame, log, bisect spot-checks
+# Step 1: Clone throwaway copies
+git clone /path/to/cryptoli          cryptoli-tmp
+git clone /path/to/cryptoli-frontend frontend-tmp
+git clone /path/to/cryptoi-admin     admin-tmp
+
+# Step 2: Rewrite each repo into its apps/ subdirectory
+git -C cryptoli-tmp  filter-repo --to-subdirectory-filter apps/backend  --tag-rename '':'backend-'
+git -C frontend-tmp  filter-repo --to-subdirectory-filter apps/frontend
+git -C admin-tmp     filter-repo --to-subdirectory-filter apps/admin
+
+# Step 3: Save commit-map files before discarding throwaway clones
+cp cryptoli-tmp/.git/filter-repo/commit-map  commit-map-backend.txt
+cp frontend-tmp/.git/filter-repo/commit-map  commit-map-frontend.txt
+cp admin-tmp/.git/filter-repo/commit-map     commit-map-admin.txt
+
+# Step 4: Create fresh monorepo
+mkdir cryptoli-mono && cd cryptoli-mono && git init
+
+# Step 5: Merge each throwaway
+git remote add backend  ../cryptoli-tmp
+git remote add frontend ../frontend-tmp
+git remote add admin    ../admin-tmp
+
+git fetch backend  --tags
+git fetch frontend
+git fetch admin
+
+git merge --allow-unrelated-histories backend/main  -m "chore: merge backend history into apps/backend"
+git merge --allow-unrelated-histories frontend/main -m "chore: merge frontend history into apps/frontend"
+git merge --allow-unrelated-histories admin/main    -m "chore: merge admin history into apps/admin"
+
+# Step 6: Remove temp remotes
+git remote remove backend
+git remote remove frontend
+git remote remove admin
 ```
 
-### Post-Merge Cleanup
+### Resulting DAG
 
-- [ ] Remove old per-repo CI workflows (`apps/backend/.github/`, etc.)
-- [ ] Consolidate `.gitignore` files
-- [ ] Normalize package names in `package.json`
-- [ ] Push: `git remote add origin <url> && git push -u origin main --tags`
+```
+B1--B2--...--B51 (backend, 51 commits)
+                \
+                 M1 ← merge backend
+                 |
+F1--F2--...--F100 (frontend, 100 commits)
+                \
+                 M2 ← merge frontend
+                 |
+D1--D2--...--D57 (admin, 57 commits)
+                \
+                 M3 ← merge admin  (HEAD: main)
+```
+
+`git log` shows all 208 original commits + 3 merge commits, interleaved by date. `git log -- apps/backend/` shows only backend's commits + M1.
+
+### Post-Merge Notes
+
+**Commit-map files** — `filter-repo` writes `.git/filter-repo/commit-map` (old SHA → new SHA) into each throwaway clone. Copy these out before discarding the clones. They map original repo SHAs to monorepo SHAs — useful for cross-referencing old GitHub issue/PR links.
+
+**Stale ref** — The backend remote has a stale `origin/add-missing-indexes` ref (branch deleted on GitHub, work abandoned — 2 unmerged commits). This ref only exists in the original backend repo's local tracking refs. filter-repo on the throwaway clone won't carry it through since only `main` is merged.
+
+**Old `.github/` directories** are intentionally left in place after Phase 1. They are removed in Phase 2 commit 2 as an explicit, reviewable `git rm` commit — not as a silent filter-repo exclusion.
 
 Original repos remain untouched. No archival, no modifications, no pointers.
+
+---
+
+## Verification
+
+Two-gate model: Phase 1 verifies the history merge is lossless; Phase 2 re-runs history checks and adds structural checks for the monorepo adaptations.
+
+### Phase 1 Verification (`scripts/verify-monorepo-merge.sh`)
+
+Runs after the three merges, before tagging `migration/phase1-complete`.
+
+| Check | Method |
+|-------|--------|
+| **Commit count** | Fingerprint each non-merge commit as `author_date\|email\|subject`. Count per app must match source repo. |
+| **File tree** | `git ls-files apps/<name>/` in monorepo vs `git ls-files` in source. Strip `apps/<name>/` prefix; diff must be empty. |
+| **Content** | Blob SHA-1 comparison for every tracked file. Byte-identical after prefix stripping. |
+| **File modes** | Executable bits (`100755`) and symlinks (`120000`) preserved via `git ls-tree -r` comparison. |
+| **Tags** | All 36 backend version tags present with `backend-` prefix. Frontend and admin: zero tags expected. |
+| **Blame** | Sampled files (5 per app). All lines attributed to original authors. |
+| **Root cleanliness** | No files outside `apps/` in the monorepo tree. |
+
+Script exits non-zero on any failure. All checks must pass before tagging.
+
+### Phase 2 Verification
+
+Runs after all 6 adaptation commits, before tagging `migration/phase2-complete`.
+
+| Check | Method |
+|-------|--------|
+| **History integrity** | Re-run Phase 1 commit count and tag checks — no history rewritten by Phase 2. |
+| **Harness at root** | AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ exist at repo root. Absent from apps/backend/. |
+| **Old CI removed** | apps/backend/.github/ and apps/frontend/.github/ do not exist. |
+| **Scaffolding parses** | pnpm-workspace.yaml: valid YAML. Root package.json: valid JSON. .node-version: contains `24`. |
+| **Install succeeds** | `pnpm install` exits 0. |
+
+### Phase Boundary
+
+| Artifact | Purpose |
+|----------|---------|
+| `git tag -a migration/phase1-complete` | Annotated tag — permanent, immutable record of verified merge state |
+| `git branch phase1-checkpoint` | Operational rollback point — `git reset --hard phase1-checkpoint` to undo Phase 2 |
+| `git tag -a migration/phase2-complete` | Annotated tag — final verified monorepo state before push |
+
+**Rollback** (safe because nothing is pushed until Phase 2 passes):
+
+```bash
+git reset --hard migration/phase1-complete
+# Restores exact post-merge state. All Phase 2 commits discarded.
+```
+
+After Phase 2 verification passes and push is confirmed, delete the checkpoint branch:
+
+```bash
+git branch -d phase1-checkpoint
+```
 
 ---
 
@@ -511,7 +646,7 @@ Per-app `.env` files. Each app has a committed `.env.example`.
 | 2 | **Prisma + pnpm** | Issue #28581: generated types reference `@prisma/client-runtime-utils` that pnpm symlinks can't resolve. Workaround: hoist `@prisma/*` |
 | 3 | **Next.js standalone + monorepo** | Standalone output nests under monorepo paths. Static assets (`public/`, `.next/static/`) must be copied alongside standalone output |
 | 4 | **Next.js HOSTNAME** | Must set `HOSTNAME=0.0.0.0` for non-localhost access. Default `localhost` is unreachable from Caddy |
-| 5 | **git filter-repo** | Removes origin remote from clones by design. Always work on throwaway copies, never originals |
+| 5 | **git filter-repo** | Removes origin remote from clones by design. Always work on throwaway copies, never originals. Save `.git/filter-repo/commit-map` from each clone before discarding — it's the only old-SHA → new-SHA mapping |
 | 6 | **PM2 + env vars** | PM2 does not load `.env` files. Apps must load their own env (NestJS ConfigModule, Next.js built-in `.env.local` support) |
 | 7 | **Dev port conflict** | Frontend and admin both default to Next.js port 3000. Admin must set `next dev --port 3001` to avoid collision |
 | 8 | **NEXT_PUBLIC_ build-time baking** | `NEXT_PUBLIC_*` env vars are inlined at `next build` time, not read at runtime. Must be set before building, not just before starting |
