@@ -40,7 +40,7 @@ No Docker for apps -- PM2 fork mode handles Socket.IO without sticky sessions. A
 ```
 cryptoli/
   # -- Harness --
-  AGENTS.md                    # ~130 lines, covers all 3 apps
+  AGENTS.md                    # ~150-160 lines, covers all 3 apps
   CLAUDE.md -> AGENTS.md       # symlink
   specs/                       # domain specs (moved from backend)
   ralph/                       # autonomous build loop
@@ -128,30 +128,30 @@ Run before starting Phase 1. Every item must be resolved.
 
 | # | Commit | What |
 |---|--------|------|
-| 1 | `chore(mono): move harness to root and adapt for monorepo` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ to root. **Rewrite AGENTS.md** for 3-app scope (~130 lines). **Update ralph/PROMPT_build.md** (replace absolute sibling paths with relative `apps/` paths, update scope constraints). **Update ralph/loop_streamed.sh** (delete sibling repo push block, lines 63-67). |
+| 1 | `chore(mono): move harness to root and adapt for monorepo` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ to root. **Rewrite AGENTS.md** for 3-app scope (~150-160 lines). **Update ralph/PROMPT_build.md** (replace absolute sibling paths with relative `apps/` paths, update scope constraints). **Update ralph/loop_streamed.sh** (delete sibling repo push block, lines 63-67). |
 | 2 | `chore(mono): remove old per-app CI workflows` | `git rm -r apps/backend/.github/ apps/frontend/.github/` |
 | 3 | `chore(mono): add monorepo scaffolding` | pnpm-workspace.yaml, .npmrc, root package.json, .node-version, root .gitignore (see content below) |
 | 4 | `chore(mono): adapt per-app configs` | **Rename packages:** `backend`, `frontend`, `admin`. **Backend:** add `dev`, `typecheck` scripts; fix `test:all` (`npm` → `pnpm`). **Admin:** update `dev` to `next dev --port 3001`, add `typecheck`. **Frontend:** drop `@prisma/client`, `prisma`, dead `db:*` scripts, `prisma.seed` block; create `.env.example`; add `!.env.example` to `.gitignore`. **Both frontends:** add `output: "standalone"` to next.config.ts. **All 3:** remove `package-lock.json`. **Frontend + admin:** remove per-app `.npmrc`. Fix backend `.env.example` PORT to `8000`. |
 | 5 | `chore(mono): add deployment configs` | ecosystem.config.js, Caddyfile, docker-compose.yml. Add GeoIP update to deploy flow. |
 | 6 | `ci(mono): add unified CI workflow` | .github/workflows/ci.yml (author from scratch per CI Workflow section) |
-| 7 | `docs(mono): expand specs for monorepo scope` | Update 6 specs with frontend/admin coverage per Harness Migration section |
+| 7 | `docs(mono): expand specs for monorepo scope` | Fix all path references (91 total) with `apps/backend/` prefix. Expand specs per Harness Migration section. |
 | 8 | Phase 2 verification gate | Run `verify-monorepo-merge.sh --phase=2`, tag `migration/phase2-complete` |
 
 **Commit dependency graph:**
 
 ```
 1 (harness)    2 (rm .github)    3 (scaffolding)
-                                       |
-                                  4 (per-app configs)
-                                     /    \
-                               5 (deploy)  6 (CI)
-                                            |
-                                       7 (specs)
-                                            |
-                                       8 (verify + tag)
+     |                                 |
+     |                            4 (per-app configs)
+     |                               /    \
+     |                         5 (deploy)  6 (CI)
+     |                                      
+     +------ 7 (specs) ------+
+                              |
+                         8 (verify + tag)
 ```
 
-Commits 1, 2, 3 are independent. Commit 4 depends on 3 (pnpm workspace context). Commits 5 and 6 depend on 4. Commit 7 is independent but logically last. Commit 8 is the gate.
+Commits 1, 2, 3 are independent. Commit 4 depends on 3 (pnpm workspace context). Commits 5 and 6 depend on 4. Commit 7 depends on 1 (edits specs/ which was moved to root in commit 1). Commit 8 is the gate (depends on all).
 
 **After Phase 2:**
 
@@ -230,7 +230,18 @@ D1--D2--...--D57 (admin, 57 commits)
 
 **Commit-map files** — `filter-repo` writes `.git/filter-repo/commit-map` (old SHA → new SHA) into each throwaway clone. Copy these out before discarding the clones. They map original repo SHAs to monorepo SHAs — useful for cross-referencing old GitHub issue/PR links.
 
-**Stale ref** — The backend remote has a stale `origin/add-missing-indexes` ref (branch deleted on GitHub, work abandoned — 2 unmerged commits). This ref only exists in the original backend repo's local tracking refs. filter-repo on the throwaway clone won't carry it through since only `main` is merged.
+**Stale refs** — All 3 repos have stale remote-tracking refs (branches deleted on GitHub). These only exist as remote-tracking refs — no local branches. `git clone` from local paths only propagates local branches, so none carry through to throwaway clones.
+
+| Repo | Stale Ref | Status |
+|------|-----------|--------|
+| Backend | `origin/add-missing-indexes` | Abandoned (2 unmerged commits) |
+| Backend | `origin/api-optimize` | Fully merged |
+| Backend | `origin/observability` | Fully merged |
+| Frontend | `origin/api-optimize` | Fully merged |
+| Frontend | `origin/scaling` | Fully merged |
+| Frontend | `origin/security` | Fully merged |
+| Admin | `origin/observability` | Fully merged |
+| Admin | `origin/security` | Fully merged |
 
 **Old `.github/` directories** are intentionally left in place after Phase 1. They are removed in Phase 2 commit 2 as an explicit, reviewable `git rm` commit — not as a silent filter-repo exclusion.
 
@@ -270,6 +281,11 @@ Runs after all 8 adaptation commits, before tagging `migration/phase2-complete`.
 | **Package names** | Each app's package.json `name` field matches its directory name (`backend`, `frontend`, `admin`). |
 | **Dead artifacts removed** | No `package-lock.json` in any app. No `.npmrc` in apps/frontend/ or apps/admin/. |
 | **Frontend .env.example** | apps/frontend/.env.example exists and is tracked. |
+| **Standalone output** | `output: "standalone"` present in both `apps/frontend/next.config.ts` and `apps/admin/next.config.ts`. |
+| **Backend PORT fixed** | `apps/backend/.env.example` contains `PORT=8000` (not 9000). |
+| **Admin dev port** | `apps/admin/package.json` dev script contains `--port 3001`. |
+| **Backend scripts added** | `apps/backend/package.json` has `dev` and `typecheck` scripts. `test:all` uses `pnpm` (not `npm`). |
+| **Deploy/CI files exist** | `ecosystem.config.js`, `Caddyfile`, `docker-compose.yml`, `.github/workflows/ci.yml`, root `.gitignore` all exist. |
 | **Scaffolding parses** | pnpm-workspace.yaml: valid YAML. Root package.json: valid JSON. .node-version: contains `24`. |
 | **Install succeeds** | `pnpm install` exits 0. |
 
@@ -319,42 +335,40 @@ public-hoist-pattern[]=rxjs
 
 ### Root package.json
 
-```jsonc
+Scripts are grouped by lifecycle. Comments below explain each group — the actual `package.json` is pure JSON.
+
+- **Daily dev** — `dev`, `dev:backend`, `dev:frontend`, `dev:admin`
+- **First-time / after schema changes** — `setup`
+- **Build + local production test** — `build`, `start`, `start:backend`, `start:frontend`, `start:admin`
+- **Quality** — `test`, `lint`, `typecheck`, `format` (typecheck and format use `--if-present` since not all apps have these scripts)
+- **Database** — `db:generate`, `db:migrate`, `db:migrate:deploy`, `db:reset`, `db:studio`
+- **Infrastructure** — `infra:up`, `infra:down`, `infra:reset`
+
+```json
 {
   "name": "cryptoli",
   "private": true,
   "packageManager": "pnpm@10.x",
   "scripts": {
-    // --- Daily dev (run every session) ---
     "dev": "docker compose up -d && pnpm db:generate && pnpm -r --parallel run dev",
     "dev:backend": "docker compose up -d && pnpm db:generate && pnpm --filter backend run dev",
     "dev:frontend": "pnpm --filter frontend run dev",
     "dev:admin": "pnpm --filter admin run dev",
-
-    // --- First-time / after schema changes ---
     "setup": "pnpm install && docker compose up -d && pnpm db:generate && pnpm db:migrate",
-
-    // --- Build + local production test ---
     "build": "pnpm db:generate && pnpm -r run build",
     "start": "pnpm -r --parallel run start",
     "start:backend": "pnpm --filter backend run start:prod",
     "start:frontend": "pnpm --filter frontend run start",
     "start:admin": "pnpm --filter admin run start",
-
-    // --- Quality ---
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
-    "typecheck": "pnpm -r run typecheck",
-    "format": "pnpm -r run format",
-
-    // --- Database ---
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "format": "pnpm -r --if-present run format",
     "db:generate": "pnpm --filter backend exec prisma generate",
     "db:migrate": "pnpm --filter backend exec prisma migrate dev",
     "db:migrate:deploy": "pnpm --filter backend exec prisma migrate deploy",
     "db:reset": "pnpm --filter backend exec prisma migrate reset",
     "db:studio": "pnpm --filter backend exec prisma studio",
-
-    // --- Infrastructure ---
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:reset": "docker compose down -v && docker compose up -d"
@@ -457,6 +471,7 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
+!.env.example
 
 # Testing
 coverage/
@@ -507,18 +522,21 @@ module.exports = {
   apps: [
     {
       name: 'backend',
+      cwd: '/opt/cryptoli',
       script: 'apps/backend/dist/main.js',
       env: { NODE_ENV: 'production' },
       max_memory_restart: '512M',
     },
     {
       name: 'frontend',
+      cwd: '/opt/cryptoli',
       script: 'apps/frontend/.next/standalone/apps/frontend/server.js',
       env: { NODE_ENV: 'production', PORT: 3000, HOSTNAME: '0.0.0.0' },
       max_memory_restart: '512M',
     },
     {
       name: 'admin',
+      cwd: '/opt/cryptoli',
       script: 'apps/admin/.next/standalone/apps/admin/server.js',
       env: { NODE_ENV: 'production', PORT: 3001, HOSTNAME: '0.0.0.0' },
       max_memory_restart: '384M',
@@ -646,7 +664,7 @@ ci.yml
 +-- backend-integration   prisma generate -> test:integration (TestContainers)
 +-- backend-e2e           prisma generate -> test:e2e (TestContainers)
 +-- backend-quality       prisma generate -> tsc --noEmit -> eslint
-+-- frontend-quality      lint -> typecheck -> test
++-- frontend-quality      lint -> typecheck -> test -> check:security-config
 +-- admin-quality         lint -> typecheck -> test
 +-- smoke                 (main only, needs: all 6)
 +-- notify-failure        (main only, on failure, Slack webhook)
@@ -661,9 +679,9 @@ Deploy job: SSH to server, execute deploy flow from Deployment section.
 
 ## Harness Migration
 
-### AGENTS.md (~130 lines)
+### AGENTS.md (~150-160 lines)
 
-The existing backend AGENTS.md (171 lines) becomes the monorepo AGENTS.md:
+The existing backend AGENTS.md (171 lines) becomes the monorepo AGENTS.md. Target ~150-160 lines — 130 is too tight for 3 apps with protected sections (Specifications block, Testing section, Specs Index scaffolding must not be trimmed per harness.md).
 
 | Section | Change |
 |---------|--------|
@@ -671,37 +689,100 @@ The existing backend AGENTS.md (171 lines) becomes the monorepo AGENTS.md:
 | Commands | Replace npm scripts with pnpm workspace scripts |
 | Boundaries | Add "Ask first: changes affecting multiple apps" |
 | Architecture | Replace 17-module NestJS tree with 3-app overview + key backend modules |
-| Conventions | Keep all backend conventions. Add frontend/admin only if non-inferable |
-| Specs Index | Same 6 specs, expanded scope descriptions |
+| Conventions | Keep all backend conventions. Add 5 non-inferable frontend/admin conventions (see below) |
+| Specs Index | Same 6 specs + new specs, expanded scope descriptions |
 | Testing | Keep 3-tier backend table. Add: "Frontend/Admin: Vitest (`pnpm --filter <app> test`)" |
 | Environment | Cut (inferable from per-app `.env.example`) |
 
-### Spec Expansion
+**5 frontend/admin conventions to add:**
 
-Existing 6 specs move from backend to root. Expand scope where applicable:
+1. **Frontend API layers (two paths)** — Client components use `fetchApi` (from `lib/api/core.ts`) through the `/backend/api/*` rewrite proxy. Server Components use `getServer*` functions (from `lib/server-api.ts`) with `getBackendUrl()` (internal URL priority) and manual cookie forwarding. Never cross the boundary.
 
-| Spec | Add to scope |
-|------|-------------|
-| `auth-system.md` | Frontend NextAuth v4, admin custom JWT proxy |
-| `data-model.md` | How frontends consume schema (API response types) |
-| `voting-system.md` | Frontend VoteRail UI pattern |
-| `socket-architecture.md` | Frontend socket.io-client integration |
-| `analytics-system.md` | Admin analytics dashboard consumption |
-| `testing-strategy.md` | Frontend/admin Vitest strategy |
+2. **Frontend auth context (dual system)** — Auth state merges NextAuth session + backend cookie fallback. `AuthContext` checks NextAuth first; on `unauthenticated`, lazily checks backend `/api/auth/me`. Always use `useAuth()` from `lib/contexts/AuthContext.tsx` — never `useSession()` directly.
+
+3. **Frontend i18n routing** — Internal links in locale-routed pages must use `Link` from `@/i18n/routing`, not `next/link`. Exception: `global-error.tsx` and root layout (outside `[locale]` segment). New strings must be added to ALL 5 locale files (`messages/{en,de,nl,es,fr}.json`).
+
+4. **Admin auth (custom JWT, not NextAuth)** — Admin uses custom JWT with `admin_token`/`admin_refresh_token` cookies and in-process session tracking (`lib/server/auth-security.ts`). New API routes MUST use `withAdminRoute()` from `lib/admin-api.ts`. Server Components read tokens directly from `cookies().get(ADMIN_TOKEN_COOKIE)`.
+
+5. **Infinite feed hydration** — Server Components seed React Query infinite query caches using `createInfiniteFeedData()` + `queryClient.setQueryData(queryKeys.xxx(...))` + `<HydrationBoundary>`. Client hooks must use the **exact same query key** from `lib/queryKeys.ts`. Mismatched keys cause silent re-fetches and layout shift.
+
+### Spec Path Fixes (commit 7, all specs)
+
+All 6 specs + README.md contain path references that break when `specs/` moves from inside backend to monorepo root. 91 references total: 36 functional breaks (grep commands, markdown links), 49 misleading (source anchors, review-when comments), 6 no-break (relative imports within backend).
+
+**What to fix per file:**
+- **README.md** (9 refs) — Code column links: `../src/auth/` → `./apps/backend/src/auth/`, `../prisma/` → `./apps/backend/prisma/`, `../test/` → `./apps/backend/test/`
+- **auth-system.md** (10 refs) — Source anchor, review-when comment, 3 code path refs, 4 grep commands
+- **data-model.md** (10 refs) — Source anchor, review-when comment, 1 code path ref, 6 grep commands
+- **voting-system.md** (9 refs) — Source anchor, 3 review-when comments, 5 grep commands
+- **socket-architecture.md** (7 refs) — Source anchor, review-when comment, 4 grep commands
+- **analytics-system.md** (10 refs) — Source anchor, review-when comment, 8 grep commands
+- **testing-strategy.md** (36 refs) — Review-when comments, ~30 code path references in prose and directory trees. Import path examples (relative within backend) are fine — leave as-is.
+
+All `src/` → `apps/backend/src/`, all `prisma/` → `apps/backend/prisma/`, all `test/` → `apps/backend/test/`.
+
+### Spec Expansion Strategy
+
+Existing 6 specs move from backend to root. Expansion uses a hybrid approach — horizontal for full-stack domains, vertical for independently complex domains, skip for consumer-only relationships.
+
+| Spec | Strategy | What to add |
+|------|----------|-------------|
+| `auth-system.md` | **Horizontal expand** | Frontend: NextAuth credentials provider as proxy, dual-path AuthContext (NextAuth + backend cookie fallback), CSRF token extraction chain. Admin: separate JWT+refresh flow, in-memory session registry, `withAdminRoute()` pattern, lockout/rate limiting. Cross-cutting: cookie contract (names, SameSite, Secure, HttpOnly). |
+| `data-model.md` | **Skip** | Frontends never touch Prisma — they consume API response types. Their type definitions are API contracts, not schema knowledge. |
+| `voting-system.md` | **Horizontal expand** | Frontend: `useVote` hook with optimistic delta queue, rollback on error, rapid toggle handling. VoteResponse contract shape. Delta math parity note (frontend mirrors `buildVoteCounterDelta()`). |
+| `socket-architecture.md` | **Horizontal expand** | Frontend: singleton client pattern, `useSocket` hook, reconnection config, `withCredentials: true`. Event consumption map (which hook listens to which event). Connection lifecycle (URL safety, transport preference). |
+| `analytics-system.md` | **Horizontal expand** + **Vertical new** | Expand existing: frontend `AnalyticsTracker` component, consent gating via `analytics_consent_v2` cookie, track request contract. New `admin-analytics-dashboard.md`: 622-line analytics client, 20+ dashboard components, realtime polling, period-over-period comparison, rollup trigger. |
+| `testing-strategy.md` | **Vertical new** | New `frontend-testing.md`: Vitest + jsdom stack, @testing-library/react patterns, vi.mock for Next.js modules. Admin testing appendix (node env, auth-security focused, minimal). Keep existing spec as backend-only (Jest/TestContainers). |
 
 ### ralph/ Updates
 
 **`PROMPT_build.md`:**
 - Replace absolute sibling paths (`/home/scrip/Code/cryptoi-admin/`, `/home/scrip/Code/cryptoli-frontend/`) with relative `apps/admin/`, `apps/frontend/`
-- Update scope constraint: `src/` -> `apps/backend/src/`; add `apps/frontend/` and `apps/admin/` patterns
-- Update source reference: `src/*` -> list all three app source dirs
+- Remove entire SIBLING REPOS section (lines 21-31) — no longer needed, all apps are in one repo
+- Update scope constraint: `src/` → `apps/backend/src/`; add frontend/admin patterns
+- Update source reference (line 4): `src/*` → `apps/backend/src/*`, `apps/frontend/{app,features,lib,shared}/*`, `apps/admin/{app,lib,components}/*`
+- Update step 2 test reference (line 36): `src/**/*.spec.ts` → `apps/backend/src/**/*.spec.ts`
 - Remove separate `git -C` commands (one repo, one git)
 - Update test commands to `pnpm --filter <app> run test`
+- Replace the file allowlist (lines 10-18) with the monorepo version:
+  ```
+  # ── Backend ──
+  - apps/backend/src/**/*.ts (application source code)
+  - apps/backend/src/**/*.spec.ts (unit tests, co-located)
+  - apps/backend/test/**/*.{spec.ts,e2e-spec.ts} (integration + e2e tests)
+  - apps/backend/test/helpers/* (shared test infrastructure)
+  - apps/backend/prisma/schema.prisma
+  - apps/backend/package.json
+
+  # ── Frontend ──
+  - apps/frontend/app/**/*.{ts,tsx,css} (pages, layouts, API routes)
+  - apps/frontend/features/**/*.{ts,tsx} (feature modules)
+  - apps/frontend/lib/**/*.{ts,tsx} (API client, hooks, utilities)
+  - apps/frontend/shared/**/*.{ts,tsx} (shared components, hooks)
+  - apps/frontend/i18n/*.ts (i18n config)
+  - apps/frontend/messages/*.json (locale strings)
+  - apps/frontend/**/*.test.{ts,tsx} (co-located Vitest tests)
+  - apps/frontend/auth.ts (NextAuth config)
+  - apps/frontend/package.json
+  - apps/frontend/next.config.ts
+
+  # ── Admin ──
+  - apps/admin/app/**/*.{ts,tsx,css} (pages, layouts, API routes)
+  - apps/admin/components/**/*.{ts,tsx} (UI components)
+  - apps/admin/lib/**/*.ts (API clients, utilities)
+  - apps/admin/tests/**/*.test.ts (Vitest tests)
+  - apps/admin/package.json
+  - apps/admin/next.config.ts
+
+  # ── Root ──
+  - ralph/IMPLEMENTATION_PLAN.md (progress updates)
+  - specs/*.md (only to fix inconsistencies)
+  ```
 
 **`loop_streamed.sh`:**
 - Delete lines 63-67 (sibling repo push block). Single `git push` on line 58 covers all apps.
 
-**Global skills:** Zero changes needed. All 4 skills (`/consult`, `/verify`, `/convert`, `/specs`) use relative paths exclusively.
+**Global skills:** Zero changes needed. All 4 skills (`/consult`, `/verify`, `/convert`, `/specs`) use relative paths exclusively (`specs/*`, `AGENTS.md`, `ralph/IMPLEMENTATION_PLAN.md`). `/convert` and `/specs` have `disable-model-invocation: true` (user-invoked only, not auto-triggered). All work from monorepo root.
 
 ---
 
