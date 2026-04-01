@@ -131,7 +131,7 @@ Run before starting Phase 1. Every item must be resolved.
 | 1 | `chore(mono): move harness to root and adapt for monorepo` | `git mv` AGENTS.md, CLAUDE.md (symlink), specs/, ralph/ to root. **Rewrite AGENTS.md** for 3-app scope (~150-160 lines). **Update ralph/PROMPT_build.md** (replace absolute sibling paths with relative `apps/` paths, update scope constraints). **Update ralph/loop_streamed.sh** (delete sibling repo push block, lines 63-67). |
 | 2 | `chore(mono): remove old per-app CI workflows` | `git rm -r apps/backend/.github/ apps/frontend/.github/` |
 | 3 | `chore(mono): add monorepo scaffolding` | pnpm-workspace.yaml, .npmrc, root package.json, .node-version, root .gitignore (see content below) |
-| 4 | `chore(mono): adapt per-app configs` | **Rename packages:** `backend`, `frontend`, `admin`. **Backend:** add `dev`, `typecheck` scripts; fix `test:all` (`npm` → `pnpm`). **Admin:** update `dev` to `next dev --port 3001`, add `typecheck`. **Frontend:** drop `@prisma/client`, `prisma`, dead `db:*` scripts, `prisma.seed` block; create `.env.example`; add `!.env.example` to `.gitignore`. **Both frontends:** add `output: "standalone"` to next.config.ts. **All 3:** remove `package-lock.json`. **Frontend + admin:** remove per-app `.npmrc`. Fix backend `.env.example` PORT to `8000`. |
+| 4 | `chore(mono): adapt per-app configs` | **Rename packages:** `backend`, `frontend`, `admin`. **Backend:** add `dev`, `typecheck` scripts; fix `test:all` (`npm` → `pnpm`). **Admin:** update `dev` to `next dev --port 3001`, add `typecheck`. **Frontend:** drop `@prisma/client`, `prisma`, dead `db:*` scripts, `prisma.seed` block; create `.env.example`; add `!.env.example` to `.gitignore`. **Both frontends:** add `output: "standalone"` to next.config.ts. **All 3:** remove `package-lock.json`. **Frontend + admin:** remove per-app `.npmrc`. Fix backend `.env.example` PORT to `8000`. **READMEs:** Replace all 3 boilerplate READMEs with minimal project-specific ones. Add root README.md (see README Content section). |
 | 5 | `chore(mono): add deployment configs` | ecosystem.config.js, Caddyfile, docker-compose.yml. Add GeoIP update to deploy flow. |
 | 6 | `ci(mono): add unified CI workflow` | .github/workflows/ci.yml (author from scratch per CI Workflow section) |
 | 7 | `docs(mono): expand specs for monorepo scope` | Fix all path references (91 total) with `apps/backend/` prefix. Expand specs per Harness Migration section. |
@@ -783,6 +783,156 @@ Existing 6 specs move from backend to root. Expansion uses a hybrid approach —
 - Delete lines 63-67 (sibling repo push block). Single `git push` on line 58 covers all apps.
 
 **Global skills:** Zero changes needed. All 4 skills (`/consult`, `/verify`, `/convert`, `/specs`) use relative paths exclusively (`specs/*`, `AGENTS.md`, `ralph/IMPLEMENTATION_PLAN.md`). `/convert` and `/specs` have `disable-model-invocation: true` (user-invoked only, not auto-triggered). All work from monorepo root.
+
+---
+
+## README Content
+
+Four READMEs — one root, one per app. Replace the boilerplate READMEs that come through filter-repo.
+
+### Root README.md
+
+```markdown
+# Cryptoli
+
+Cryptocurrency review platform. Three apps in a pnpm monorepo, deployed to a single Linux server.
+
+| App | Stack | Port | Path |
+|-----|-------|------|------|
+| Backend | NestJS 11, Prisma, PostgreSQL, Redis, Socket.IO | 8000 | `apps/backend/` |
+| Frontend | Next.js 16, NextAuth, React Query, next-intl | 3000 | `apps/frontend/` |
+| Admin | Next.js 16, custom JWT auth | 3001 | `apps/admin/` |
+
+## Setup
+
+```bash
+git clone <repo> cryptoli && cd cryptoli
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env.local
+cp apps/admin/.env.example apps/admin/.env.local
+pnpm setup
+pnpm dev
+```
+
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `pnpm dev` | Start all 3 apps + infra |
+| `pnpm dev:backend` | Backend only |
+| `pnpm test` | Run all tests |
+| `pnpm build` | Production build |
+| `pnpm db:migrate` | Apply schema migration |
+| `pnpm db:studio` | Visual DB browser |
+
+See per-app READMEs for app-specific details.
+```
+
+### apps/backend/README.md
+
+```markdown
+# Backend
+
+NestJS 11 API server. Prisma ORM + PostgreSQL, Redis caching, Socket.IO real-time events.
+
+## Dev
+
+```bash
+pnpm dev:backend        # from monorepo root
+```
+
+Runs on `http://localhost:8000`. Requires PostgreSQL and Redis (`pnpm infra:up`).
+
+## Tests
+
+```bash
+pnpm --filter backend run test          # unit (Jest)
+pnpm --filter backend run test:integration   # integration (TestContainers)
+pnpm --filter backend run test:e2e      # e2e (TestContainers)
+pnpm --filter backend run test:cov      # coverage
+```
+
+## Schema
+
+```bash
+pnpm db:migrate         # apply migration
+pnpm db:generate        # regenerate Prisma client
+pnpm db:studio          # visual browser
+```
+
+## Environment
+
+Copy `.env.example` to `.env`. Required: `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`.
+```
+
+### apps/frontend/README.md
+
+```markdown
+# Frontend
+
+Next.js 16 public-facing app. App Router, NextAuth, React Query, next-intl (5 locales), Socket.IO client.
+
+## Dev
+
+```bash
+pnpm dev:frontend       # from monorepo root
+```
+
+Runs on `http://localhost:3000`. Requires the backend running on `:8000`.
+
+## Tests
+
+```bash
+pnpm --filter frontend run test         # Vitest
+pnpm --filter frontend run lint
+pnpm --filter frontend run typecheck
+```
+
+## Structure
+
+- `app/` — pages, layouts, API routes (locale-routed under `[locale]/`)
+- `features/` — domain modules (reviews, comments, companies, etc.)
+- `lib/` — API client, auth, types, utilities
+- `shared/` — reusable UI components and hooks
+- `messages/` — locale JSON files (en, de, nl, es, fr)
+
+## Environment
+
+Copy `.env.example` to `.env.local`. Required: `NEXT_PUBLIC_API_URL`, `NEXTAUTH_SECRET`.
+```
+
+### apps/admin/README.md
+
+```markdown
+# Admin
+
+Next.js 16 admin dashboard. Custom JWT auth (not NextAuth), BFF API routes proxying to the backend.
+
+## Dev
+
+```bash
+pnpm dev:admin          # from monorepo root
+```
+
+Runs on `http://localhost:3001`. Requires the backend running on `:8000`.
+
+## Tests
+
+```bash
+pnpm --filter admin run test            # Vitest
+pnpm --filter admin run lint
+```
+
+## Structure
+
+- `app/` — dashboard pages, API route handlers (BFF pattern)
+- `lib/` — admin API client, auth utilities, types
+- `components/` — shared UI components
+
+## Environment
+
+Copy `.env.example` to `.env.local`. Required: `BACKEND_URL`, `ADMIN_API_KEY`.
+```
 
 ---
 
